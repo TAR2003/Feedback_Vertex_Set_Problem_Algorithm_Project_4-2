@@ -13,9 +13,13 @@
 \usepackage{graphicx}
 \usepackage{xcolor}
 \usepackage{hyperref}
+% Prevent translator/hyperref interaction warnings in PDF strings
+\pdfstringdefDisableCommands{\def\translate#1{#1}}
+\usepackage{pifont} % provides \ding for checkmarks and dingbats
 
+% Beamer/amsthm provide theorem-like environments; avoid redefinition here.
 \pgfplotsset{compat=1.18}
-\usetikzlibrary{graphs,graphdrawing,arrows.meta,positioning,shapes}
+\usetikzlibrary{graphs,arrows.meta,positioning,shapes}
 
 % Custom colors
 \definecolor{darkred}{RGB}{139,0,0}
@@ -215,7 +219,7 @@
 		$G$ has vertex cover of size $\leq k$ $\Leftrightarrow$ $G'$ has \fvs\ of size $\leq k$
 	\end{theorem}
 
-	\textbf{Time:} $O(|E|)$ --- polynomial! ✓
+	\textbf{Time:} $O(|E|)$ --- polynomial! \ding{51}
 \end{frame}
 
 \begin{frame}{Vertex Cover $\to$ \fvs: Example}
@@ -578,7 +582,7 @@
 		\begin{tabular}{@{}lllp{4.5cm}@{}}
 			\toprule
 			\textbf{Graph Type}  & \textbf{Sizes}                               & \textbf{Instances} & \textbf{Purpose}      \\ \midrule
-			Random (Erdős-Rényi) & $n \in \{10,20,50,100,200,500,1000\}$        & 350                & General performance   \\
+			Random (Erd\H{o}s--R\'enyi) & $n \in \{10,20,50,100,200,500,1000\}$        & 350                & General performance   \\
 			                     & $p \in \{0.1,0.3,0.5,0.7,0.9\}$              &                    & across densities      \\
 			\midrule
 			Scale-Free (BA)      & $n \in \{10,20,50,100,200,500,1000\}$        & 210                & Realistic networks    \\
@@ -1324,31 +1328,24 @@
 	\vspace{0.5cm}
 
 	\begin{block}{Current Progress}
-		\begin{itemize}
-			\item ✓ Problem understanding
-			\item ✓ Literature review
-			\item ✓ Algorithm survey
-			\item ✓ Experimental design
-			\item → Next: Implementation begins!
-		\end{itemize}
-	\end{block}
+    \begin{itemize}
+      \item \ding{51} Problem understanding
+      \item \ding{51} Literature review
+      \item \ding{51} Algorithm survey
+      \item \ding{51} Experimental design
+      \item Next: Implementation begins!
+    \end{itemize}
+  \end{block}
 \end{frame}
 
 \begin{frame}{Questions?}
-	\begin{center}
-		\Huge Thank you for your attention!
-
-		\vspace{1cm}
-
-		\Large Questions and Discussion
-
-		\vspace{1cm}
-
-		\normalsize
-		\textbf{Contact:}\\
-		[Your Email]\\
-		[Your Website/GitHub]
-	\end{center}
+  \begin{center}
+    \Huge Thank you for your attention!\par\vspace{1cm}
+    \Large Questions and Discussion\par\vspace{1cm}
+    \textbf{Contact:}\par
+    [Your Email]\par
+    [Your Website/GitHub]
+  \end{center}
 \end{frame}
 
 % ============================================
@@ -1370,8 +1367,9 @@
 			2-Approximation    & $O(n^2)$         & $O(n)$         & $2 \times \opt$  & Always             & Speed + guarantee \\
 			LP Rounding        & $O(n^{3.5})$     & $O(n^2)$       & $2 \times \opt$  & $n \leq 10000$     & Medium size       \\
 			Greedy             & $O(n^2 \log n)$  & $O(n)$         & No bound         & Always             & Very fast needed  \\
-			Genetic Alg.       & $O(gpn^2)$       & $O(pn)$        & Good             & $n \leq 10000$     & Large instances   \\
-			Simulated Ann.     & $O(in^2)$        & $O(n)$         & Good             & $n \leq 10000$     & Large instances   \\ \bottomrule
+			Genetic Alg.       & $O(g p n^2)$       & $O(pn)$        & Good             & $n \leq 10000$     & Large instances   \\
+			Simulated Ann.     & $O(i n^2)$        & $O(n)$         & Good             & $n \leq 10000$     & Large instances   \\
+			\bottomrule
 		\end{tabular}
 	\end{table}
 \end{frame}

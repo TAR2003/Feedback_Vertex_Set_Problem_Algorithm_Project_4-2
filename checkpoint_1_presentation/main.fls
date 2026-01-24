@@ -388,12 +388,18 @@ INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\tex\latex\booktabs\booktabs.
 INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\tex\latex\booktabs\booktabs.sty
 INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\tex\latex\multirow\multirow.sty
 INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\tex\latex\multirow\multirow.sty
+INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\tex\latex\psnfss\pifont.sty
+INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\tex\latex\psnfss\pifont.sty
+INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\tex\latex\psnfss\upzd.fd
+INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\tex\latex\psnfss\upzd.fd
+INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\tex\latex\psnfss\upzd.fd
+INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\fonts\tfm\adobe\zapfding\pzdr.tfm
+INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\tex\latex\psnfss\upsy.fd
+INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\tex\latex\psnfss\upsy.fd
+INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\tex\latex\psnfss\upsy.fd
+INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\fonts\tfm\adobe\symbol\psyr.tfm
 INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\tex\generic\pgf\frontendlayer\tikz\libraries\graphs\tikzlibrarygraphs.code.tex
 INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\tex\generic\pgf\frontendlayer\tikz\libraries\graphs\tikzlibrarygraphs.code.tex
-INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\tex\generic\pgf\graphdrawing\tex\tikzlibrarygraphdrawing.code.tex
-INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\tex\generic\pgf\graphdrawing\tex\tikzlibrarygraphdrawing.code.tex
-INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\tex\generic\pgf\graphdrawing\tex\pgflibrarygraphdrawing.code.tex
-INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\tex\generic\pgf\graphdrawing\tex\pgflibrarygraphdrawing.code.tex
 INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\tex\generic\pgf\libraries\pgflibraryarrows.meta.code.tex
 INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\tex\generic\pgf\libraries\pgflibraryarrows.meta.code.tex
 INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\tex\generic\pgf\libraries\pgflibraryarrows.meta.code.tex
@@ -548,6 +554,7 @@ INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\fonts\tfm\jknappen\ec\tcss10
 INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\fonts\tfm\jknappen\ec\tcss1000.tfm
 INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\fonts\tfm\jknappen\ec\tcsx1000.tfm
 INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\fonts\tfm\public\cm\cmss17.tfm
+INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\fonts\tfm\public\cm\cmssbx10.tfm
 INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\fonts\tfm\public\cm\cmcsc10.tfm
 OUTPUT main.nav
 OUTPUT main.toc
@@ -593,3 +600,5 @@ INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\fonts\type1\public\amsfonts\
 INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\fonts\type1\public\amsfonts\cm\cmsy6.pfb
 INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\fonts\type1\public\amsfonts\cm\cmsy8.pfb
 INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\fonts\type1\public\amsfonts\cm\cmsy8.pfb
+INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\fonts\type1\urw\zapfding\uzdr.pfb
+INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\fonts\type1\urw\zapfding\uzdr.pfb
