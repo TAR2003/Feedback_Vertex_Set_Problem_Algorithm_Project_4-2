@@ -1,0 +1,21 @@
+\frametitle{2-Approximation Algorithm}
+\begin{algorithmic}[1]
+		\Procedure{TwoApproximation}{$G$}
+		\State $S \gets \emptyset$
+		\While{$G$ has a cycle $C$}
+		\State Find any cycle $C$ in $G$
+		\State Pick any edge $(u,v) \in C$
+		\State $S \gets S \cup \{u, v\}$
+		\State Remove $u$ and $v$ from $G$
+		\EndWhile
+		\State \Return $S$
+		\EndProcedure
+	\end{algorithmic}
+
+	\vspace{0.3cm}
+
+	\begin{theorem}[Approximation Guarantee]
+		$|S| \leq 2 \cdot \opt$
+	\end{theorem}
+
+	\textbf{Proof:} Each cycle needs $\geq 1$ vertex in $\opt$. We add $\leq 2$ vertices per cycle. Therefore $|S| \leq 2|\opt|$.

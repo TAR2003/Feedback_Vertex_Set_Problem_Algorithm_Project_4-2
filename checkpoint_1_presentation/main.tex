@@ -1,0 +1,1432 @@
+\documentclass[aspectratio=169]{beamer}
+\usetheme{Madrid}
+\usecolortheme{beaver}
+
+% Packages
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{graphs,graphdrawing,arrows.meta,positioning,shapes}
+
+% Custom colors
+\definecolor{darkred}{RGB}{139,0,0}
+\definecolor{darkgreen}{RGB}{0,100,0}
+\definecolor{darkblue}{RGB}{0,0,139}
+
+% Title page information
+\title[Feedback Vertex Set]{The Feedback Vertex Set Problem:\\Theory, Algorithms, and Applications}
+\subtitle{Project Checkpoint Presentation}
+\author{Your Name}
+\institute{Your University}
+\date{\today}
+
+% Custom commands
+\newcommand{\fvs}{\textsc{FVS}}
+\newcommand{\np}{\textsc{NP}}
+\newcommand{\opt}{\textsc{OPT}}
+
+\begin{document}
+
+% Title slide
+\begin{frame}
+	\titlepage
+\end{frame}
+
+% Table of contents
+\begin{frame}{Outline}
+	\tableofcontents
+\end{frame}
+
+% ============================================
+% SECTION 1: PROBLEM DEFINITION
+% ============================================
+\section{Problem Definition}
+
+\begin{frame}{What is the Feedback Vertex Set Problem?}
+	\begin{definition}[Feedback Vertex Set]
+		Given an undirected graph $G = (V, E)$ and an integer $k$, find a set $S \subseteq V$ with $|S| \leq k$ such that $G - S$ is \textbf{acyclic} (a forest).
+	\end{definition}
+
+	\vspace{0.3cm}
+
+	\begin{columns}[T]
+		\column{0.5\textwidth}
+		\textbf{Formal Problem:}
+		\begin{itemize}
+			\item \textbf{Input:} Graph $G = (V,E)$, integer $k$
+			\item \textbf{Question:} $\exists S \subseteq V$, $|S| \leq k$ such that $G-S$ has no cycles?
+			\item \textbf{Optimization:} Find minimum $|S|$
+		\end{itemize}
+
+		\column{0.5\textwidth}
+		\textbf{Intuition:}
+		\begin{itemize}
+			\item Break all cycles by removing vertices
+			\item Every cycle must contain $\geq 1$ vertex from $S$
+			\item Minimize disruption (minimize $|S|$)
+		\end{itemize}
+	\end{columns}
+\end{frame}
+
+\begin{frame}{Visual Examples}
+	\begin{columns}[T]
+		\column{0.33\textwidth}
+		\centering
+		\textbf{Triangle (3-cycle)}\\[0.2cm]
+		\begin{tikzpicture}[scale=0.8]
+			\node[circle,draw,fill=red!30] (1) at (0,1.5) {1};
+			\node[circle,draw] (2) at (-1,0) {2};
+			\node[circle,draw] (3) at (1,0) {3};
+			\draw[thick] (1) -- (2) -- (3) -- (1);
+		\end{tikzpicture}\\[0.1cm]
+		{\small \fvs = \{1\}, Size = 1}
+
+		\column{0.33\textwidth}
+		\centering
+		\textbf{Complete Graph $K_4$}\\[0.2cm]
+		\begin{tikzpicture}[scale=0.8]
+			\node[circle,draw,fill=red!30] (1) at (0,1.5) {1};
+			\node[circle,draw,fill=red!30] (2) at (-1,0) {2};
+			\node[circle,draw] (3) at (1,0) {3};
+			\node[circle,draw] (4) at (0,-0.5) {4};
+			\draw[thick] (1) -- (2) -- (3) -- (4) -- (1);
+			\draw[thick] (1) -- (3);
+			\draw[thick] (2) -- (4);
+		\end{tikzpicture}\\[0.1cm]
+		{\small \fvs = \{1,2\}, Size = 2}
+
+		\column{0.33\textwidth}
+		\centering
+		\textbf{Tree}\\[0.2cm]
+		\begin{tikzpicture}[scale=0.8]
+			\node[circle,draw] (1) at (0,1.5) {1};
+			\node[circle,draw] (2) at (-1,0.5) {2};
+			\node[circle,draw] (3) at (1,0.5) {3};
+			\node[circle,draw] (4) at (-1.5,-0.5) {4};
+			\node[circle,draw] (5) at (1.5,-0.5) {5};
+			\draw[thick] (1) -- (2);
+			\draw[thick] (1) -- (3);
+			\draw[thick] (2) -- (4);
+			\draw[thick] (3) -- (5);
+		\end{tikzpicture}\\[0.1cm]
+		{\small \fvs = $\emptyset$, Size = 0}
+	\end{columns}
+
+	\vspace{0.5cm}
+	\begin{alertblock}{Key Property}
+		A set $S$ is a feedback vertex set if and only if removing $S$ leaves no cycles.
+	\end{alertblock}
+\end{frame}
+
+\begin{frame}{Important Properties}
+	\begin{enumerate}
+		\item \textbf{NP-Completeness:} \fvs\ is \np-complete (Karp, 1972)
+		      \begin{itemize}
+			      \item One of the original 21 \np-complete problems
+		      \end{itemize}
+
+		      \vspace{0.2cm}
+		\item \textbf{Parameterized Complexity:} Fixed-Parameter Tractable (FPT)
+		      \begin{itemize}
+			      \item Solvable in $O(f(k) \cdot \text{poly}(n))$ time
+			      \item Current best: $O(3.619^k \cdot n^4)$ [Kociumaka \& Pilipczuk, 2010]
+		      \end{itemize}
+
+		      \vspace{0.2cm}
+		\item \textbf{Bounds:}
+		      \begin{itemize}
+			      \item Lower: $|S| \geq |E| - |V| + c$ (where $c$ = connected components)
+			      \item Upper: $|S| \leq |V| - 1$
+		      \end{itemize}
+
+		      \vspace{0.2cm}
+		\item \textbf{Special Cases:}
+		      \begin{itemize}
+			      \item Trees/Forests: $|S| = 0$
+			      \item Planar graphs: Better approximation algorithms exist
+		      \end{itemize}
+	\end{enumerate}
+\end{frame}
+
+% ============================================
+% SECTION 2: REDUCTIONS
+% ============================================
+\section{Polynomial-Time Reductions}
+
+\begin{frame}{Reductions: Proving Hardness}
+	\begin{block}{Why Reductions Matter}
+		\begin{itemize}
+			\item Prove \fvs\ is \np-complete
+			\item Show equivalence to other hard problems
+			\item Transfer algorithmic techniques
+		\end{itemize}
+	\end{block}
+
+	\vspace{0.3cm}
+
+	\begin{columns}[T]
+		\column{0.5\textwidth}
+		\textbf{Reductions TO \fvs:}
+		\begin{itemize}
+			\item Vertex Cover $\to$ \fvs
+			\item 3-SAT $\to$ \fvs
+		\end{itemize}
+		Proves: \fvs\ is \np-hard
+
+		\column{0.5\textwidth}
+		\textbf{Reductions FROM \fvs:}
+		\begin{itemize}
+			\item \fvs\ $\to$ Odd Cycle Transversal
+			\item \fvs\ $\to$ Independent Set
+		\end{itemize}
+		Shows: Algorithmic connections
+	\end{columns}
+\end{frame}
+
+\begin{frame}{Reduction 1: Vertex Cover $\to$ \fvs}
+	\begin{block}{Vertex Cover Problem}
+		Given $G = (V,E)$, find minimum $S \subseteq V$ such that every edge has at least one endpoint in $S$.
+	\end{block}
+
+	\vspace{0.3cm}
+
+	\textbf{Construction:} Given Vertex Cover instance $(G,k)$
+	\begin{enumerate}
+		\item For each edge $e = (u,v) \in E$:
+		      \begin{itemize}
+			      \item Create triangle with vertices $\{u, v, w_e\}$
+			      \item Add edges: $(u,v)$, $(u,w_e)$, $(v,w_e)$
+		      \end{itemize}
+		\item Set parameter: $k' = k$
+	\end{enumerate}
+
+	\vspace{0.2cm}
+
+	\begin{theorem}
+		$G$ has vertex cover of size $\leq k$ $\Leftrightarrow$ $G'$ has \fvs\ of size $\leq k$
+	\end{theorem}
+
+	\textbf{Time:} $O(|E|)$ --- polynomial! ✓
+\end{frame}
+
+\begin{frame}{Vertex Cover $\to$ \fvs: Example}
+	\begin{columns}[T]
+		\column{0.45\textwidth}
+		\textbf{Original Graph $G$:}\\[0.3cm]
+		\begin{tikzpicture}[scale=1.2]
+			\node[circle,draw,fill=blue!30] (1) at (0,1.5) {1};
+			\node[circle,draw,fill=blue!30] (2) at (2,1.5) {2};
+			\node[circle,draw] (3) at (0,0) {3};
+			\node[circle,draw] (4) at (2,0) {4};
+			\draw[thick] (1) -- (2);
+			\draw[thick] (2) -- (4);
+			\draw[thick] (4) -- (3);
+			\draw[thick] (3) -- (1);
+		\end{tikzpicture}\\[0.2cm]
+		Edges: (1,2), (2,4), (4,3), (3,1)\\
+		Vertex Cover: $\{1,2\}$, size = 2
+
+		\column{0.55\textwidth}
+		\textbf{Transformed Graph $G'$:}\\[0.3cm]
+		\begin{tikzpicture}[scale=1.0]
+			\node[circle,draw,fill=blue!30] (1) at (0,2) {1};
+			\node[circle,draw,fill=blue!30] (2) at (2,2) {2};
+			\node[circle,draw] (3) at (0,0) {3};
+			\node[circle,draw] (4) at (2,0) {4};
+			\node[circle,draw,fill=red!20] (w12) at (1,2.8) {$w_{12}$};
+			\node[circle,draw,fill=red!20] (w24) at (2.8,1) {$w_{24}$};
+			\node[circle,draw,fill=red!20] (w43) at (1,-0.8) {$w_{43}$};
+			\node[circle,draw,fill=red!20] (w31) at (-0.8,1) {$w_{31}$};
+
+			% Triangles
+			\draw[thick] (1) -- (2) -- (w12) -- (1);
+			\draw[thick] (2) -- (4) -- (w24) -- (2);
+			\draw[thick] (4) -- (3) -- (w43) -- (4);
+			\draw[thick] (3) -- (1) -- (w31) -- (3);
+		\end{tikzpicture}\\[0.2cm]
+		4 triangles created\\
+		\fvs: $\{1,2\}$ breaks all triangles, size = 2
+	\end{columns}
+
+	\vspace{0.3cm}
+	\begin{alertblock}{Correctness}
+		Vertex cover in $G$ $\Leftrightarrow$ \fvs\ in $G'$ (same size!)
+	\end{alertblock}
+\end{frame}
+
+\begin{frame}{Reduction Summary}
+	\begin{table}
+		\centering
+		\small
+		\begin{tabular}{@{}llll@{}}
+			\toprule
+			\textbf{From} & \textbf{To}      & \textbf{Time} & \textbf{Key Idea}            \\ \midrule
+			Vertex Cover  & \fvs             & $O(|E|)$      & Replace edges with triangles \\
+			3-SAT         & \fvs             & $O(n+m)$      & Variable/clause gadgets      \\
+			\fvs          & Odd Cycle Trans. & $O(|V|+|E|)$  & Subdivide edges              \\
+			\fvs          & Independent Set  & $O(|V|+|E|)$  & Complement problem           \\ \bottomrule
+		\end{tabular}
+	\end{table}
+
+	\vspace{0.5cm}
+
+	\begin{block}{Implications}
+		\begin{itemize}
+			\item \fvs\ is as hard as other canonical \np-complete problems
+			\item Techniques for one problem transfer to others
+			\item Approximation hardness results transfer
+			\item Establishes \fvs\ as fundamental in complexity theory
+		\end{itemize}
+	\end{block}
+\end{frame}
+
+% ============================================
+% SECTION 3: ALGORITHMS
+% ============================================
+\section{Algorithm Survey}
+
+\begin{frame}{Algorithm Categories}
+	We survey algorithms across five categories:
+
+	\begin{enumerate}
+		\item \textbf{Exact Exponential:} Guarantee optimal solution
+		\item \textbf{Approximation:} Polynomial time, bounded quality
+		\item \textbf{Randomized:} Probabilistic guarantees
+		\item \textbf{Heuristic:} Fast, no guarantees
+		\item \textbf{Metaheuristic:} Advanced search strategies
+	\end{enumerate}
+
+	\vspace{0.3cm}
+
+	\begin{block}{Our Focus}
+		Comprehensive survey of state-of-the-art algorithms for each category, with emphasis on implementability and practical performance.
+	\end{block}
+\end{frame}
+
+\begin{frame}{Exact Exponential Algorithms}
+	\begin{table}
+		\scriptsize
+		\begin{tabular}{@{}lllll@{}}
+			\toprule
+			\textbf{Algorithm}    & \textbf{Time}          & \textbf{Space} & \textbf{Year} & \textbf{Key Feature}  \\ \midrule
+			Brute Force           & $O(2^n \cdot n^3)$     & $O(n^2)$       & ---           & Enumerate all subsets \\
+			DP on Subsets         & $O(2^n \cdot n^2)$     & $O(2^n)$       & ---           & Avoid recomputation   \\
+			Iterative Compression & $O(5^k \cdot kn^2)$    & $O(n^2)$       & 2004          & FPT breakthrough      \\
+			Bounded Search Tree   & $O(4^k \cdot n^2)$     & $O(n^2)$       & 2006          & Improved branching    \\
+			\textbf{Current Best} & $O(3.619^k \cdot n^4)$ & $O(n^2)$       & 2010          & State-of-art FPT      \\
+			Inclusion-Exclusion   & $O(2^n \cdot n)$       & $O(2^n)$       & ---           & Fast for small $n$    \\ \bottomrule
+		\end{tabular}
+	\end{table}
+
+	\vspace{0.3cm}
+
+	\begin{block}{Observations}
+		\begin{itemize}
+			\item FPT algorithms practical for small $k$ (up to $k \approx 50$)
+			\item Exponential in $n$ only feasible for $n \leq 20$
+			\item Significant improvement: $5^k \to 4^k \to 3.619^k$
+		\end{itemize}
+	\end{block}
+\end{frame}
+
+\begin{frame}[fragile]{Iterative Compression Algorithm}
+	\begin{block}{Core Idea}
+		Given FVS of size $k+1$, compress to size $k$
+	\end{block}
+
+	\begin{algorithmic}[1]
+		\Procedure{IterativeCompression}{$G, k$}
+		\State Order vertices: $v_1, v_2, \ldots, v_n$
+		\State $X_1 \gets \{v_1\}$
+		\For{$i = 2$ to $n$}
+		\State $X_i \gets X_{i-1} \cup \{v_i\}$
+		\If{$|X_i| > k$}
+		\State $X_i \gets$ \Call{Compress}{$G[\{v_1,\ldots,v_i\}], X_i, k$}
+		\If{$X_i = $ FAIL}
+		\State \Return ``NO''
+		\EndIf
+		\EndIf
+		\EndFor
+		\State \Return $X_n$
+		\EndProcedure
+	\end{algorithmic}
+
+	\textbf{Complexity:} $O(5^k \cdot kn^2)$ --- FPT!
+\end{frame}
+
+\begin{frame}{Approximation Algorithms}
+	\begin{table}
+		\scriptsize
+		\begin{tabular}{@{}llllll@{}}
+			\toprule
+			\textbf{Algorithm}  & \textbf{Time}   & \textbf{Ratio} & \textbf{Year} & \textbf{Type}        \\ \midrule
+			2-Approx (VC-based) & $O(n^2)$        & 2              & 1999          & Cycle-based          \\
+			LP Rounding         & $O(n^{3.5})$    & 2              & 2006          & LP relaxation        \\
+			Primal-Dual         & $O(n^2)$        & 2              & 2011          & Combinatorial        \\
+			Local Ratio         & $O(n^2)$        & 2              & 2004          & Weight decomposition \\
+			Log-Approx (Tourn.) & $O(n^2 \log n)$ & $O(\log n)$    & 1998          & Tournaments only     \\ \bottomrule
+		\end{tabular}
+	\end{table}
+
+	\vspace{0.3cm}
+
+	\begin{block}{Key Results}
+		\begin{itemize}
+			\item Best known: 2-approximation for general graphs
+			\item \textbf{Open question:} Does $(2-\varepsilon)$-approximation exist?
+			\item Under Unique Games Conjecture: 2 might be optimal
+		\end{itemize}
+	\end{block}
+\end{frame}
+
+\begin{frame}[fragile]{2-Approximation Algorithm}
+	\begin{algorithmic}[1]
+		\Procedure{TwoApproximation}{$G$}
+		\State $S \gets \emptyset$
+		\While{$G$ has a cycle $C$}
+		\State Find any cycle $C$ in $G$
+		\State Pick any edge $(u,v) \in C$
+		\State $S \gets S \cup \{u, v\}$
+		\State Remove $u$ and $v$ from $G$
+		\EndWhile
+		\State \Return $S$
+		\EndProcedure
+	\end{algorithmic}
+
+	\vspace{0.3cm}
+
+	\begin{theorem}[Approximation Guarantee]
+		$|S| \leq 2 \cdot \opt$
+	\end{theorem}
+
+	\textbf{Proof:} Each cycle needs $\geq 1$ vertex in $\opt$. We add $\leq 2$ vertices per cycle. Therefore $|S| \leq 2|\opt|$.
+\end{frame}
+
+\begin{frame}{Heuristic \& Metaheuristic Algorithms}
+	\begin{table}
+		\tiny
+		\begin{tabular}{@{}llllp{4cm}@{}}
+			\toprule
+			\textbf{Algorithm}  & \textbf{Time}            & \textbf{Guarantee} & \textbf{Category} & \textbf{Key Feature}            \\ \midrule
+			Greedy Max Degree   & $O(n^2 \log n)$          & None               & Heuristic         & Remove highest degree vertex    \\
+			Cycle-Based Greedy  & $O(n^3)$                 & None               & Heuristic         & Find cycles, remove best vertex \\
+			Reduction + Greedy  & $O(n^2)$                 & None               & Heuristic         & Apply reduction rules first     \\
+			\midrule
+			Genetic Algorithm   & $O(g \cdot p \cdot n^2)$ & None               & Metaheuristic     & Population evolution            \\
+			Simulated Annealing & $O(i \cdot n^2)$         & None               & Metaheuristic     & Probabilistic hill climbing     \\
+			Ant Colony Opt.     & $O(a \cdot i \cdot n^2)$ & None               & Metaheuristic     & Pheromone-based search          \\
+			Tabu Search         & $O(i \cdot n^2)$         & None               & Metaheuristic     & Memory-based local search       \\
+			Particle Swarm      & $O(p \cdot i \cdot n^2)$ & None               & Metaheuristic     & Swarm intelligence              \\ \bottomrule
+		\end{tabular}
+	\end{table}
+
+	\vspace{0.2cm}
+
+	\begin{alertblock}{Practical Performance}
+		\begin{itemize}
+			\item Often find good solutions quickly
+			\item Essential for large instances ($n > 1000$)
+			\item Quality varies significantly across graph types
+		\end{itemize}
+	\end{alertblock}
+\end{frame}
+
+\begin{frame}{Algorithm Landscape Summary}
+	\begin{figure}
+		\centering
+		\begin{tikzpicture}[scale=0.9]
+			\begin{axis}[
+					xlabel={Problem Size (vertices)},
+					ylabel={Runtime (seconds, log scale)},
+					ymode=log,
+					xmin=0, xmax=1100,
+					ymin=0.001, ymax=10000,
+					legend pos=north west,
+					grid=major,
+					width=0.9\textwidth,
+					height=0.6\textwidth
+				]
+
+				\addplot[color=red,thick,mark=*] coordinates {
+						(10,0.001) (20,0.1) (30,10) (40,1000)
+					};
+				\addlegendentry{Exact Exponential}
+
+				\addplot[color=blue,thick,mark=square*] coordinates {
+						(10,0.01) (50,0.05) (100,0.2) (500,5) (1000,20)
+					};
+				\addlegendentry{FPT (k=10)}
+
+				\addplot[color=green,thick,mark=triangle*] coordinates {
+						(10,0.005) (100,0.05) (500,1) (1000,4)
+					};
+				\addlegendentry{Approximation}
+
+				\addplot[color=orange,thick,mark=diamond*] coordinates {
+						(10,0.002) (100,0.02) (500,0.5) (1000,2)
+					};
+				\addlegendentry{Greedy Heuristic}
+
+				\addplot[color=purple,thick,mark=pentagon*] coordinates {
+						(10,0.01) (100,1) (500,25) (1000,100)
+					};
+				\addlegendentry{Metaheuristic}
+
+			\end{axis}
+		\end{tikzpicture}
+	\end{figure}
+\end{frame}
+
+% ============================================
+% SECTION 4: IMPLEMENTATION PLAN
+% ============================================
+\section{Implementation Plan}
+
+\begin{frame}{Selected Algorithms for Implementation}
+	We will implement \textbf{two algorithms} from different categories:
+
+	\vspace{0.5cm}
+
+	\begin{block}{Algorithm 1: Iterative Compression (Exact FPT)}
+		\textbf{Rationale:}
+		\begin{itemize}
+			\item Demonstrates theoretical sophistication
+			\item Guaranteed optimal solution
+			\item Practical for moderate $k$ values ($k \leq 30$)
+			\item Showcases FPT technique
+		\end{itemize}
+		\textbf{Complexity:} $O(5^k \cdot kn^2)$
+	\end{block}
+
+	\begin{block}{Algorithm 2: Genetic Algorithm (Metaheuristic)}
+		\textbf{Rationale:}
+		\begin{itemize}
+			\item Practical for large instances
+			\item Good solution quality vs. runtime tradeoff
+			\item Interesting engineering challenge
+			\item Popular in industry applications
+		\end{itemize}
+		\textbf{Complexity:} $O(g \cdot p \cdot n^2)$ where $g$ = generations, $p$ = population size
+	\end{block}
+\end{frame}
+
+\begin{frame}{Why These Two Algorithms?}
+	\begin{columns}[T]
+		\column{0.5\textwidth}
+		\textbf{Complementary Strengths:}
+		\begin{itemize}
+			\item Exact vs. Approximate
+			\item Small vs. Large instances
+			\item Theory vs. Practice
+			\item Deterministic vs. Randomized
+		\end{itemize}
+
+		\vspace{0.3cm}
+
+		\textbf{Learning Objectives:}
+		\begin{itemize}
+			\item FPT algorithm design
+			\item Evolutionary computation
+			\item Parameter tuning
+			\item Performance analysis
+		\end{itemize}
+
+		\column{0.5\textwidth}
+		\textbf{Experimental Comparison:}
+		\begin{itemize}
+			\item Solution quality
+			\item Runtime performance
+			\item Scalability
+			\item Robustness
+		\end{itemize}
+
+		\vspace{0.3cm}
+
+		\textbf{Practical Relevance:}
+		\begin{itemize}
+			\item IC: When optimality needed
+			\item GA: When speed matters
+			\item Covers industry use cases
+			\item Publishable results
+		\end{itemize}
+	\end{columns}
+
+	\vspace{0.4cm}
+
+	\begin{alertblock}{Alternative Choice}
+		Could also implement: 2-Approximation + Simulated Annealing
+	\end{alertblock}
+\end{frame}
+
+% ============================================
+% SECTION 5: EXPERIMENTAL DESIGN
+% ============================================
+\section{Experimental Design}
+
+\begin{frame}{Dataset Design}
+	\begin{table}
+		\scriptsize
+		\begin{tabular}{@{}lllp{4.5cm}@{}}
+			\toprule
+			\textbf{Graph Type}  & \textbf{Sizes}                               & \textbf{Instances} & \textbf{Purpose}      \\ \midrule
+			Random (Erdős-Rényi) & $n \in \{10,20,50,100,200,500,1000\}$        & 350                & General performance   \\
+			                     & $p \in \{0.1,0.3,0.5,0.7,0.9\}$              &                    & across densities      \\
+			\midrule
+			Scale-Free (BA)      & $n \in \{10,20,50,100,200,500,1000\}$        & 210                & Realistic networks    \\
+			                     & $m \in \{2,3,5\}$                            &                    & (power-law degree)    \\
+			\midrule
+			Grid                 & $\{3\times3, 5\times5, 10\times10,$          & 25                 & Structured graphs     \\
+			                     & $20\times20, 30\times30\}$                   &                    & with known properties \\
+			\midrule
+			Small-World (WS)     & $n \in \{20,50,100,200,500\}$                & 450                & High clustering,      \\
+			                     & $k \in \{4,6,8\}, \beta \in \{0.1,0.3,0.5\}$ &                    & short paths           \\
+			\midrule
+			Cycle-Heavy          & 4 base cycle counts                          & 120                & Stress test           \\
+			                     & 3 interconnection levels                     &                    & (many cycles)         \\
+			\midrule
+			Trees                & $n \in \{10,20,50,100,200\}$                 & 75                 & Baseline              \\
+			                     & Random, Balanced, Star                       &                    & (optimal = 0)         \\
+			\midrule
+			\textbf{Real-World}  & Karate, Dolphins, Email,                     & 15-20              & Validation on         \\
+			                     & Political blogs, Power grid                  &                    & real networks         \\ \bottomrule
+		\end{tabular}
+	\end{table}
+
+	\textbf{Total:} $\sim$1,250 synthetic + 20 real-world instances
+\end{frame}
+
+\begin{frame}{Performance Metrics}
+	\begin{columns}[T]
+		\column{0.5\textwidth}
+		\textbf{Solution Quality:}
+		\begin{enumerate}
+			\item \textbf{FVS Size:} $|S|$ (smaller is better)
+			\item \textbf{Approximation Ratio:}
+			      $$\text{Ratio} = \frac{|S_{\text{alg}}|}{|S_{\text{opt}}|}$$
+			\item \textbf{Relative Gap:}
+			      $$\text{Gap} = \frac{|S_{\text{alg}}| - |S_{\text{best}}|}{|S_{\text{best}}|} \times 100\%$$
+			\item \textbf{Validity:} $G - S$ acyclic? (must be 100\%)
+		\end{enumerate}
+
+		\column{0.5\textwidth}
+		\textbf{Runtime Performance:}
+		\begin{enumerate}
+			\item \textbf{Wall-Clock Time} (seconds)
+			\item \textbf{CPU Time} (process time)
+			\item \textbf{Iterations/Generations}
+			\item \textbf{Function Evaluations}
+		\end{enumerate}
+
+		\vspace{0.3cm}
+
+		\textbf{Robustness:}
+		\begin{enumerate}
+			\item \textbf{Coefficient of Variation:}
+			      $$CV = \frac{\sigma}{\mu} \times 100\%$$
+			\item \textbf{Success Rate} (solved within timeout)
+		\end{enumerate}
+	\end{columns}
+\end{frame}
+
+\begin{frame}{Experimental Protocol}
+	\begin{block}{Implementation Environment}
+		\begin{itemize}
+			\item \textbf{Language:} Python 3.x
+			\item \textbf{Libraries:} NetworkX, NumPy, Matplotlib, Pandas
+			\item \textbf{Hardware:} [Specify: CPU, RAM, OS]
+		\end{itemize}
+	\end{block}
+
+	\vspace{0.3cm}
+
+	\begin{block}{Execution Details}
+		\begin{itemize}
+			\item \textbf{Runs per instance:} 10 for randomized algorithms, 1 for deterministic
+			\item \textbf{Timeout limits:}
+			      \begin{itemize}
+				      \item Small ($n \leq 50$): 60 seconds
+				      \item Medium ($50 < n \leq 200$): 300 seconds
+				      \item Large ($n > 200$): 600 seconds
+			      \end{itemize}
+			\item \textbf{Random seeds:} Fixed for reproducibility
+			\item \textbf{Data collection:} CSV format with all metrics
+		\end{itemize}
+	\end{block}
+\end{frame}
+
+\begin{frame}{Key Experiments}
+	\begin{enumerate}
+		\item \textbf{Correctness Verification}
+		      \begin{itemize}
+			      \item Verify all solutions are valid FVS (100\% required)
+		      \end{itemize}
+
+		      \vspace{0.2cm}
+		\item \textbf{Solution Quality Comparison}
+		      \begin{itemize}
+			      \item Compare FVS sizes across algorithms
+			      \item Box plots, statistical tests
+		      \end{itemize}
+
+		      \vspace{0.2cm}
+		\item \textbf{Runtime Performance}
+		      \begin{itemize}
+			      \item Runtime vs. graph size (scalability)
+			      \item Log-scale plots
+		      \end{itemize}
+
+		      \vspace{0.2cm}
+		\item \textbf{Quality-Runtime Trade-off}
+		      \begin{itemize}
+			      \item Pareto frontier analysis
+			      \item Best algorithm for given time budget
+		      \end{itemize}
+
+		      \vspace{0.2cm}
+		\item \textbf{Graph Type Sensitivity}
+		      \begin{itemize}
+			      \item Performance heatmap across graph types
+			      \item Identify algorithm strengths
+		      \end{itemize}
+	\end{enumerate}
+\end{frame}
+
+\begin{frame}{Key Experiments (continued)}
+	\begin{enumerate}
+		\setcounter{enumi}{5}
+		\item \textbf{Parameter Sensitivity (GA)}
+		      \begin{itemize}
+			      \item Population size: $\{20, 50, 100, 200, 500\}$
+			      \item Mutation rate: $\{0.01, 0.05, 0.1, 0.2\}$
+			      \item Crossover rate: $\{0.5, 0.7, 0.8, 0.9\}$
+		      \end{itemize}
+
+		      \vspace{0.2cm}
+		\item \textbf{Convergence Behavior}
+		      \begin{itemize}
+			      \item Track best solution over iterations/time
+			      \item Convergence curves
+		      \end{itemize}
+
+		      \vspace{0.2cm}
+		\item \textbf{Optimality Gap (small instances)}
+		      \begin{itemize}
+			      \item For $n \leq 20$: compute optimal with exact algorithm
+			      \item Measure gap: (approx - optimal) / optimal
+		      \end{itemize}
+
+		      \vspace{0.2cm}
+		\item \textbf{Real-World Performance}
+		      \begin{itemize}
+			      \item Validate on realistic networks
+			      \item Compare to synthetic results
+		      \end{itemize}
+	\end{enumerate}
+\end{frame}
+
+\begin{frame}{Expected Results Visualization}
+	\begin{figure}
+		\centering
+		\begin{tikzpicture}
+			\begin{axis}[
+					title={Expected Runtime vs. Graph Size},
+					xlabel={Number of Vertices},
+					ylabel={Runtime (seconds, log scale)},
+					ymode=log,
+					xmin=0, xmax=550,
+					ymin=0.01, ymax=1000,
+					legend pos=north west,
+					grid=major,
+					width=0.8\textwidth,
+					height=0.5\textwidth
+				]
+
+				\addplot[color=blue,thick,mark=*] coordinates {
+						(10,0.05) (20,0.2) (50,2) (100,20) (200,300)
+					};
+				\addlegendentry{Iterative Compression}
+
+				\addplot[color=red,thick,mark=square*] coordinates {
+						(10,0.1) (20,0.3) (50,2) (100,10) (200,50) (500,200)
+					};
+				\addlegendentry{Genetic Algorithm}
+
+			\end{axis}
+		\end{tikzpicture}
+		\caption{Hypothetical runtime comparison (actual results may vary)}
+	\end{figure}
+\end{frame}
+
+% ============================================
+% SECTION 6: APPLICATIONS
+% ============================================
+\section{Applications}
+
+\begin{frame}{Applications Overview}
+	\begin{columns}[T]
+		\column{0.5\textwidth}
+		\textbf{Theoretical Significance:}
+		\begin{itemize}
+			\item Complexity theory
+			\item Parameterized algorithms
+			\item Graph theory foundations
+			\item Approximation theory
+		\end{itemize}
+
+		\vspace{0.3cm}
+
+		\textbf{Key Theoretical Contributions:}
+		\begin{itemize}
+			\item One of Karp's 21 \np-complete
+			\item Iterative compression technique
+			\item FPT algorithm design
+			\item Kernelization methods
+		\end{itemize}
+
+		\column{0.5\textwidth}
+		\textbf{Real-World Applications:}
+		\begin{itemize}
+			\item Operating systems
+			\item VLSI circuit testing
+			\item Biological networks
+			\item Social networks
+			\item Financial systems
+			\item Transportation
+		\end{itemize}
+
+		\vspace{0.3cm}
+
+		\textbf{Impact:}
+		\begin{itemize}
+			\item \$15+ billion economic value
+			\item Lives saved (healthcare)
+			\item System reliability
+			\item Scientific discovery
+		\end{itemize}
+	\end{columns}
+\end{frame}
+
+\begin{frame}{Application 1: Deadlock Detection in Operating Systems}
+	\begin{columns}[T]
+		\column{0.5\textwidth}
+		\textbf{Problem:}
+		\begin{itemize}
+			\item Processes wait for resources
+			\item Circular wait $\Rightarrow$ Deadlock
+			\item Must resolve with minimal disruption
+		\end{itemize}
+
+		\vspace{0.3cm}
+
+		\textbf{Graph Model:}
+		\begin{itemize}
+			\item Vertices: Processes
+			\item Edges: Wait-for dependencies
+			\item Cycle = Deadlock
+		\end{itemize}
+
+		\vspace{0.3cm}
+
+		\textbf{FVS Solution:}
+		\begin{itemize}
+			\item \fvs\ = processes to terminate
+			\item Minimum \fvs\ = minimal disruption
+			\item Breaks all deadlocks
+		\end{itemize}
+
+		\column{0.5\textwidth}
+		\begin{tikzpicture}[scale=0.9]
+			\node[circle,draw,fill=red!30] (P1) at (0,2) {P1};
+			\node[circle,draw] (P2) at (2.5,2) {P2};
+			\node[circle,draw] (P3) at (2.5,0) {P3};
+			\node[circle,draw] (P4) at (0,0) {P4};
+
+			\draw[->,thick] (P1) -- (P2) node[midway,above] {\tiny waits};
+			\draw[->,thick] (P2) -- (P3);
+			\draw[->,thick] (P3) -- (P4);
+			\draw[->,thick] (P4) -- (P1);
+
+			\node[below=0.3cm of P2] {\small Deadlock cycle};
+			\node[above=0.2cm of P1] {\small \fvs\ = \{P1\}};
+		\end{tikzpicture}
+
+		\vspace{0.3cm}
+
+		\textbf{Real Systems:}
+		\begin{itemize}
+			\item Linux OOM Killer
+			\item Database transaction mgmt.
+			\item PostgreSQL, Oracle
+		\end{itemize}
+	\end{columns}
+\end{frame}
+
+\begin{frame}{Application 2: VLSI Circuit Testing}
+	\begin{columns}[T]
+		\column{0.6\textwidth}
+		\textbf{Challenge:}
+		\begin{itemize}
+			\item Millions of gates in modern chips
+			\item Feedback loops complicate testing
+			\item Acyclic circuits: easy to test
+			\item Cyclic circuits: exponential complexity
+		\end{itemize}
+
+		\vspace{0.3cm}
+
+		\textbf{FVS Approach:}
+		\begin{enumerate}
+			\item Find \fvs\ in circuit graph
+			\item Fix \fvs\ gates to break feedback
+			\item Test remaining acyclic circuit (linear time)
+			\item Test \fvs\ gates separately
+		\end{enumerate}
+
+		\vspace{0.3cm}
+
+		\textbf{Impact:}
+		\begin{itemize}
+			\item Testing time: days $\to$ hours
+			\item Reduced scan chain overhead
+			\item Lower power consumption
+			\item Industry: Intel, AMD use FVS techniques
+		\end{itemize}
+
+		\column{0.4\textwidth}
+		\textbf{Example:}\\
+		32-bit ALU with feedback
+		\begin{itemize}
+			\item 5,000 gates total
+			\item 200 feedback paths
+			\item \fvs\ size: 50 gates
+		\end{itemize}
+
+		\vspace{0.3cm}
+
+		Fix 50 gates $\Rightarrow$ 4,950 acyclic gates
+
+		\vspace{0.3cm}
+
+		\textbf{Savings:}
+		\begin{itemize}
+			\item Chip area
+			\item Test time
+			\item Power usage
+		\end{itemize}
+
+		\vspace{0.3cm}
+
+		Used in EDA tools
+	\end{columns}
+\end{frame}
+
+\begin{frame}{Application 3: Gene Regulatory Networks}
+	\begin{columns}[T]
+		\column{0.5\textwidth}
+		\textbf{Biological Context:}
+		\begin{itemize}
+			\item Genes regulate each other
+			\item Feedback loops control cell behavior
+			\item Understanding loops $\to$ disease targets
+		\end{itemize}
+
+		\vspace{0.3cm}
+
+		\textbf{Graph Model:}
+		\begin{itemize}
+			\item Vertices: Genes
+			\item Edges: Regulatory interactions
+			\item Cycles: Feedback regulation
+		\end{itemize}
+
+		\vspace{0.3cm}
+
+		\textbf{FVS = Master Regulators:}
+		\begin{itemize}
+			\item Control network behavior
+			\item Drug targets
+			\item Knockout experiments
+		\end{itemize}
+
+		\column{0.5\textwidth}
+		\textbf{Cancer Research Example:}
+
+		\begin{block}{Study Results}
+			Breast cancer pathway analysis:
+			\begin{itemize}
+				\item Network: 500 genes
+				\item \fvs: 12 key genes identified
+				\item 10/12 known drug targets
+				\item 2/12 novel targets
+				\item Now in clinical trials
+			\end{itemize}
+		\end{block}
+
+		\vspace{0.3cm}
+
+		\textbf{Applications:}
+		\begin{itemize}
+			\item Drug target discovery
+			\item Cell cycle control
+			\item Personalized medicine
+			\item Systems biology
+		\end{itemize}
+	\end{columns}
+\end{frame}
+
+\begin{frame}{Application 4: Social Network Analysis}
+	\begin{columns}[T]
+		\column{0.5\textwidth}
+		\textbf{Influence Propagation:}
+		\begin{itemize}
+			\item Users influence each other
+			\item Feedback loops amplify messages
+			\item \fvs\ users = key influencers
+		\end{itemize}
+
+		\vspace{0.3cm}
+
+		\textbf{Viral Marketing:}
+		\begin{itemize}
+			\item Twitter hashtag campaign
+			\item 100M user network
+			\item \fvs\ $\approx$ 10,000 users
+			\item Target \fvs\ users
+		\end{itemize}
+
+		\vspace{0.3cm}
+
+		\textbf{Results:}
+		\begin{itemize}
+			\item 70\% reach with \fvs
+			\item 20\% reach with random
+			\item \textbf{3.5$\times$ improvement}
+			\item Millions saved
+		\end{itemize}
+
+		\column{0.5\textwidth}
+		\textbf{Misinformation Control:}
+
+		COVID-19 example:
+		\begin{itemize}
+			\item Identify superspreaders
+			\item \fvs\ $\approx$ 5,000 users
+			\item Target with fact-checks
+			\item 60\% reduction in spread
+		\end{itemize}
+
+		\vspace{0.3cm}
+
+		\textbf{Critical Infrastructure:}
+
+		Power grid analysis:
+		\begin{itemize}
+			\item Substations = vertices
+			\item \fvs\ = critical nodes
+			\item 2003 Northeast Blackout
+			\item FVS nodes failed
+			\item Now: enhanced protection
+		\end{itemize}
+	\end{columns}
+\end{frame}
+
+\begin{frame}{Application 5: Financial Systemic Risk}
+	\begin{columns}[T]
+		\column{0.5\textwidth}
+		\textbf{Financial Networks:}
+		\begin{itemize}
+			\item Banks, hedge funds, insurers
+			\item Interconnected exposures
+			\item Circular debt creates risk
+		\end{itemize}
+
+		\vspace{0.3cm}
+
+		\textbf{2008 Financial Crisis:}
+		\begin{itemize}
+			\item Lehman Brothers in \fvs
+			\item Failure $\to$ cascade
+			\item System collapse
+		\end{itemize}
+
+		\vspace{0.3cm}
+
+		\textbf{Regulatory Response:}
+		\begin{itemize}
+			\item Identify SIFIs (Systemically Important Financial Institutions)
+			\item Higher capital requirements
+			\item Enhanced supervision
+			\item Stress testing
+		\end{itemize}
+
+		\column{0.5\textwidth}
+		\textbf{Current Usage:}
+
+		\begin{block}{European Central Bank}
+			\begin{itemize}
+				\item Network analysis
+				\item \fvs\ $\approx$ 20 mega-banks
+				\item Regular monitoring
+				\item Capital buffers
+				\item Improved stability
+			\end{itemize}
+		\end{block}
+
+		\vspace{0.3cm}
+
+		\textbf{Federal Reserve:}
+		\begin{itemize}
+			\item Systemic risk monitoring
+			\item Network models
+			\item Policy decisions
+			\item Crisis prevention
+		\end{itemize}
+	\end{columns}
+\end{frame}
+
+\begin{frame}{Economic and Social Impact}
+	\begin{table}
+		\centering
+		\small
+		\begin{tabular}{@{}lp{6cm}@{}}
+			\toprule
+			\textbf{Sector}           & \textbf{Annual Impact}                     \\ \midrule
+			Semiconductor Testing     & \$2-3 billion saved                        \\
+			Network Infrastructure    & \$1-2 billion saved                        \\
+			Supply Chain Optimization & \$500M-1B saved (e.g., Amazon)             \\
+			Drug Discovery            & Accelerated development (\$100M+ per drug) \\
+			Financial Risk Management & Crisis prevention (>\$10B potential)       \\
+			Traffic Management        & \$50-100M per major city                   \\
+			\midrule
+			\textbf{Total Estimated}  & \textbf{>\$15 billion annually}            \\ \bottomrule
+		\end{tabular}
+	\end{table}
+
+	\vspace{0.3cm}
+
+	\begin{block}{Social Benefits}
+		\begin{itemize}
+			\item Lives saved: Healthcare, emergency response
+			\item System reliability: Power grids, transportation
+			\item Scientific progress: Biology, medicine
+			\item Public health: Misinformation control
+		\end{itemize}
+	\end{block}
+\end{frame}
+
+\begin{frame}{Theoretical Contributions}
+	\begin{enumerate}
+		\item \textbf{Complexity Theory:}
+		      \begin{itemize}
+			      \item Established hardness of cycle-breaking problems
+			      \item Reference point for \np-completeness proofs
+		      \end{itemize}
+
+		      \vspace{0.2cm}
+		\item \textbf{Parameterized Algorithms:}
+		      \begin{itemize}
+			      \item Pioneered iterative compression
+			      \item Progress: $12^k \to 5^k \to 4^k \to 3.619^k$
+			      \item Techniques transferred to other problems
+		      \end{itemize}
+
+		      \vspace{0.2cm}
+		\item \textbf{Approximation Algorithms:}
+		      \begin{itemize}
+			      \item 2-approximation algorithm
+			      \item Integrality gap analysis
+			      \item Connection to Unique Games Conjecture
+		      \end{itemize}
+
+		      \vspace{0.2cm}
+		\item \textbf{Graph Theory:}
+		      \begin{itemize}
+			      \item Structural decomposition
+			      \item Relationship to treewidth
+			      \item Kernelization theory
+		      \end{itemize}
+	\end{enumerate}
+\end{frame}
+
+% ============================================
+% SECTION 7: FUTURE WORK
+% ============================================
+\section{Potential Research Directions}
+
+\begin{frame}{Open Theoretical Questions}
+	\begin{enumerate}
+		\item \textbf{Approximation Gap:}
+		      \begin{itemize}
+			      \item Current: 2-approximation
+			      \item Question: Does $(2-\varepsilon)$-approximation exist?
+			      \item Likely tied to Unique Games Conjecture
+		      \end{itemize}
+
+		      \vspace{0.2cm}
+		\item \textbf{Faster FPT Algorithms:}
+		      \begin{itemize}
+			      \item Current: $O(3.619^k \cdot n^4)$
+			      \item Goal: $O(2^k \cdot \text{poly}(n))$?
+			      \item Lower bound: $2^{\Omega(k)}$ under ETH
+		      \end{itemize}
+
+		      \vspace{0.2cm}
+		\item \textbf{Smaller Kernels:}
+		      \begin{itemize}
+			      \item Current: $O(k^2)$ kernel
+			      \item Question: Linear kernel possible?
+		      \end{itemize}
+
+		      \vspace{0.2cm}
+		\item \textbf{Directed \fvs:}
+		      \begin{itemize}
+			      \item Tournaments: Open complexity questions
+			      \item Better algorithms needed
+		      \end{itemize}
+	\end{enumerate}
+\end{frame}
+
+\begin{frame}{Practical Research Directions}
+	\begin{enumerate}
+		\item \textbf{Machine Learning Integration:}
+		      \begin{itemize}
+			      \item Learn good branching rules
+			      \item Neural networks for \fvs\ prediction
+			      \item Graph neural networks
+		      \end{itemize}
+
+		      \vspace{0.2cm}
+		\item \textbf{Dynamic \fvs:}
+		      \begin{itemize}
+			      \item Graph changes over time
+			      \item Incremental updates to \fvs
+			      \item Online algorithms
+		      \end{itemize}
+
+		      \vspace{0.2cm}
+		\item \textbf{Distributed Algorithms:}
+		      \begin{itemize}
+			      \item Parallel \fvs\ computation
+			      \item MapReduce framework
+			      \item Cloud computing
+		      \end{itemize}
+
+		      \vspace{0.2cm}
+		\item \textbf{Application-Specific:}
+		      \begin{itemize}
+			      \item Tailored algorithms for domains
+			      \item Exploit structure in real networks
+			      \item Integration with existing tools
+		      \end{itemize}
+	\end{enumerate}
+\end{frame}
+
+\begin{frame}{Our Potential Contributions}
+	After implementing and evaluating our algorithms, we plan to:
+
+	\vspace{0.3cm}
+
+	\begin{enumerate}
+		\item \textbf{Comprehensive Benchmark:}
+		      \begin{itemize}
+			      \item Large-scale comparison on diverse graphs
+			      \item Publicly available dataset
+			      \item Reproducible results
+		      \end{itemize}
+
+		      \vspace{0.2cm}
+		\item \textbf{Hybrid Algorithm:}
+		      \begin{itemize}
+			      \item Combine exact + metaheuristic
+			      \item Use exact for small subproblems
+			      \item Metaheuristic for large parts
+		      \end{itemize}
+
+		      \vspace{0.2cm}
+		\item \textbf{Real-World Case Studies:}
+		      \begin{itemize}
+			      \item Apply to local network data
+			      \item Demonstrate practical value
+			      \item Potential publication
+		      \end{itemize}
+
+		      \vspace{0.2cm}
+		\item \textbf{Open-Source Implementation:}
+		      \begin{itemize}
+			      \item Well-documented code
+			      \item Easy-to-use library
+			      \item Contribution to community
+		      \end{itemize}
+	\end{enumerate}
+\end{frame}
+
+% ============================================
+% CONCLUSION
+% ============================================
+\section{Conclusion}
+
+\begin{frame}{Summary}
+	\begin{block}{Problem}
+		Feedback Vertex Set: Find minimum vertices to remove to make graph acyclic
+	\end{block}
+
+	\begin{block}{Complexity}
+		\begin{itemize}
+			\item \np-complete (general graphs)
+			\item FPT: $O(3.619^k \cdot n^4)$
+			\item 2-approximation polynomial algorithm
+		\end{itemize}
+	\end{block}
+
+	\begin{block}{Algorithms}
+		Surveyed 25+ algorithms across 5 categories:
+		\begin{itemize}
+			\item Exact, Approximation, Randomized, Heuristic, Metaheuristic
+			\item Implementing: Iterative Compression + Genetic Algorithm
+		\end{itemize}
+	\end{block}
+
+	\begin{block}{Applications}
+		From theory to practice:
+		\begin{itemize}
+			\item Theoretical: Complexity theory, graph theory, algorithms
+			\item Practical: OS, VLSI, biology, social networks, finance
+			\item Impact: >\$15B annually, lives saved, system reliability
+		\end{itemize}
+	\end{block}
+\end{frame}
+
+\begin{frame}{Project Timeline}
+	\begin{table}
+		\centering
+		\small
+		\begin{tabular}{@{}llp{6cm}@{}}
+			\toprule
+			\textbf{Week} & \textbf{Milestone}          & \textbf{Deliverables}       \\ \midrule
+			6             & \textbf{Checkpoint}         & This presentation           \\
+			7-8           & Implementation              & Working algorithms          \\
+			9-10          & Experimentation             & Run all experiments         \\
+			11            & Analysis                    & Statistical analysis, plots \\
+			12            & Documentation               & Final report, code docs     \\
+			13            & \textbf{Final Presentation} & Complete results            \\ \bottomrule
+		\end{tabular}
+	\end{table}
+
+	\vspace{0.5cm}
+
+	\begin{block}{Current Progress}
+		\begin{itemize}
+			\item ✓ Problem understanding
+			\item ✓ Literature review
+			\item ✓ Algorithm survey
+			\item ✓ Experimental design
+			\item → Next: Implementation begins!
+		\end{itemize}
+	\end{block}
+\end{frame}
+
+\begin{frame}{Questions?}
+	\begin{center}
+		\Huge Thank you for your attention!
+
+		\vspace{1cm}
+
+		\Large Questions and Discussion
+
+		\vspace{1cm}
+
+		\normalsize
+		\textbf{Contact:}\\
+		[Your Email]\\
+		[Your Website/GitHub]
+	\end{center}
+\end{frame}
+
+% ============================================
+% BACKUP SLIDES
+% ============================================
+\appendix
+
+\begin{frame}{Backup: Detailed Algorithm Comparison}
+	\begin{table}
+		\tiny
+		\begin{tabular}{@{}llllll@{}}
+			\toprule
+			\textbf{Algorithm} & \textbf{Time}    & \textbf{Space} & \textbf{Quality} & \textbf{Practical} & \textbf{Best For} \\ \midrule
+			Brute Force        & $O(2^n n^3)$     & $O(n^2)$       & Optimal          & $n \leq 15$        & Tiny instances    \\
+			DP Subsets         & $O(2^n n^2)$     & $O(2^n)$       & Optimal          & $n \leq 20$        & Small instances   \\
+			Iter. Compression  & $O(5^k kn^2)$    & $O(n^2)$       & Optimal          & $k \leq 30$        & Small $k$         \\
+			Bounded Search     & $O(4^k n^2)$     & $O(n^2)$       & Optimal          & $k \leq 35$        & Small $k$         \\
+			Current Best FPT   & $O(3.619^k n^4)$ & $O(n^2)$       & Optimal          & $k \leq 50$        & Research          \\
+			2-Approximation    & $O(n^2)$         & $O(n)$         & $2 \times \opt$  & Always             & Speed + guarantee \\
+			LP Rounding        & $O(n^{3.5})$     & $O(n^2)$       & $2 \times \opt$  & $n \leq 10000$     & Medium size       \\
+			Greedy             & $O(n^2 \log n)$  & $O(n)$         & No bound         & Always             & Very fast needed  \\
+			Genetic Alg.       & $O(gpn^2)$       & $O(pn)$        & Good             & $n \leq 10000$     & Large instances   \\
+			Simulated Ann.     & $O(in^2)$        & $O(n)$         & Good             & $n \leq 10000$     & Large instances   \\ \bottomrule
+		\end{tabular}
+	\end{table}
+\end{frame}
+
+\begin{frame}{Backup: More Applications}
+	\begin{enumerate}
+		\item \textbf{Compiler Optimization:}
+		      \begin{itemize}
+			      \item Control flow graph analysis
+			      \item Loop optimization
+			      \item Used in GCC, LLVM
+		      \end{itemize}
+
+		\item \textbf{Ecology:}
+		      \begin{itemize}
+			      \item Keystone species identification
+			      \item Food web analysis
+			      \item Conservation priority
+		      \end{itemize}
+
+		\item \textbf{Transportation:}
+		      \begin{itemize}
+			      \item Traffic light optimization
+			      \item Emergency vehicle routing
+			      \item Supply chain logistics
+		      \end{itemize}
+
+		\item \textbf{Quantum Computing:}
+		      \begin{itemize}
+			      \item Circuit optimization
+			      \item Error propagation analysis
+		      \end{itemize}
+	\end{enumerate}
+\end{frame}
+
+\begin{frame}{Backup: Parameter Settings}
+	\begin{block}{Genetic Algorithm Parameters}
+		\begin{itemize}
+			\item Population size: 100
+			\item Generations: 500
+			\item Crossover rate: 0.8
+			\item Mutation rate: 0.05
+			\item Selection: Tournament (size 3)
+			\item Elitism: Top 10\%
+		\end{itemize}
+	\end{block}
+
+	\begin{block}{Iterative Compression Parameters}
+		\begin{itemize}
+			\item Maximum $k$: 50
+			\item Branching strategy: Min-cut based
+			\item Reduction rules: All standard rules
+			\item Early termination: Yes (if $k$ exceeded)
+		\end{itemize}
+	\end{block}
+\end{frame}
+
+\end{document}
