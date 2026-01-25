@@ -1,5 +1,5 @@
 # Fdb version 4
-["pdflatex"] 1769369989.88354 "c:/Users/TAWKIR/Documents/GitHub/Feedback_Vertex_Set_Problem_Algorithm_Project_4-2/checkpoint_1_presentation/main.tex" "main.pdf" "main" 1769369993.26276 0
+["pdflatex"] 1769370485.92698 "c:/Users/TAWKIR/Documents/GitHub/Feedback_Vertex_Set_Problem_Algorithm_Project_4-2/checkpoint_1_presentation/main.tex" "main.pdf" "main" 1769370489.74422 0
   "C:/Users/TAWKIR/AppData/Local/MiKTeX/fonts/map/pdftex/pdftex.map" 1765474825 229457 49ca68e6665cc8defdcf9a7c42fbab78 ""
   "C:/Users/TAWKIR/AppData/Local/MiKTeX/miktex/data/le/pdftex/pdflatex.fmt" 1757160032 13257826 88ac9faf8003347f75b71f2822e63a59 ""
   "C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/tfm/adobe/symbol/psyr.tfm" 1136750654 1408 5937f58aa508ea2cea4901c07d10f5fe ""
@@ -298,12 +298,12 @@
   "C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/tex/latex/translator/translator.sty" 1622471510 8765 56d370785f0143111ff9898b5adfe08e ""
   "C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/tex/latex/url/url.sty" 1388490452 12796 8edb7d69a20b857904dd0ea757c14ec9 ""
   "C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/tex/latex/xcolor/xcolor.sty" 1729265222 55384 b454dec21c2d9f45ec0b793f0995b992 ""
-  "c:/Users/TAWKIR/Documents/GitHub/Feedback_Vertex_Set_Problem_Algorithm_Project_4-2/checkpoint_1_presentation/main.tex" 1769369985 36700 bcb999ceaaccf37279d363e5b8b2d7c7 ""
-  "main.aux" 1769369992 7048 cbfc258df21256de583ad4a98999c439 "pdflatex"
-  "main.nav" 1769369992 4635 a2c87ad9772525cb0e121b974cb9c8eb "pdflatex"
-  "main.out" 1769369992 1017 2cf56337cf40856c68a20e32837bbc62 "pdflatex"
-  "main.tex" 1769369985 36700 bcb999ceaaccf37279d363e5b8b2d7c7 ""
-  "main.toc" 1769369992 396 bc46c3780c78d6e5e27cfbac298794f9 "pdflatex"
+  "c:/Users/TAWKIR/Documents/GitHub/Feedback_Vertex_Set_Problem_Algorithm_Project_4-2/checkpoint_1_presentation/main.tex" 1769370485 48095 43072de6f7e2accab2e573832aa3be24 ""
+  "main.aux" 1769370489 7945 8972e86c82876292107374b9c0f2e3f2 "pdflatex"
+  "main.nav" 1769370489 5280 8ccfaf25b7d19dd42f45a7b16eb706f0 "pdflatex"
+  "main.out" 1769370489 1017 2cf56337cf40856c68a20e32837bbc62 "pdflatex"
+  "main.tex" 1769370485 48095 43072de6f7e2accab2e573832aa3be24 ""
+  "main.toc" 1769370489 396 103b728258fae859aeab7b31747df16b "pdflatex"
   (generated)
   "main.aux"
   "main.log"
