@@ -29,8 +29,13 @@
 % Title page information
 \title[Feedback Vertex Set]{The Feedback Vertex Set Problem:\\Theory, Algorithms, and Applications}
 \subtitle{Project Checkpoint Presentation}
-\author{Your Name}
-\institute{Your University}
+\author{2005090 - Tawkir Aziz Rahman \\
+		2005074 - Dipanta Kumar Roy Nobo \\
+		2005091 - Waseem Mustak Zisan \\
+		2005104 - Hasin Arafat \\
+		2005109 - Noushin Tabassum Aoishy \\
+		2005068 - Suman Hossain}
+\institute{Bangladesh University of Engineering and Technology (BUET)}
 \date{\today}
 
 % Custom commands
@@ -143,22 +148,20 @@
 
 \begin{frame}{Important Properties}
 	\begin{enumerate}
-		\item \textbf{NP-Completeness:} \fvs\ is \np-complete (Karp, 1972)
-		      \begin{itemize}
-			      \item One of the original 21 \np-complete problems
-		      \end{itemize}
+		\item \textbf{NP-Completeness:} \fvs\ is \np-complete (shown via reductions from problems such as Vertex Cover)
+		      
 
 		      \vspace{0.2cm}
 		\item \textbf{Parameterized Complexity:} Fixed-Parameter Tractable (FPT)
 		      \begin{itemize}
 			      \item Solvable in $O(f(k) \cdot \text{poly}(n))$ time
-			      \item Current best: $O(3.619^k \cdot n^4)$ [Kociumaka \& Pilipczuk, 2010]
+				\item One of the best known FPT algorithms runs in time $O(c^k\cdot\text{poly}(n))$ for some $c<4$.
 		      \end{itemize}
 
 		      \vspace{0.2cm}
 		\item \textbf{Bounds:}
 		      \begin{itemize}
-			      \item Lower: $|S| \geq |E| - |V| + c$ (where $c$ = connected components)
+				\item A commonly used heuristic lower bound is $|E| - |V| + c$ (where $c$ = connected components)
 			      \item Upper: $|S| \leq |V| - 1$
 		      \end{itemize}
 
@@ -171,152 +174,300 @@
 	\end{enumerate}
 \end{frame}
 
+
+
 % ============================================
 % SECTION 2: REDUCTIONS
 % ============================================
 \section{Polynomial-Time Reductions}
 
-\begin{frame}{Polynomial-Time Reductions}
-	\begin{block}{Overview}
+\begin{frame}{Reductions: Why They Matter}
+  \begin{block}{Purpose of Reductions}
+    \begin{itemize}
+      \item Prove \fvs\ is \np-hard by reducing from known \np-complete problems
+      \item Show relationships between different hard problems
+      \item Transfer algorithmic techniques between problem domains
+    \end{itemize}
+  \end{block}
+  
+  \vspace{0.5cm}
+  
+  \begin{columns}[T]
+    \column{0.5\textwidth}
+    \textbf{Key Reductions:}
 		\begin{itemize}
-			\item Explain the role of reductions in proving hardness of \fvs.
-			\item Summarize key reductions (Vertex Cover, 3-SAT) and constructions.
-			\item State implications for algorithmic transfer and complexity.
+			\item \textcolor{blue}{Vertex Cover $\rightarrow$ \fvs}
+			\item \textcolor{blue}{\fvs $\rightarrow$ Vertex Cover}
+			\item 3-SAT $\rightarrow$ \fvs
+			\item \fvs $\rightarrow$ Independent Set problem
 		\end{itemize}
-	\end{block}
+    
+    \column{0.5\textwidth}
+    \textbf{Complexity Implications:}
+    \begin{itemize}
+      \item \fvs\ is \np-complete
+      \item No polynomial algorithm unless P=NP
+      \item Same approximation barriers as Vertex Cover
+    \end{itemize}
+  \end{columns}
 \end{frame}
 
-\begin{frame}{Reductions: Proving Hardness}
-	\begin{block}{Why Reductions Matter}
-		\begin{itemize}
-			\item Prove \fvs\ is \np-complete
-			\item Show equivalence to other hard problems
-			\item Transfer algorithmic techniques
-		\end{itemize}
-	\end{block}
-
-	\vspace{0.3cm}
-
-	\begin{columns}[T]
-		\column{0.5\textwidth}
-		\textbf{Reductions TO \fvs:}
-		\begin{itemize}
-			\item Vertex Cover $\to$ \fvs
-			\item 3-SAT $\to$ \fvs
-		\end{itemize}
-		Proves: \fvs\ is \np-hard
-
-		\column{0.5\textwidth}
-		\textbf{Reductions FROM \fvs:}
-		\begin{itemize}
-			\item \fvs\ $\to$ Odd Cycle Transversal
-			\item \fvs\ $\to$ Independent Set
-		\end{itemize}
-		Shows: Algorithmic connections
-	\end{columns}
+\begin{frame}{Reduction 1: Vertex Cover $\rightarrow$ \fvs}
+  \begin{block}{Vertex Cover (VC) Problem}
+    Find smallest $S \subseteq V$ such that every edge has at least one endpoint in $S$.
+  \end{block}
+  
+  \vspace{0.3cm}
+  
+  \textbf{Construction:} Given VC instance $(G,k)$
+  \begin{enumerate}
+    \item For each edge $e = (u,v) \in E(G)$:
+    \begin{itemize}
+      \item Add new vertex $w_e$
+      \item Form triangle: edges $(u,v)$, $(u,w_e)$, $(v,w_e)$
+    \end{itemize}
+    \item Keep same parameter $k' = k$
+  \end{enumerate}
+  
+  \vspace{0.3cm}
+  
+  \begin{theorem}
+    $G$ has VC of size $\leq k$ $\Leftrightarrow$ $G'$ has \fvs\ of size $\leq k$
+  \end{theorem}
+  
+  \textbf{Time:} $O(|E|)$ (polynomial)
 \end{frame}
 
-\begin{frame}{Reduction 1: Vertex Cover $\to$ \fvs}
-	\begin{block}{Vertex Cover Problem}
-		Given $G = (V,E)$, find minimum $S \subseteq V$ such that every edge has at least one endpoint in $S$.
-	\end{block}
+\begin{frame}{VC $\rightarrow$ \fvs: Example \& Proof}
+  \begin{columns}[T]
+    \column{0.45\textwidth}
+    \textbf{Original Graph $G$:}
+    \begin{center}
+    \begin{tikzpicture}[scale=1.2]
+      \node[circle,draw,fill=blue!30] (1) at (0,1.5) {1};
+      \node[circle,draw] (2) at (2,1.5) {2};
+      \node[circle,draw] (3) at (0,0) {3};
+      \node[circle,draw,fill=blue!30] (4) at (2,0) {4};
+      \draw[thick] (1) -- (2);
+      \draw[thick] (2) -- (4);
+      \draw[thick] (4) -- (3);
+      \draw[thick] (3) -- (1);
+    \end{tikzpicture}
+    \end{center}
+    \small
+    Minimum Vertex Cover: $\{1,4\}$ (size=2)\\
+    Covers edges: (1,2), (2,4), (4,3), (3,1)
+    
+    \column{0.55\textwidth}
+    \textbf{Transformed Graph $G'$:}
+    \begin{center}
+    \begin{tikzpicture}[scale=0.85]
+      \node[circle,draw,fill=blue!30] (1) at (0,2) {1};
+      \node[circle,draw] (2) at (2,2) {2};
+      \node[circle,draw] (3) at (0,0) {3};
+      \node[circle,draw,fill=blue!30] (4) at (2,0) {4};
+      \node[circle,draw,fill=red!20] (w12) at (1,2.8) {$w_{12}$};
+      \node[circle,draw,fill=red!20] (w24) at (2.8,1) {$w_{24}$};
+      \node[circle,draw,fill=red!20] (w43) at (1,-0.8) {$w_{43}$};
+      \node[circle,draw,fill=red!20] (w31) at (-0.8,1) {$w_{31}$};
 
-	\vspace{0.3cm}
-
-	\textbf{Construction:} Given Vertex Cover instance $(G,k)$
-	\begin{enumerate}
-		\item For each edge $e = (u,v) \in E$:
-		      \begin{itemize}
-			      \item Create triangle with vertices $\{u, v, w_e\}$
-			      \item Add edges: $(u,v)$, $(u,w_e)$, $(v,w_e)$
-		      \end{itemize}
-		\item Set parameter: $k' = k$
-	\end{enumerate}
-
-	\vspace{0.2cm}
-
-	\begin{theorem}
-		$G$ has vertex cover of size $\leq k$ $\Leftrightarrow$ $G'$ has \fvs\ of size $\leq k$
-	\end{theorem}
-
-	\textbf{Time:} $O(|E|)$ --- polynomial! \ding{51}
+\draw[thick] (1) -- (2) -- (w12) -- (1);  % Triangle for edge 1-2
+      \draw[thick] (2) -- (4) -- (w24) -- (2);  % Triangle for edge 2-4
+      \draw[thick] (4) -- (3) -- (w43) -- (4);  % Triangle for edge 4-3
+      \draw[thick] (3) -- (1) -- (w31) -- (3);  % Triangle for edge 3-1
+    \end{tikzpicture}
+    \end{center}
+    \small
+    \fvs: $\{1,4\}$ breaks all 4 triangles\\
+    Each triangle = one original edge
+  \end{columns}
+  
+  \vspace{0.3cm}
+	% \begin{proof}[Proof Sketch]
+	%   \begin{itemize}
+	%     \item $\Rightarrow$: VC hits each original edge $\rightarrow$ removes one vertex from each triangle $\rightarrow$ breaks all cycles
+	%     \item $\Leftarrow$: \fvs\ must contain $\ge 1$ vertex from each triangle $\rightarrow$ corresponds to VC in original graph
+	%   \end{itemize}
+	% \end{proof}
 \end{frame}
 
-\begin{frame}{Vertex Cover $\to$ \fvs: Example}
-	\begin{columns}[T]
-		\column{0.45\textwidth}
-		\textbf{Original Graph $G$:}\\[0.3cm]
-		\begin{tikzpicture}[scale=1.2]
-			\node[circle,draw,fill=blue!30] (1) at (0,1.5) {1};
-			\node[circle,draw,fill=blue!30] (2) at (2,1.5) {2};
-			\node[circle,draw] (3) at (0,0) {3};
-			\node[circle,draw] (4) at (2,0) {4};
-			\draw[thick] (1) -- (2);
-			\draw[thick] (2) -- (4);
-			\draw[thick] (4) -- (3);
-			\draw[thick] (3) -- (1);
-		\end{tikzpicture}\\[0.2cm]
-		Edges: (1,2), (2,4), (4,3), (3,1)\\
-		Vertex Cover: $\{1,2\}$, size = 2
+\begin{frame}{Reduction 2: \fvs $\rightarrow$ Vertex Cover}
+  \begin{block}{Reverse Direction}
+    Shows Vertex Cover and \fvs\ are polynomially equivalent
+  \end{block}
+  
+  \vspace{0.3cm}
+  
+  \textbf{Construction:} Given \fvs\ instance $(G,k)$
+  \begin{enumerate}
+    \item Replace each vertex $v \in V$ with triangle $\{v_1, v_2, v_3\}$
+    \item For each edge $(u,v) \in E$, connect triangles with cross edges
+    \item Set $k' = 2|V| + k$
+  \end{enumerate}
+  
+  \vspace{0.3cm}
+  
+  \begin{theorem}
+    $G$ has \fvs\ of size $\leq k$ $\Leftrightarrow$ $G'$ has VC of size $\leq 2|V| + k$
+  \end{theorem}
+  
+  \textbf{Key Insight:} 
+  \begin{itemize}
+	\item Each triangle needs $\ge 2$ vertices in VC
+	\item Triangles with 3 vertices in VC $\leftrightarrow$ vertices in \fvs
+  \end{itemize}
+\end{frame}
 
-		\column{0.55\textwidth}
-		\textbf{Transformed Graph $G'$:}\\[0.3cm]
-		\begin{tikzpicture}[scale=1.0]
-			\node[circle,draw,fill=blue!30] (1) at (0,2) {1};
-			\node[circle,draw,fill=blue!30] (2) at (2,2) {2};
-			\node[circle,draw] (3) at (0,0) {3};
-			\node[circle,draw] (4) at (2,0) {4};
-			\node[circle,draw,fill=red!20] (w12) at (1,2.8) {$w_{12}$};
-			\node[circle,draw,fill=red!20] (w24) at (2.8,1) {$w_{24}$};
-			\node[circle,draw,fill=red!20] (w43) at (1,-0.8) {$w_{43}$};
-			\node[circle,draw,fill=red!20] (w31) at (-0.8,1) {$w_{31}$};
+\begin{frame}{\fvs $\rightarrow$ VC: Visual Example}
+  \begin{columns}[T]
+    \column{0.4\textwidth}
+    \textbf{Original Graph $G$:}
+    \begin{center}
+    \begin{tikzpicture}[scale=1.2]
+      \node[circle,draw] (a) at (90:1.2) {a};
+      \node[circle,draw] (b) at (0:1.2) {b};
+      \node[circle,draw] (c) at (270:1.2) {c};
+      \node[circle,draw,fill=blue!30] (d) at (180:1.2) {d};
+      \draw[thick] (a) -- (b) -- (c) -- (d) -- (a);
+    \end{tikzpicture}
+    \end{center}
+    \small
+    \fvs: $\{d\}$ (size=1)\\
+    Removing $d$ breaks the 4-cycle
+    
+    \column{0.6\textwidth}
+    \textbf{Transformed Graph $G'$ (simplified view):}
+    \begin{center}
+    \begin{tikzpicture}[scale=0.9]
+      % Triangles spaced out
+      \node[circle,draw,fill=blue!30] (a1) at (0,2.5) {$a_1$};
+      \node[circle,draw] (a2) at (-0.6,1.5) {$a_2$};
+      \node[circle,draw,fill=blue!30] (a3) at (0.6,1.5) {$a_3$};
+      \draw[thick] (a1) -- (a2) -- (a3) -- (a1);
+      
+      \node[circle,draw,fill=blue!30] (b1) at (2.5,2.5) {$b_1$};
+      \node[circle,draw] (b2) at (1.9,1.5) {$b_2$};
+      \node[circle,draw,fill=blue!30] (b3) at (3.1,1.5) {$b_3$};
+      \draw[thick] (b1) -- (b2) -- (b3) -- (b1);
+      
+      \node[circle,draw] (d1) at (0,0) {$d_1$};
+      \node[circle,draw,fill=blue!30] (d2) at (-0.6,-1) {$d_2$};
+      \node[circle,draw,fill=blue!30] (d3) at (0.6,-1) {$d_3$};
+      \draw[thick] (d1) -- (d2) -- (d3) -- (d1);
+      
+      \node[circle,draw,fill=blue!30] (c1) at (2.5,0) {$c_1$};
+      \node[circle,draw] (c2) at (1.9,-1) {$c_2$};
+      \node[circle,draw,fill=blue!30] (c3) at (3.1,-1) {$c_3$};
+      \draw[thick] (c1) -- (c2) -- (c3) -- (c1);
+      
+      % Representative cross edges (just show pattern)
+      \draw[dashed,red] (a3) -- (b2);
+      \draw[dashed,red] (b3) -- (c1);
+      \draw[dashed,red] (c2) -- (d3);
+      \draw[dashed,red] (d2) -- (a2);
+      
+      \node[text width=3cm,align=center,font=\scriptsize] at (1.25,-2) {\\Dashed = original edges , Each triangle = one vertex in $G$};
+    \end{tikzpicture}
+    \end{center}
+  \end{columns}
+  
+  \vspace{0.3cm}
+	\begin{minipage}{\textwidth}
+	\small
+		extbf{Vertex Cover in $G'$: is also a FVS}
+	\begin{itemize}
+		\item Each triangle needs $\ge 2$ vertices in VC
+		\item Triangles with 3 vertices in VC $\leftrightarrow$ vertices in \fvs
+	\end{itemize}
+	\end{minipage}
+\end{frame}
 
-			% Triangles
-			\draw[thick] (1) -- (2) -- (w12) -- (1);
-			\draw[thick] (2) -- (4) -- (w24) -- (2);
-			\draw[thick] (4) -- (3) -- (w43) -- (4);
-			\draw[thick] (3) -- (1) -- (w31) -- (3);
-		\end{tikzpicture}\\[0.2cm]
-		4 triangles created\\
-		\fvs: $\{1,2\}$ breaks all triangles, size = 2
-	\end{columns}
+\begin{frame}{Other Important Reductions}
+	\begin{block}{3-SAT $\rightarrow$ \fvs (Standard NP-hardness proof)}
+    \begin{itemize}
+      \item \textbf{Variable gadget:} Triangle $\{x, \neg x, t_x\}$
+      \item \textbf{Clause gadget:} Cycle connecting 3 literal vertices
+	\item \textbf{Reduction:} $\phi$ satisfiable $\leftrightarrow$ $G_\phi$ has \fvs\ of size $n$
+      \item \textbf{Time:} $O(n+m)$ (linear)
+    \end{itemize}
+  \end{block}
+  
+  \vspace{0.5cm}
+  
+  \begin{block}{Quick Examples of Other Reductions}
+    \begin{itemize}
+	% \item \textbf{\fvs $\rightarrow$ Odd Cycle Transversal:} Subdivide edges, preserve parity
+	\item \textbf{Independent Set $\rightarrow$ \fvs:} Via complement graph transformation
+	\item \textbf{Dominating Set $\rightarrow$ \fvs:} On directed line graphs
+    \end{itemize}
+  \end{block}
+\end{frame}
 
-	\vspace{0.3cm}
-	\begin{alertblock}{Correctness}
-		Vertex cover in $G$ $\Leftrightarrow$ \fvs\ in $G'$ (same size!)
+\begin{frame}{Reduction Complexity Summary}
+  \begin{table}
+    \centering
+    \small
+    \begin{tabular}{@{}lll@{}}
+      \toprule
+      \textbf{Reduction} & \textbf{Time} & \textbf{Preserves Solution Size?} \\
+      \midrule
+	Vertex Cover $\rightarrow$ \fvs & $O(|E|)$ & Yes (exactly) \\
+	\fvs $\rightarrow$ Vertex Cover & $O(|V|+|E|)$ & Linear: $k' = 2|V| + k$ \\
+	3-SAT $\rightarrow$ \fvs & $O(n+m)$ & Linear: $k' = n$ (\#variables) \\
+	\fvs $\rightarrow$ Independent Set & $O(|V|+|E|)$ & Within factor 2 \\
+      \bottomrule
+    \end{tabular}
+  \end{table}
+  
+  \vspace{0.8cm}
+  
+  \begin{block}{Key Takeaways}
+    \begin{enumerate}
+      \item Vertex Cover and \fvs\ are \textbf{polynomially equivalent}
+      \item Both are \np-complete (reducible from 3-SAT)
+      \item Reductions preserve approximation hardness
+      \item Algorithmic techniques transfer between problems
+    \end{enumerate}
+  \end{block}
+\end{frame}
+
+\begin{frame}{Implications for Algorithms}
+  \begin{columns}[T]
+    \column{0.5\textwidth}
+    \textbf{What We Gain:}
+    \begin{itemize}
+      \item \fvs\ inherits Vertex Cover's:
+      \begin{itemize}
+        \item 2-approximation algorithm
+        \item Kernelization results
+        \item FPT algorithms (parameter $k$)
+        \item Branching techniques
+      \end{itemize}
+      \item Can use SAT solvers via 3-SAT reduction
+    \end{itemize}
+    
+    \column{0.5\textwidth}
+    \textbf{Limitations:}
+    \begin{itemize}
+      \item No polynomial algorithm (unless P=NP)
+      \item Hard to approximate better than 2 (under UGC)
+      \item W[1]-hard for some parameters
+    \end{itemize}
+  \end{columns}
+  
+  \vspace{0.8cm}
+  
+	\begin{alertblock}{The Big Picture}
+		Reductions create a network of equivalent hard problems. Solving one efficiently would solve them all (unlikely under $\mathrm{P} \neq \mathrm{NP}$).
 	\end{alertblock}
 \end{frame}
 
-\begin{frame}{Reduction Summary}
-	\begin{table}
-		\centering
-		\small
-		\begin{tabular}{@{}llll@{}}
-			\toprule
-			\textbf{From} & \textbf{To}      & \textbf{Time} & \textbf{Key Idea}            \\ \midrule
-			Vertex Cover  & \fvs             & $O(|E|)$      & Replace edges with triangles \\
-			3-SAT         & \fvs             & $O(n+m)$      & Variable/clause gadgets      \\
-			\fvs          & Odd Cycle Trans. & $O(|V|+|E|)$  & Subdivide edges              \\
-			\fvs          & Independent Set  & $O(|V|+|E|)$  & Complement problem           \\ \bottomrule
-		\end{tabular}
-	\end{table}
 
-	\vspace{0.5cm}
 
-	\begin{block}{Implications}
-		\begin{itemize}
-			\item \fvs\ is as hard as other canonical \np-complete problems
-			\item Techniques for one problem transfer to others
-			\item Approximation hardness results transfer
-			\item Establishes \fvs\ as fundamental in complexity theory
-		\end{itemize}
-	\end{block}
-\end{frame}
 
-% ============================================
-% SECTION 3: ALGORITHMS
-% ============================================
-\section{Algorithm Survey}
+
+
+
 
 \begin{frame}{Algorithm Survey}
 	\begin{block}{Overview}

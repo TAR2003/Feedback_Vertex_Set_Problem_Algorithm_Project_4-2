@@ -1,4 +1,4 @@
-# Feedback Vertex Set - Implementation & Experiments (C++) ✅
+# Feedback Vertex Set - Implementation & Experiments (C++)
 
 This repository contains a concise, easy-to-run C++ implementation of multiple algorithms for the Feedback Vertex Set (FVS) problem, dataset examples, and tooling to measure runtime and memory. The goal is accurate time and space measurements and easy reproducibility.
 
@@ -6,7 +6,7 @@ This repository contains a concise, easy-to-run C++ implementation of multiple a
 
 ## Implemented algorithms
 
-- `exact` (branching exact solver up to a given k): recursive branching on found cycles; decides if an FVS of size ≤ k exists.
+- `exact` (branching exact solver up to a given k): recursive branching on found cycles; decides if an FVS of size <= k exists.
 - `twoapprox` (2-approximation): find a cycle, remove two vertices on that cycle, repeat.
 - `greedy` (max-degree heuristic): repeatedly remove the highest-degree vertex until graph is acyclic.
 - `ga` (genetic algorithm): randomized metaheuristic producing high-quality solutions for larger graphs.
@@ -84,7 +84,7 @@ Notes on measurement accuracy:
 
 ---
 
-## How to measure performance (recommended protocol) ⚙️
+## How to measure performance (recommended protocol)
 
 1. For randomized algorithms (`ga`) run several repeats (e.g., 10) with different seeds to compute mean and standard deviation. Use the `--ga-pop` and `--ga-gen` options to tune runtime/quality.
 2. For deterministic algorithms run once per instance but use multiple instances to get robust statistics.
@@ -104,4 +104,4 @@ Tip: scripts and the CSV output are set up so you can import into Pandas/R for p
 
 ---
 
-If you want, I can: add more graph generators, add a driver to run a whole benchmark suite, or implement a smarter FPT iterative compression routine. Which would you like next? 🚀
+If you want, I can: add more graph generators, add a driver to run a whole benchmark suite, or implement a smarter FPT iterative compression routine. Which would you like next?
