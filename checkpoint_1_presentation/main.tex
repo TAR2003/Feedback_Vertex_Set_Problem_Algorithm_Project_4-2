@@ -55,6 +55,16 @@
 % ============================================
 \section{Problem Definition}
 
+\begin{frame}{Problem Definition}
+  \begin{block}{Overview}
+    \begin{itemize}
+      \item Define the Feedback Vertex Set (\fvs) problem and formal statement.
+      \item Provide visual examples and intuition (cycles vs. forests).
+      \item Highlight key properties: NP-completeness and FPT results.
+    \end{itemize}
+  \end{block}
+\end{frame}
+
 \begin{frame}{What is the Feedback Vertex Set Problem?}
 	\begin{definition}[Feedback Vertex Set]
 		Given an undirected graph $G = (V, E)$ and an integer $k$, find a set $S \subseteq V$ with $|S| \leq k$ such that $G - S$ is \textbf{acyclic} (a forest).
@@ -165,6 +175,16 @@
 % SECTION 2: REDUCTIONS
 % ============================================
 \section{Polynomial-Time Reductions}
+
+\begin{frame}{Polynomial-Time Reductions}
+  \begin{block}{Overview}
+    \begin{itemize}
+      \item Explain the role of reductions in proving hardness of \fvs.
+      \item Summarize key reductions (Vertex Cover, 3-SAT) and constructions.
+      \item State implications for algorithmic transfer and complexity.
+    \end{itemize}
+  \end{block}
+\end{frame}
 
 \begin{frame}{Reductions: Proving Hardness}
 	\begin{block}{Why Reductions Matter}
@@ -297,6 +317,16 @@
 % SECTION 3: ALGORITHMS
 % ============================================
 \section{Algorithm Survey}
+
+\begin{frame}{Algorithm Survey}
+  \begin{block}{Overview}
+    \begin{itemize}
+      \item Classify algorithms: Exact, Approximation, Randomized, Heuristic, Metaheuristic.
+      \item Present representative methods and their time/quality trade-offs.
+      \item Highlight algorithms selected for implementation and evaluation.
+    \end{itemize}
+  \end{block}
+\end{frame}
 
 \begin{frame}{Algorithm Categories}
 	We survey algorithms across five categories:
@@ -495,6 +525,16 @@
 % ============================================
 \section{Implementation Plan}
 
+\begin{frame}{Implementation Plan}
+  \begin{block}{Overview}
+    \begin{itemize}
+      \item Describe selected algorithms to implement (Iterative Compression, Genetic Algorithm).
+      \item Outline implementation details, complexity, and engineering considerations.
+      \item State expected deliverables and milestones for development.
+    \end{itemize}
+  \end{block}
+\end{frame}
+
 \begin{frame}{Selected Algorithms for Implementation}
 	We will implement \textbf{two algorithms} from different categories:
 
@@ -575,6 +615,16 @@
 % SECTION 5: EXPERIMENTAL DESIGN
 % ============================================
 \section{Experimental Design}
+
+\begin{frame}{Experimental Design}
+  \begin{block}{Overview}
+    \begin{itemize}
+      \item Define datasets (synthetic + real-world) and instance sizes.
+      \item Specify performance metrics: solution quality, runtime, robustness.
+      \item Describe protocol: runs per instance, timeouts, reproducibility.
+    \end{itemize}
+  \end{block}
+\end{frame}
 
 \begin{frame}{Dataset Design}
 	\begin{table}
@@ -774,6 +824,16 @@
 % SECTION 6: APPLICATIONS
 % ============================================
 \section{Applications}
+
+\begin{frame}{Applications}
+  \begin{block}{Overview}
+    \begin{itemize}
+      \item Survey theoretical and practical applications of \fvs.
+      \item Provide domain examples: OS deadlocks, VLSI testing, biology, social networks, finance.
+      \item Discuss impact and real-world relevance of solutions.
+    \end{itemize}
+  \end{block}
+\end{frame}
 
 \begin{frame}{Applications Overview}
 	\begin{columns}[T]
@@ -1166,6 +1226,16 @@
 % ============================================
 \section{Potential Research Directions}
 
+\begin{frame}{Potential Research Directions}
+  \begin{block}{Overview}
+    \begin{itemize}
+      \item Highlight open theoretical problems (approximation gap, faster FPT, kernels).
+      \item Point out practical directions: ML integration, dynamic and distributed algorithms.
+      \item Suggest possible contributions from this project (hybrids, benchmarks).
+    \end{itemize}
+  \end{block}
+\end{frame}
+
 \begin{frame}{Open Theoretical Questions}
 	\begin{enumerate}
 		\item \textbf{Approximation Gap:}
@@ -1277,6 +1347,16 @@
 % CONCLUSION
 % ============================================
 \section{Conclusion}
+
+\begin{frame}{Conclusion}
+  \begin{block}{Overview}
+    \begin{itemize}
+      \item Recap the \fvs\/problem, complexity, and algorithmic landscape.
+      \item Summarize chosen implementation plan and experimental goals.
+      \item State next steps: implement, run experiments, publish results.
+    \end{itemize}
+  \end{block}
+\end{frame}
 
 \begin{frame}{Summary}
 	\begin{block}{Problem}

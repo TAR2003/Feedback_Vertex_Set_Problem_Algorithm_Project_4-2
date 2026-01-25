@@ -482,6 +482,7 @@ INPUT .\main.toc
 INPUT .\main.toc
 INPUT main.toc
 INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\fonts\tfm\public\cm\cmss12.tfm
+INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\fonts\tfm\public\cm\cmcsc10.tfm
 INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\fonts\tfm\public\cm\cmmi10.tfm
 INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\fonts\tfm\public\cm\cmmi8.tfm
 INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\fonts\tfm\public\cm\cmmi6.tfm
@@ -525,7 +526,6 @@ INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\fonts\tfm\public\amsfonts\sy
 INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\fonts\tfm\public\sansmathaccent\mathkerncmssi10.tfm
 INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\fonts\tfm\public\sansmathaccent\mathkerncmssi8.tfm
 INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\fonts\tfm\public\sansmathaccent\mathkerncmssi8.tfm
-INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\fonts\tfm\public\cm\cmcsc10.tfm
 INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\fonts\tfm\public\cm\cmssi10.tfm
 INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\fonts\tfm\public\cm\cmmi12.tfm
 INPUT C:\Users\TAWKIR\AppData\Local\Programs\MiKTeX\fonts\tfm\public\cm\cmsy10.tfm

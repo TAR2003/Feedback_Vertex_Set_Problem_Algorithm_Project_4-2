@@ -1,5 +1,5 @@
 # Fdb version 4
-["pdflatex"] 1769280253.27614 "c:/Users/TAWKIR/Documents/GitHub/Feedback_Vertex_Set_Problem_Algorithm_Project_4-2/checkpoint_1_presentation/main.tex" "main.pdf" "main" 1769280257.23311 0
+["pdflatex"] 1769361234.45457 "c:/Users/TAWKIR/Documents/GitHub/Feedback_Vertex_Set_Problem_Algorithm_Project_4-2/checkpoint_1_presentation/main.tex" "main.pdf" "main" 1769361238.7378 0
   "C:/Users/TAWKIR/AppData/Local/MiKTeX/fonts/map/pdftex/pdftex.map" 1765474825 229457 49ca68e6665cc8defdcf9a7c42fbab78 ""
   "C:/Users/TAWKIR/AppData/Local/MiKTeX/fonts/pk/ljfour/jknappen/ec/dpi600/tcss1000.pk" 1747417457 10628 75be3e91fe95c3bea36e5815c07520f2 ""
   "C:/Users/TAWKIR/AppData/Local/MiKTeX/fonts/pk/ljfour/jknappen/ec/dpi600/tcss1095.pk" 1747383216 11640 01832fc1fef0296d9eec1596ed7ce325 ""
@@ -299,13 +299,13 @@
   "C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/tex/latex/translator/translator.sty" 1622471510 8765 56d370785f0143111ff9898b5adfe08e ""
   "C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/tex/latex/url/url.sty" 1388490452 12796 8edb7d69a20b857904dd0ea757c14ec9 ""
   "C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/tex/latex/xcolor/xcolor.sty" 1729265222 55384 b454dec21c2d9f45ec0b793f0995b992 ""
-  "c:/Users/TAWKIR/Documents/GitHub/Feedback_Vertex_Set_Problem_Algorithm_Project_4-2/checkpoint_1_presentation/main.tex" 1769280252 44990 479fa4538d5b8ebe1d3505fa0534b5b3 ""
-  "main.aux" 1769280256 8478 13a1e649dc81f2192b8ffa4384ff5334 "pdflatex"
-  "main.nav" 1769280256 5621 6fce98a7982bd79ecc5bfd913e7ffd55 "pdflatex"
-  "main.out" 1769280256 1191 679343e544ecfe737ceefc6f3807390c "pdflatex"
-  "main.tex" 1769280252 44990 479fa4538d5b8ebe1d3505fa0534b5b3 ""
-  "main.toc" 1769280256 443 c37e11280db29693ab0da15c08584d7c "pdflatex"
-  "main.vrb" 1769280255 598 d3dd4c4332884d77b2465999cf6eb661 "pdflatex"
+  "c:/Users/TAWKIR/Documents/GitHub/Feedback_Vertex_Set_Problem_Algorithm_Project_4-2/checkpoint_1_presentation/main.tex" 1769361229 47983 fd0983947c22c3207f161c18c3d46d7d ""
+  "main.aux" 1769361238 9504 6e018fb6ebc5253f70160fdbaa62471c "pdflatex"
+  "main.nav" 1769361238 6359 0257bd2530f1d613982b919668ce316d "pdflatex"
+  "main.out" 1769361238 1191 679343e544ecfe737ceefc6f3807390c "pdflatex"
+  "main.tex" 1769361229 47983 fd0983947c22c3207f161c18c3d46d7d ""
+  "main.toc" 1769361238 443 b8f77defb786303a8971e97d53bd12ff "pdflatex"
+  "main.vrb" 1769361236 598 d3dd4c4332884d77b2465999cf6eb661 "pdflatex"
   (generated)
   "main.aux"
   "main.log"
