@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.27 (MiKTeX 25.4) (preloaded format=pdflatex 2025.9.6)  25 JAN 2026 23:13
+This is pdfTeX, Version 3.141592653-2.6-1.40.27 (MiKTeX 25.4) (preloaded format=pdflatex 2025.9.6)  26 JAN 2026 01:39
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -989,6 +989,10 @@ Overfull \vbox (33.25441pt too high) detected at line 288
 [12
 
 ]
+Overfull \vbox (84.80797pt too high) detected at line 411
+ []
+
+
 
 [13
 
@@ -997,13 +1001,6 @@ Overfull \vbox (33.25441pt too high) detected at line 288
 [14
 
 ]
-\openout4 = `main.vrb'.
-
- (main.vrb)
-Overfull \vbox (37.52542pt too high) detected at line 398
- []
-
-
 
 [15
 
@@ -1012,18 +1009,6 @@ Overfull \vbox (37.52542pt too high) detected at line 398
 [16
 
 ]
-\openout4 = `main.vrb'.
-
- (main.vrb
-
-LaTeX Font Warning: Font shape `OT1/cmss/m/scit' undefined
-(Font)              using `OT1/cmss/m/sc' instead on input line 18.
-
-)
-Overfull \vbox (12.96379pt too high) detected at line 446
- []
-
-
 
 [17
 
@@ -1032,21 +1017,19 @@ Overfull \vbox (12.96379pt too high) detected at line 446
 [18
 
 ]
-Package pgfplots info on input line 521: Using 'lua backend=false' for axis: ymode=log unsupported (yet).
-
-Overfull \vbox (28.67148pt too high) detected at line 521
- []
-
-
 
 [19
 
 ]
+Overfull \vbox (71.70012pt too high) detected at line 705
+ []
+
+
 
 [20
 
 ]
-Overfull \vbox (71.70012pt too high) detected at line 564
+Overfull \vbox (16.38142pt too high) detected at line 753
  []
 
 
@@ -1054,10 +1037,6 @@ Overfull \vbox (71.70012pt too high) detected at line 564
 [21
 
 ]
-Overfull \vbox (16.38142pt too high) detected at line 612
- []
-
-
 
 [22
 
@@ -1082,16 +1061,16 @@ Overfull \vbox (16.38142pt too high) detected at line 612
 [27
 
 ]
+Package pgfplots info on input line 962: Using 'lua backend=false' for axis: ymode=log unsupported (yet).
+
+Overfull \vbox (50.78712pt too high) detected at line 962
+ []
+
+
 
 [28
 
 ]
-Package pgfplots info on input line 821: Using 'lua backend=false' for axis: ymode=log unsupported (yet).
-
-Overfull \vbox (50.78712pt too high) detected at line 821
- []
-
-
 
 [29
 
@@ -1104,7 +1083,7 @@ Overfull \vbox (50.78712pt too high) detected at line 821
 [31
 
 ]
-Overfull \vbox (3.01062pt too high) detected at line 935
+Overfull \vbox (14.95888pt too high) detected at line 1126
  []
 
 
@@ -1112,108 +1091,16 @@ Overfull \vbox (3.01062pt too high) detected at line 935
 [32
 
 ]
-Overfull \vbox (54.9398pt too high) detected at line 994
- []
-
-
 
 [33
 
 ]
-Overfull \vbox (22.43382pt too high) detected at line 1048
- []
-
-
 
 [34
 
 ]
-Overfull \vbox (36.21063pt too high) detected at line 1104
- []
-
-
 
 [35
-
-]
-Overfull \vbox (35.3398pt too high) detected at line 1158
- []
-
-
-
-[36
-
-]
-Overfull \vbox (19.98143pt too high) detected at line 1188
- []
-
-
-
-[37
-
-]
-
-[38
-
-]
-
-[39
-
-]
-
-[40
-
-]
-
-[41
-
-]
-Overfull \vbox (21.15297pt too high) detected at line 1344
- []
-
-
-
-[42
-
-]
-
-[43
-
-]
-Overfull \vbox (72.69609pt too high) detected at line 1390
- []
-
-
-
-[44
-
-]
-Overfull \vbox (15.72537pt too high) detected at line 1419
- []
-
-
-
-[45
-
-]
-
-[46
-
-]
-
-[47
-
-]
-
-[48
-
-]
-Overfull \vbox (5.2695pt too high) detected at line 1508
- []
-
-
-
-[49
 
 ]
 \tf@nav=\write6
@@ -1235,20 +1122,20 @@ L3 programming layer <2025-08-13>
 LaTeX Font Warning: Some font shapes were not available, defaults substituted.
 
 Package rerunfilecheck Info: File `main.out' has not changed.
-(rerunfilecheck)             Checksum: 679343E544ECFE737CEEFC6F3807390C;1191.
+(rerunfilecheck)             Checksum: 2CF56337CF40856C68A20E32837BBC62;1017.
  ) 
 Here is how much of TeX's memory you used:
- 39721 strings out of 468133
- 969068 string characters out of 5430229
- 1495490 words of memory out of 5000000
- 67494 multiletter control sequences out of 15000+600000
- 645987 words of font info for 106 fonts, out of 8000000 for 9000
+ 39569 strings out of 468133
+ 966665 string characters out of 5430229
+ 1479051 words of memory out of 5000000
+ 67378 multiletter control sequences out of 15000+600000
+ 645054 words of font info for 104 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 128i,18n,123p,830b,2275s stack positions out of 10000i,1000n,20000p,200000b,200000s
- <C:\Users\TAWKIR\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\tcsx1000.pk> <C:\Users\TAWKIR\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\tcss1000.pk> <C:\Users\TAWKIR\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\tcss1095.pk><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmcsc10.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi10.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi5.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi6.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi8.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmss10.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmss12.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmss17.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmss8.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmss9.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmssbx10.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmssi10.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmssi8.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmsy10.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmsy6.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmsy8.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/urw/zapfding/uzdr.pfb>
-Output written on main.pdf (49 pages, 665835 bytes).
+ 128i,18n,123p,830b,2254s stack positions out of 10000i,1000n,20000p,200000b,200000s
+<C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmcsc10.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi10.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi5.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi6.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi8.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi9.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmss10.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmss12.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmss8.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmss9.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmssbx10.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmssi10.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmssi8.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmssi9.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmsy10.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmsy5.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmsy6.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmsy8.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmsy9.pfb><C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/type1/urw/zapfding/uzdr.pfb>
+Output written on main.pdf (35 pages, 549709 bytes).
 PDF statistics:
- 2041 PDF objects out of 2073 (max. 8388607)
- 108 named destinations out of 1000 (max. 500000)
- 1417 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 1473 PDF objects out of 1728 (max. 8388607)
+ 78 named destinations out of 1000 (max. 500000)
+ 1173 words of extra memory for PDF output out of 10000 (max. 10000000)
 

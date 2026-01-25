@@ -328,197 +328,338 @@
   \end{block}
 \end{frame}
 
-\begin{frame}{Algorithm Categories}
-	We survey algorithms across five categories:
+% ============================================
+% NEW COMPREHENSIVE ALGORITHM SLIDES
+% ============================================
 
-	\begin{enumerate}
-		\item \textbf{Exact Exponential:} Guarantee optimal solution
-		\item \textbf{Approximation:} Polynomial time, bounded quality
-		\item \textbf{Randomized:} Probabilistic guarantees
-		\item \textbf{Heuristic:} Fast, no guarantees
-		\item \textbf{Metaheuristic:} Advanced search strategies
-	\end{enumerate}
-
+\begin{frame}{Five Major Categories of Solution Approaches}
+	\begin{columns}[T]
+		\column{0.48\textwidth}
+		
+		% Box 1: Exact Exponential
+		\begin{block}{1. Exact Exponential}
+			\scriptsize
+			\begin{itemize}
+				\item Naive Brute Force
+				\item DP on Subsets
+				\item Iterative Compression
+				\item Bounded Search Tree
+				\item Current Best FPT
+				\item Inclusion-Exclusion DP
+			\end{itemize}
+		\end{block}
+		
+		\vspace{0.2cm}
+		
+		% Box 2: Approximation
+		\begin{block}{2. Approximation}
+			\scriptsize
+			\begin{itemize}
+				\item 2-Approximation (VC-based)
+				\item Log-Approximation
+				\item LP Rounding
+				\item Primal-Dual
+				\item Local Ratio
+			\end{itemize}
+		\end{block}
+		
+		\vspace{0.2cm}
+		
+		% Box 3: Randomized
+		\begin{block}{3. Randomized}
+			\scriptsize
+			\begin{itemize}
+				\item Random Sampling
+				\item Randomized Rounding
+				\item Color Coding
+			\end{itemize}
+		\end{block}
+		
+		\column{0.48\textwidth}
+		
+		% Box 4: Heuristic
+		\begin{block}{4. Heuristic}
+			\scriptsize
+			\begin{itemize}
+				\item Greedy Vertex Selection
+				\item Cycle-Based Greedy
+				\item Maximum Degree Heuristic
+				\item Core-Periphery Decomposition
+				\item Reduction Rules + Greedy
+			\end{itemize}
+		\end{block}
+		
+		\vspace{0.2cm}
+		
+		% Box 5: Metaheuristic
+		\begin{block}{5. Metaheuristic}
+			\scriptsize
+			\begin{itemize}
+				\item Genetic Algorithm
+				\item Simulated Annealing
+				\item Ant Colony Optimization
+				\item Tabu Search
+				\item Particle Swarm Optimization
+			\end{itemize}
+		\end{block}
+		
+	\end{columns}
+	
 	\vspace{0.3cm}
-
-	\begin{block}{Our Focus}
-		Comprehensive survey of state-of-the-art algorithms for each category, with emphasis on implementability and practical performance.
-	\end{block}
+	\centering
+	\textbf{Total: 24+ algorithms surveyed across all categories}
 \end{frame}
 
-\begin{frame}{Exact Exponential Algorithms}
-	\begin{table}
-		\scriptsize
-		\begin{tabular}{@{}lllll@{}}
-			\toprule
-			\textbf{Algorithm}    & \textbf{Time}          & \textbf{Space} & \textbf{Year} & \textbf{Key Feature}  \\ \midrule
-			Brute Force           & $O(2^n \cdot n^3)$     & $O(n^2)$       & ---           & Enumerate all subsets \\
-			DP on Subsets         & $O(2^n \cdot n^2)$     & $O(2^n)$       & ---           & Avoid recomputation   \\
-			Iterative Compression & $O(5^k \cdot kn^2)$    & $O(n^2)$       & 2004          & FPT breakthrough      \\
-			Bounded Search Tree   & $O(4^k \cdot n^2)$     & $O(n^2)$       & 2006          & Improved branching    \\
-			\textbf{Current Best} & $O(3.619^k \cdot n^4)$ & $O(n^2)$       & 2010          & State-of-art FPT      \\
-			Inclusion-Exclusion   & $O(2^n \cdot n)$       & $O(2^n)$       & ---           & Fast for small $n$    \\ \bottomrule
-		\end{tabular}
-	\end{table}
+% ============================================
+% Category 1: Exact Exponential Algorithms
+% ============================================
 
-	\vspace{0.3cm}
-
-	\begin{block}{Observations}
-		\begin{itemize}
-			\item FPT algorithms practical for small $k$ (up to $k \approx 50$)
-			\item Exponential in $n$ only feasible for $n \leq 20$
-			\item Significant improvement: $5^k \to 4^k \to 3.619^k$
-		\end{itemize}
-	\end{block}
-\end{frame}
-
-\begin{frame}[fragile]{Iterative Compression Algorithm}
-	\begin{block}{Core Idea}
-		Given FVS of size $k+1$, compress to size $k$
-	\end{block}
-
-	\begin{algorithmic}[1]
-		\Procedure{IterativeCompression}{$G, k$}
-		\State Order vertices: $v_1, v_2, \ldots, v_n$
-		\State $X_1 \gets \{v_1\}$
-		\For{$i = 2$ to $n$}
-		\State $X_i \gets X_{i-1} \cup \{v_i\}$
-		\If{$|X_i| > k$}
-		\State $X_i \gets$ \Call{Compress}{$G[\{v_1,\ldots,v_i\}], X_i, k$}
-		\If{$X_i = $ FAIL}
-		\State \Return ``NO''
-		\EndIf
-		\EndIf
-		\EndFor
-		\State \Return $X_n$
-		\EndProcedure
-	\end{algorithmic}
-
-	\textbf{Complexity:} $O(5^k \cdot kn^2)$ --- FPT!
-\end{frame}
-
-\begin{frame}{Approximation Algorithms}
-	\begin{table}
-		\scriptsize
-		\begin{tabular}{@{}llllll@{}}
-			\toprule
-			\textbf{Algorithm}  & \textbf{Time}   & \textbf{Ratio} & \textbf{Year} & \textbf{Type}        \\ \midrule
-			2-Approx (VC-based) & $O(n^2)$        & 2              & 1999          & Cycle-based          \\
-			LP Rounding         & $O(n^{3.5})$    & 2              & 2006          & LP relaxation        \\
-			Primal-Dual         & $O(n^2)$        & 2              & 2011          & Combinatorial        \\
-			Local Ratio         & $O(n^2)$        & 2              & 2004          & Weight decomposition \\
-			Log-Approx (Tourn.) & $O(n^2 \log n)$ & $O(\log n)$    & 1998          & Tournaments only     \\ \bottomrule
-		\end{tabular}
-	\end{table}
-
-	\vspace{0.3cm}
-
-	\begin{block}{Key Results}
-		\begin{itemize}
-			\item Best known: 2-approximation for general graphs
-			\item \textbf{Open question:} Does $(2-\varepsilon)$-approximation exist?
-			\item Under Unique Games Conjecture: 2 might be optimal
-		\end{itemize}
-	\end{block}
-\end{frame}
-
-\begin{frame}[fragile]{2-Approximation Algorithm}
-	\begin{algorithmic}[1]
-		\Procedure{TwoApproximation}{$G$}
-		\State $S \gets \emptyset$
-		\While{$G$ has a cycle $C$}
-		\State Find any cycle $C$ in $G$
-		\State Pick any edge $(u,v) \in C$
-		\State $S \gets S \cup \{u, v\}$
-		\State Remove $u$ and $v$ from $G$
-		\EndWhile
-		\State \Return $S$
-		\EndProcedure
-	\end{algorithmic}
-
-	\vspace{0.3cm}
-
-	\begin{theorem}[Approximation Guarantee]
-		$|S| \leq 2 \cdot \opt$
-	\end{theorem}
-
-	\textbf{Proof:} Each cycle needs $\geq 1$ vertex in $\opt$. We add $\leq 2$ vertices per cycle. Therefore $|S| \leq 2|\opt|$.
-\end{frame}
-
-\begin{frame}{Heuristic \& Metaheuristic Algorithms}
+\begin{frame}{Category 1: Exact Exponential Algorithms}
 	\begin{table}
 		\tiny
-		\begin{tabular}{@{}llllp{4cm}@{}}
+		\begin{tabular}{@{}p{3.2cm}p{5cm}p{2.5cm}p{2cm}@{}}
 			\toprule
-			\textbf{Algorithm}  & \textbf{Time}            & \textbf{Guarantee} & \textbf{Category} & \textbf{Key Feature}            \\ \midrule
-			Greedy Max Degree   & $O(n^2 \log n)$          & None               & Heuristic         & Remove highest degree vertex    \\
-			Cycle-Based Greedy  & $O(n^3)$                 & None               & Heuristic         & Find cycles, remove best vertex \\
-			Reduction + Greedy  & $O(n^2)$                 & None               & Heuristic         & Apply reduction rules first     \\
+			\textbf{Algorithm} & \textbf{Description} & \textbf{Complexity} & \textbf{Solution Quality} \\ 
 			\midrule
-			Genetic Algorithm   & $O(g \cdot p \cdot n^2)$ & None               & Metaheuristic     & Population evolution            \\
-			Simulated Annealing & $O(i \cdot n^2)$         & None               & Metaheuristic     & Probabilistic hill climbing     \\
-			Ant Colony Opt.     & $O(a \cdot i \cdot n^2)$ & None               & Metaheuristic     & Pheromone-based search          \\
-			Tabu Search         & $O(i \cdot n^2)$         & None               & Metaheuristic     & Memory-based local search       \\
-			Particle Swarm      & $O(p \cdot i \cdot n^2)$ & None               & Metaheuristic     & Swarm intelligence              \\ \bottomrule
+			
+			\textbf{Naive Brute Force} & 
+			Enumerate all $2^n$ subsets and check if each forms a valid FVS using cycle detection & 
+			$O(2^n \cdot n^3)$ & 
+			Optimal \\
+			\midrule
+			
+			\textbf{DP on Subsets} & 
+			Dynamic programming to avoid recomputing subproblems; for each subset, determine if it's a valid FVS & 
+			$O(2^n \cdot n^2)$ & 
+			Optimal \\
+			\midrule
+			
+			\textbf{Iterative Compression} & 
+			FPT algorithm that assumes solution of size $k+1$ and compresses to size $k$ (Dehne et al., 2004) & 
+			$O(5^k \cdot kn^2)$ & 
+			Optimal \\
+			\midrule
+			
+			\textbf{Bounded Search Tree} & 
+			Use branching rules to create search tree with depth $\leq k$; improved branching factor (Chen et al., 2006) & 
+			$O(4^k \cdot n^2)$ & 
+			Optimal \\
+			\midrule
+			
+			\textbf{Current Best FPT} & 
+			State-of-art using crown decomposition, sunflower lemma, refined branching (Kociumaka \& Pilipczuk, 2010) & 
+			$O(3.619^k \cdot n^4)$ & 
+			Optimal \\
+			\midrule
+			
+			\textbf{Inclusion-Exclusion DP} & 
+			Uses inclusion-exclusion principle with DP for counting; fast for very small graphs ($n \leq 25$) & 
+			$O(2^n \cdot n)$ & 
+			Optimal \\
+			
+			\bottomrule
 		\end{tabular}
 	\end{table}
-
+	
 	\vspace{0.2cm}
+	\footnotesize
+	\textbf{Key Insight:} FPT algorithms practical for $k \leq 50$; exponential in $n$ feasible only for $n \leq 20$
+\end{frame}
 
-	\begin{alertblock}{Practical Performance}
+% ============================================
+% Category 2: Approximation Algorithms
+% ============================================
+
+\begin{frame}{Category 2: Approximation Algorithms}
+	\begin{table}
+		\tiny
+		\begin{tabular}{@{}p{3.5cm}p{5.5cm}p{2cm}p{1.8cm}@{}}
+			\toprule
+			\textbf{Algorithm} & \textbf{Description} & \textbf{Complexity} & \textbf{Solution Quality} \\ 
+			\midrule
+			
+			\textbf{2-Approximation (VC-based)} & 
+			Reduce FVS to Vertex Cover; iteratively find cycles and remove both endpoints of any edge (Bafna et al., 1999) & 
+			$O(n^2)$ & 
+			2-approx \\
+			\midrule
+			
+			\textbf{Log-Approximation} & 
+			For tournament graphs using hitting set techniques; specific to directed complete graphs & 
+			$O(n^2 \log n)$ & 
+			$O(\log n)$-approx \\
+			\midrule
+			
+			\textbf{LP Rounding} & 
+			Formulate as ILP, solve LP relaxation, then round fractional solution (deterministic or randomized) & 
+			$O(n^{3.5})$ & 
+			2-approx \\
+			\midrule
+			
+			\textbf{Primal-Dual} & 
+			Maintain primal and dual solutions simultaneously; combinatorial approach without LP solver & 
+			$O(n^2)$ & 
+			2-approx \\
+			\midrule
+			
+			\textbf{Local Ratio} & 
+			Decompose weight function and apply local decisions; works well with weighted vertices & 
+			$O(n^2)$ & 
+			2-approx \\
+			
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	\vspace{0.2cm}
+	\footnotesize
+	\textbf{Open Question:} Does $(2-\varepsilon)$-approximation exist? Under UGC, 2 might be optimal.
+\end{frame}
+
+% ============================================
+% Category 3: Randomized Algorithms
+% ============================================
+
+\begin{frame}{Category 3: Randomized Algorithms}
+	\begin{table}
+		\tiny
+		\begin{tabular}{@{}p{3.5cm}p{6cm}p{2cm}p{1.8cm}@{}}
+			\toprule
+			\textbf{Algorithm} & \textbf{Description} & \textbf{Complexity} & \textbf{Solution Quality} \\ 
+			\midrule
+			
+			\textbf{Random Sampling} & 
+			Randomly sample vertices in random order; if vertex in cycle, include it in FVS; Monte Carlo approach & 
+			$O(n^2)$ per trial & 
+			Expected $O(\log n)$-approx \\
+			\midrule
+			
+			\textbf{Randomized Rounding} & 
+			Solve LP relaxation, then randomly include vertex $v$ with probability $x_v^*$; LP-based randomization & 
+			$O(n^3)$ & 
+			Expected 2-approx \\
+			\midrule
+			
+			\textbf{Color Coding} & 
+			Randomly color vertices and use DP to find colorful solutions; for bounded treewidth graphs & 
+			$O(2^{O(k)} \cdot n)$ & 
+			Optimal w.h.p. \\
+			
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	\vspace{0.3cm}
+	\footnotesize
+	\begin{block}{Key Advantages}
 		\begin{itemize}
-			\item Often find good solutions quickly
-			\item Essential for large instances ($n > 1000$)
-			\item Quality varies significantly across graph types
+			\item Probabilistic guarantees with high probability (w.h.p.)
+			\item Can be derandomized using method of conditional expectations
+			\item Excellent for sparse graphs and bounded treewidth structures
 		\end{itemize}
-	\end{alertblock}
+	\end{block}
 \end{frame}
 
-\begin{frame}{Algorithm Landscape Summary}
-	\begin{figure}
-		\centering
-		\begin{tikzpicture}[scale=0.9]
-			\begin{axis}[
-					xlabel={Problem Size (vertices)},
-					ylabel={Runtime (seconds, log scale)},
-					ymode=log,
-					xmin=0, xmax=1100,
-					ymin=0.001, ymax=10000,
-					legend pos=north west,
-					grid=major,
-					width=0.9\textwidth,
-					height=0.6\textwidth
-				]
+% ============================================
+% Category 4: Heuristic Algorithms
+% ============================================
 
-				\addplot[color=red,thick,mark=*] coordinates {
-						(10,0.001) (20,0.1) (30,10) (40,1000)
-					};
-				\addlegendentry{Exact Exponential}
-
-				\addplot[color=blue,thick,mark=square*] coordinates {
-						(10,0.01) (50,0.05) (100,0.2) (500,5) (1000,20)
-					};
-				\addlegendentry{FPT (k=10)}
-
-				\addplot[color=green,thick,mark=triangle*] coordinates {
-						(10,0.005) (100,0.05) (500,1) (1000,4)
-					};
-				\addlegendentry{Approximation}
-
-				\addplot[color=orange,thick,mark=diamond*] coordinates {
-						(10,0.002) (100,0.02) (500,0.5) (1000,2)
-					};
-				\addlegendentry{Greedy Heuristic}
-
-				\addplot[color=purple,thick,mark=pentagon*] coordinates {
-						(10,0.01) (100,1) (500,25) (1000,100)
-					};
-				\addlegendentry{Metaheuristic}
-
-			\end{axis}
-		\end{tikzpicture}
-	\end{figure}
+\begin{frame}{Category 4: Heuristic Algorithms}
+	\begin{table}
+		\tiny
+		\begin{tabular}{@{}p{3.5cm}p{5.5cm}p{2cm}p{2cm}@{}}
+			\toprule
+			\textbf{Algorithm} & \textbf{Description} & \textbf{Complexity} & \textbf{Solution Quality} \\ 
+			\midrule
+			
+			\textbf{Greedy Vertex Selection} & 
+			Repeatedly remove vertex with maximum degree; simple and fast; uses priority queue & 
+			$O(n^2 \log n)$ & 
+			No guarantee \\
+			\midrule
+			
+			\textbf{Cycle-Based Greedy} & 
+			Find cycles using DFS/BFS and select vertex appearing in most cycles; iterative improvement & 
+			$O(n^3)$ & 
+			No guarantee \\
+			\midrule
+			
+			\textbf{Maximum Degree Heuristic} & 
+			Like max degree but with tie-breaking: clustering coefficient, betweenness centrality & 
+			$O(n^2 \log n)$ & 
+			No guarantee \\
+			\midrule
+			
+			\textbf{Core-Periphery Decomposition} & 
+			Compute $k$-core decomposition; focus on highly connected core vertices & 
+			$O(n + m)$ & 
+			No guarantee \\
+			\midrule
+			
+			\textbf{Reduction Rules + Greedy} & 
+			Apply polynomial-time reduction rules first (degree 0,1,2 vertices, self-loops) then greedy & 
+			$O(n^2)$ & 
+			No guarantee \\
+			
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	\vspace{0.2cm}
+	\footnotesize
+	\textbf{Practical Value:} Often reduce graph size by 50-90\% before greedy phase; excellent performance on real-world networks
 \end{frame}
+
+% ============================================
+% Category 5: Metaheuristic Algorithms
+% ============================================
+
+\begin{frame}{Category 5: Metaheuristic Algorithms}
+	\begin{table}
+		\tiny
+		\begin{tabular}{@{}p{3cm}p{5.5cm}p{2.5cm}p{2cm}@{}}
+			\toprule
+			\textbf{Algorithm} & \textbf{Description} & \textbf{Complexity} & \textbf{Solution Quality} \\ 
+			\midrule
+			
+			\textbf{Genetic Algorithm} & 
+			Evolve population using selection, crossover, mutation; binary encoding or permutation-based & 
+			$O(g \cdot p \cdot n^2)$ & 
+			No guarantee \\
+			\midrule
+			
+			\textbf{Simulated Annealing} & 
+			Probabilistic technique accepting worse solutions with decreasing probability; geometric cooling schedule & 
+			$O(i \cdot n^2)$ & 
+			No guarantee \\
+			\midrule
+			
+			\textbf{Ant Colony Optimization} & 
+			Simulate ant foraging using pheromone trails; balance exploration vs exploitation & 
+			$O(\text{ants} \cdot i \cdot n^2)$ & 
+			No guarantee \\
+			\midrule
+			
+			\textbf{Tabu Search} & 
+			Local search with memory (tabu list) to avoid cycling; aspiration criterion for best solutions & 
+			$O(i \cdot n^2)$ & 
+			No guarantee \\
+			\midrule
+			
+			\textbf{Particle Swarm Optimization} & 
+			Swarm intelligence inspired by bird flocking; particles explore solution space collaboratively & 
+			$O(\text{particles} \cdot i \cdot n^2)$ & 
+			No guarantee \\
+			
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	\vspace{0.2cm}
+	\footnotesize
+	\textbf{Legend:} $g$ = generations, $p$ = population size, $i$ = iterations
+\end{frame}
+
 
 % ============================================
 % SECTION 4: IMPLEMENTATION PLAN
@@ -820,6 +961,7 @@
 	\end{figure}
 \end{frame}
 
+
 % ============================================
 % SECTION 6: APPLICATIONS
 % ============================================
@@ -835,390 +977,210 @@
   \end{block}
 \end{frame}
 
-\begin{frame}{Applications Overview}
+
+
+
+\begin{frame}{Application 1 : Deadlock Detection in Operating Systems}
 	\begin{columns}[T]
-		\column{0.5\textwidth}
-		\textbf{Theoretical Significance:}
+		\column{0.55\textwidth}
+		\textbf{Problem}
 		\begin{itemize}
-			\item Complexity theory
-			\item Parameterized algorithms
-			\item Graph theory foundations
-			\item Approximation theory
+			\item Processes compete for shared resources
+			\item Circular waiting leads to deadlock
+			\item Goal: resolve deadlock with minimal impact
 		\end{itemize}
 
-		\vspace{0.3cm}
+		\vspace{0.15cm}
 
-		\textbf{Key Theoretical Contributions:}
+		\textbf{Graph Model}
 		\begin{itemize}
-			\item One of Karp's 21 \np-complete
-			\item Iterative compression technique
-			\item FPT algorithm design
-			\item Kernelization methods
+			\item Vertices represent processes
+			\item Directed edges represent wait-for relations
+			\item Cycles correspond to deadlocks
 		\end{itemize}
 
-		\column{0.5\textwidth}
-		\textbf{Real-World Applications:}
+		\vspace{0.15cm}
+
+		\textbf{Role of FVS}
 		\begin{itemize}
-			\item Operating systems
-			\item VLSI circuit testing
-			\item Biological networks
-			\item Social networks
-			\item Financial systems
-			\item Transportation
+			\item FVS models processes whose removal breaks all cycles
 		\end{itemize}
 
-		\vspace{0.3cm}
-
-		\textbf{Impact:}
-		\begin{itemize}
-			\item \$15+ billion economic value
-			\item Lives saved (healthcare)
-			\item System reliability
-			\item Scientific discovery
-		\end{itemize}
-	\end{columns}
-\end{frame}
-
-\begin{frame}{Application 1: Deadlock Detection in Operating Systems}
-	\begin{columns}[T]
-		\column{0.5\textwidth}
-		\textbf{Problem:}
-		\begin{itemize}
-			\item Processes wait for resources
-			\item Circular wait $\Rightarrow$ Deadlock
-			\item Must resolve with minimal disruption
-		\end{itemize}
-
-		\vspace{0.3cm}
-
-		\textbf{Graph Model:}
-		\begin{itemize}
-			\item Vertices: Processes
-			\item Edges: Wait-for dependencies
-			\item Cycle = Deadlock
-		\end{itemize}
-
-		\vspace{0.3cm}
-
-		\textbf{FVS Solution:}
-		\begin{itemize}
-			\item \fvs\ = processes to terminate
-			\item Minimum \fvs\ = minimal disruption
-			\item Breaks all deadlocks
-		\end{itemize}
-
-		\column{0.5\textwidth}
-		\begin{tikzpicture}[scale=0.9]
+		\column{0.45\textwidth}
+		\centering
+		\begin{tikzpicture}[scale=0.80]
 			\node[circle,draw,fill=red!30] (P1) at (0,2) {P1};
-			\node[circle,draw] (P2) at (2.5,2) {P2};
-			\node[circle,draw] (P3) at (2.5,0) {P3};
+			\node[circle,draw] (P2) at (2.3,2) {P2};
+			\node[circle,draw] (P3) at (2.3,0) {P3};
 			\node[circle,draw] (P4) at (0,0) {P4};
 
-			\draw[->,thick] (P1) -- (P2) node[midway,above] {\tiny waits};
+			\draw[->,thick] (P1) -- (P2);
 			\draw[->,thick] (P2) -- (P3);
 			\draw[->,thick] (P3) -- (P4);
 			\draw[->,thick] (P4) -- (P1);
 
-			\node[below=0.3cm of P2] {\small Deadlock cycle};
-			\node[above=0.2cm of P1] {\small \fvs\ = \{P1\}};
+			\node[above=0.2cm of P1] {\small FVS = \{P1\}};
 		\end{tikzpicture}
 
-		\vspace{0.3cm}
-
-		\textbf{Real Systems:}
-		\begin{itemize}
-			\item Linux OOM Killer
-			\item Database transaction mgmt.
-			\item PostgreSQL, Oracle
-		\end{itemize}
+		\vspace{0.2cm}
+		{\small\textit{Deadlock cycle in a wait-for graph}}
 	\end{columns}
 \end{frame}
+
+
 
 \begin{frame}{Application 2: VLSI Circuit Testing}
-	\begin{columns}[T]
-		\column{0.6\textwidth}
-		\textbf{Challenge:}
-		\begin{itemize}
-			\item Millions of gates in modern chips
-			\item Feedback loops complicate testing
-			\item Acyclic circuits: easy to test
-			\item Cyclic circuits: exponential complexity
-		\end{itemize}
+\begin{columns}[T]
 
-		\vspace{0.3cm}
+\column{0.6\textwidth}
+\textbf{Challenge}
+\begin{itemize}
+  \item Modern chips contain millions of logic gates
+  \item Feedback loops make testing computationally hard
+  \item Acyclic circuits are testable in linear time
+\end{itemize}
 
-		\textbf{FVS Approach:}
-		\begin{enumerate}
-			\item Find \fvs\ in circuit graph
-			\item Fix \fvs\ gates to break feedback
-			\item Test remaining acyclic circuit (linear time)
-			\item Test \fvs\ gates separately
-		\end{enumerate}
+\vspace{0.1cm}
 
-		\vspace{0.3cm}
+\textbf{FVS-Based Solution}
+\begin{itemize}
+  \item Model circuit as a graph
+  \item Compute a small \fvs\ to break all cycles
+  \item Fix FVS gates and test remaining acyclic circuit
+  \item Test FVS gates separately
+\end{itemize}
 
-		\textbf{Impact:}
-		\begin{itemize}
-			\item Testing time: days $\to$ hours
-			\item Reduced scan chain overhead
-			\item Lower power consumption
-			\item Industry: Intel, AMD use FVS techniques
-		\end{itemize}
+\vspace{0.1cm}
+\column{0.35\textwidth}
+\hspace{-0.4cm}
+\begin{block}{Example}
+\begin{itemize}
+  \item 32-bit ALU circuit
+  \item 5,000 gates total
+  \item 200 feedback paths
+  \item \fvs\ size: 50 gates
+\end{itemize}
 
-		\column{0.4\textwidth}
-		\textbf{Example:}\\
-		32-bit ALU with feedback
-		\begin{itemize}
-			\item 5,000 gates total
-			\item 200 feedback paths
-			\item \fvs\ size: 50 gates
-		\end{itemize}
+Fixing 50 gates $\Rightarrow$ 4,950 acyclic gates
 
-		\vspace{0.3cm}
+\vspace{0.2cm}
 
-		Fix 50 gates $\Rightarrow$ 4,950 acyclic gates
-
-		\vspace{0.3cm}
-
-		\textbf{Savings:}
-		\begin{itemize}
-			\item Chip area
-			\item Test time
-			\item Power usage
-		\end{itemize}
-
-		\vspace{0.3cm}
-
-		Used in EDA tools
-	\end{columns}
+\textbf{Benefits}
+\begin{itemize}
+  \item Reduced test time
+  \item Lower power consumption
+  \item Smaller hardware overhead
+\end{itemize}
+\end{block}
+\end{columns}
 \end{frame}
+
+
 
 \begin{frame}{Application 3: Gene Regulatory Networks}
-	\begin{columns}[T]
-		\column{0.5\textwidth}
-		\textbf{Biological Context:}
-		\begin{itemize}
-			\item Genes regulate each other
-			\item Feedback loops control cell behavior
-			\item Understanding loops $\to$ disease targets
-		\end{itemize}
+\begin{columns}[T]
+\column{0.5\textwidth}
+\textbf{Biological Motivation}
+\begin{itemize}
+  \item Genes regulate each other via feedback loops
+  \item Cycles control cell behavior and disease states
+\end{itemize}
 
-		\vspace{0.3cm}
+\vspace{0.1cm}
 
-		\textbf{Graph Model:}
-		\begin{itemize}
-			\item Vertices: Genes
-			\item Edges: Regulatory interactions
-			\item Cycles: Feedback regulation
-		\end{itemize}
+\textbf{Graph Model}
+\begin{itemize}
+  \item Vertices: genes
+  \item Edges: regulatory interactions
+  \item Cycles: feedback regulation
+\end{itemize}
 
-		\vspace{0.3cm}
+\vspace{0.1cm}
 
-		\textbf{FVS = Master Regulators:}
-		\begin{itemize}
-			\item Control network behavior
-			\item Drug targets
-			\item Knockout experiments
-		\end{itemize}
+\textbf{Role of FVS}
+\begin{itemize}
+  \item Small set of \fvs\ genes controls all feedback : Interpreted as \textbf{master regulators}
+  \item Targets for intervention and experiments
+\end{itemize}
 
-		\column{0.5\textwidth}
-		\textbf{Cancer Research Example:}
+\column{0.4\textwidth}
+\begin{block}{Cancer Study Example}
+\begin{itemize}
+  \item Breast cancer regulatory network
+  \item 500 genes analyzed
+  \item \fvs: 12 key genes
+  \item 10 known and 2 novel drug targets
+\end{itemize}
+\end{block}
 
-		\begin{block}{Study Results}
-			Breast cancer pathway analysis:
-			\begin{itemize}
-				\item Network: 500 genes
-				\item \fvs: 12 key genes identified
-				\item 10/12 known drug targets
-				\item 2/12 novel targets
-				\item Now in clinical trials
-			\end{itemize}
-		\end{block}
+\vspace{0.2cm}
 
-		\vspace{0.3cm}
+\textbf{Applications}
+\begin{itemize}
+  \item Drug target discovery
+  \item Gene knockout analysis
+  \item Personalized medicine
+\end{itemize}
 
-		\textbf{Applications:}
-		\begin{itemize}
-			\item Drug target discovery
-			\item Cell cycle control
-			\item Personalized medicine
-			\item Systems biology
-		\end{itemize}
-	\end{columns}
+\end{columns}
 \end{frame}
 
-\begin{frame}{Application 4: Social Network Analysis}
-	\begin{columns}[T]
-		\column{0.5\textwidth}
-		\textbf{Influence Propagation:}
-		\begin{itemize}
-			\item Users influence each other
-			\item Feedback loops amplify messages
-			\item \fvs\ users = key influencers
-		\end{itemize}
 
-		\vspace{0.3cm}
+\begin{frame}{Social and Financial Networks}
 
-		\textbf{Viral Marketing:}
-		\begin{itemize}
-			\item Twitter hashtag campaign
-			\item 100M user network
-			\item \fvs\ $\approx$ 10,000 users
-			\item Target \fvs\ users
-		\end{itemize}
+\begin{block}{Social Network Analysis}
+\begin{itemize}
+  \item Feedback loops amplify influence and information spread
+  \item \fvs\ nodes correspond to key influencers or superspreaders
+  \item Targeting \fvs\ improves marketing efficiency
+  \item Disrupting \fvs\ reduces misinformation propagation
+\end{itemize}
+\end{block}
 
-		\vspace{0.3cm}
-
-		\textbf{Results:}
-		\begin{itemize}
-			\item 70\% reach with \fvs
-			\item 20\% reach with random
-			\item \textbf{3.5$\times$ improvement}
-			\item Millions saved
-		\end{itemize}
-
-		\column{0.5\textwidth}
-		\textbf{Misinformation Control:}
-
-		COVID-19 example:
-		\begin{itemize}
-			\item Identify superspreaders
-			\item \fvs\ $\approx$ 5,000 users
-			\item Target with fact-checks
-			\item 60\% reduction in spread
-		\end{itemize}
-
-		\vspace{0.3cm}
-
-		\textbf{Critical Infrastructure:}
-
-		Power grid analysis:
-		\begin{itemize}
-			\item Substations = vertices
-			\item \fvs\ = critical nodes
-			\item 2003 Northeast Blackout
-			\item FVS nodes failed
-			\item Now: enhanced protection
-		\end{itemize}
-	\end{columns}
+\begin{block}{Financial Systemic Risk}
+\begin{itemize}
+  \item Financial institutions form highly interconnected networks
+  \item Cycles represent circular dependencies and systemic risk
+  \item \fvs\ identifies systemically important institutions
+  \item Used for regulation, monitoring, and crisis prevention
+\end{itemize}
+\end{block}
 \end{frame}
 
-\begin{frame}{Application 5: Financial Systemic Risk}
-	\begin{columns}[T]
-		\column{0.5\textwidth}
-		\textbf{Financial Networks:}
-		\begin{itemize}
-			\item Banks, hedge funds, insurers
-			\item Interconnected exposures
-			\item Circular debt creates risk
-		\end{itemize}
 
-		\vspace{0.3cm}
 
-		\textbf{2008 Financial Crisis:}
-		\begin{itemize}
-			\item Lehman Brothers in \fvs
-			\item Failure $\to$ cascade
-			\item System collapse
-		\end{itemize}
+\begin{frame}{Theoretical Applications}
+\begin{itemize}
+  \item \textbf{Complexity Theory}
+  \begin{itemize}
+    \item Used in NP-completeness reductions
+    \item Benchmark problem for cycle-breaking hardness
+  \end{itemize}
 
-		\vspace{0.3cm}
+  \vspace{0.2cm}
 
-		\textbf{Regulatory Response:}
-		\begin{itemize}
-			\item Identify SIFIs (Systemically Important Financial Institutions)
-			\item Higher capital requirements
-			\item Enhanced supervision
-			\item Stress testing
-		\end{itemize}
+  \item \textbf{Algorithm Design}
+  \begin{itemize}
+    \item Testbed for FPT(Fixed Parameter Tractable) techniques
+    \item Motivates iterative compression and branching methods
+  \end{itemize}
 
-		\column{0.5\textwidth}
-		\textbf{Current Usage:}
+  \vspace{0.2cm}
 
-		\begin{block}{European Central Bank}
-			\begin{itemize}
-				\item Network analysis
-				\item \fvs\ $\approx$ 20 mega-banks
-				\item Regular monitoring
-				\item Capital buffers
-				\item Improved stability
-			\end{itemize}
-		\end{block}
+  \item \textbf{Approximation Theory}
+  \begin{itemize}
+    \item Used to study approximation limits
+    \item Reference problem for constant-factor approximations
+  \end{itemize}
 
-		\vspace{0.3cm}
+  \vspace{0.2cm}
 
-		\textbf{Federal Reserve:}
-		\begin{itemize}
-			\item Systemic risk monitoring
-			\item Network models
-			\item Policy decisions
-			\item Crisis prevention
-		\end{itemize}
-	\end{columns}
-\end{frame}
-
-\begin{frame}{Economic and Social Impact}
-	\begin{table}
-		\centering
-		\small
-		\begin{tabular}{@{}lp{6cm}@{}}
-			\toprule
-			\textbf{Sector}           & \textbf{Annual Impact}                     \\ \midrule
-			Semiconductor Testing     & \$2-3 billion saved                        \\
-			Network Infrastructure    & \$1-2 billion saved                        \\
-			Supply Chain Optimization & \$500M-1B saved (e.g., Amazon)             \\
-			Drug Discovery            & Accelerated development (\$100M+ per drug) \\
-			Financial Risk Management & Crisis prevention (>\$10B potential)       \\
-			Traffic Management        & \$50-100M per major city                   \\
-			\midrule
-			\textbf{Total Estimated}  & \textbf{>\$15 billion annually}            \\ \bottomrule
-		\end{tabular}
-	\end{table}
-
-	\vspace{0.3cm}
-
-	\begin{block}{Social Benefits}
-		\begin{itemize}
-			\item Lives saved: Healthcare, emergency response
-			\item System reliability: Power grids, transportation
-			\item Scientific progress: Biology, medicine
-			\item Public health: Misinformation control
-		\end{itemize}
-	\end{block}
-\end{frame}
-
-\begin{frame}{Theoretical Contributions}
-	\begin{enumerate}
-		\item \textbf{Complexity Theory:}
-		      \begin{itemize}
-			      \item Established hardness of cycle-breaking problems
-			      \item Reference point for \np-completeness proofs
-		      \end{itemize}
-
-		      \vspace{0.2cm}
-		\item \textbf{Parameterized Algorithms:}
-		      \begin{itemize}
-			      \item Pioneered iterative compression
-			      \item Progress: $12^k \to 5^k \to 4^k \to 3.619^k$
-			      \item Techniques transferred to other problems
-		      \end{itemize}
-
-		      \vspace{0.2cm}
-		\item \textbf{Approximation Algorithms:}
-		      \begin{itemize}
-			      \item 2-approximation algorithm
-			      \item Integrality gap analysis
-			      \item Connection to Unique Games Conjecture
-		      \end{itemize}
-
-		      \vspace{0.2cm}
-		\item \textbf{Graph Theory:}
-		      \begin{itemize}
-			      \item Structural decomposition
-			      \item Relationship to treewidth
-			      \item Kernelization theory
-		      \end{itemize}
-	\end{enumerate}
+  \item \textbf{Graph Structure Analysis}
+  \begin{itemize}
+    \item Tool for analyzing treewidth and feedback structure
+    \item Applied in kernelization and graph decompositions
+  \end{itemize}
+\end{itemize}
 \end{frame}
 
 % ============================================
@@ -1231,280 +1193,10 @@
     \begin{itemize}
       \item Highlight open theoretical problems (approximation gap, faster FPT, kernels).
       \item Point out practical directions: ML integration, dynamic and distributed algorithms.
-      \item Suggest possible contributions from this project (hybrids, benchmarks).
+     
     \end{itemize}
   \end{block}
 \end{frame}
 
-\begin{frame}{Open Theoretical Questions}
-	\begin{enumerate}
-		\item \textbf{Approximation Gap:}
-		      \begin{itemize}
-			      \item Current: 2-approximation
-			      \item Question: Does $(2-\varepsilon)$-approximation exist?
-			      \item Likely tied to Unique Games Conjecture
-		      \end{itemize}
-
-		      \vspace{0.2cm}
-		\item \textbf{Faster FPT Algorithms:}
-		      \begin{itemize}
-			      \item Current: $O(3.619^k \cdot n^4)$
-			      \item Goal: $O(2^k \cdot \text{poly}(n))$?
-			      \item Lower bound: $2^{\Omega(k)}$ under ETH
-		      \end{itemize}
-
-		      \vspace{0.2cm}
-		\item \textbf{Smaller Kernels:}
-		      \begin{itemize}
-			      \item Current: $O(k^2)$ kernel
-			      \item Question: Linear kernel possible?
-		      \end{itemize}
-
-		      \vspace{0.2cm}
-		\item \textbf{Directed \fvs:}
-		      \begin{itemize}
-			      \item Tournaments: Open complexity questions
-			      \item Better algorithms needed
-		      \end{itemize}
-	\end{enumerate}
-\end{frame}
-
-\begin{frame}{Practical Research Directions}
-	\begin{enumerate}
-		\item \textbf{Machine Learning Integration:}
-		      \begin{itemize}
-			      \item Learn good branching rules
-			      \item Neural networks for \fvs\ prediction
-			      \item Graph neural networks
-		      \end{itemize}
-
-		      \vspace{0.2cm}
-		\item \textbf{Dynamic \fvs:}
-		      \begin{itemize}
-			      \item Graph changes over time
-			      \item Incremental updates to \fvs
-			      \item Online algorithms
-		      \end{itemize}
-
-		      \vspace{0.2cm}
-		\item \textbf{Distributed Algorithms:}
-		      \begin{itemize}
-			      \item Parallel \fvs\ computation
-			      \item MapReduce framework
-			      \item Cloud computing
-		      \end{itemize}
-
-		      \vspace{0.2cm}
-		\item \textbf{Application-Specific:}
-		      \begin{itemize}
-			      \item Tailored algorithms for domains
-			      \item Exploit structure in real networks
-			      \item Integration with existing tools
-		      \end{itemize}
-	\end{enumerate}
-\end{frame}
-
-\begin{frame}{Our Potential Contributions}
-	After implementing and evaluating our algorithms, we plan to:
-
-	\vspace{0.3cm}
-
-	\begin{enumerate}
-		\item \textbf{Comprehensive Benchmark:}
-		      \begin{itemize}
-			      \item Large-scale comparison on diverse graphs
-			      \item Publicly available dataset
-			      \item Reproducible results
-		      \end{itemize}
-
-		      \vspace{0.2cm}
-		\item \textbf{Hybrid Algorithm:}
-		      \begin{itemize}
-			      \item Combine exact + metaheuristic
-			      \item Use exact for small subproblems
-			      \item Metaheuristic for large parts
-		      \end{itemize}
-
-		      \vspace{0.2cm}
-		\item \textbf{Real-World Case Studies:}
-		      \begin{itemize}
-			      \item Apply to local network data
-			      \item Demonstrate practical value
-			      \item Potential publication
-		      \end{itemize}
-
-		      \vspace{0.2cm}
-		\item \textbf{Open-Source Implementation:}
-		      \begin{itemize}
-			      \item Well-documented code
-			      \item Easy-to-use library
-			      \item Contribution to community
-		      \end{itemize}
-	\end{enumerate}
-\end{frame}
-
-% ============================================
-% CONCLUSION
-% ============================================
-\section{Conclusion}
-
-\begin{frame}{Conclusion}
-  \begin{block}{Overview}
-    \begin{itemize}
-      \item Recap the \fvs\/problem, complexity, and algorithmic landscape.
-      \item Summarize chosen implementation plan and experimental goals.
-      \item State next steps: implement, run experiments, publish results.
-    \end{itemize}
-  \end{block}
-\end{frame}
-
-\begin{frame}{Summary}
-	\begin{block}{Problem}
-		Feedback Vertex Set: Find minimum vertices to remove to make graph acyclic
-	\end{block}
-
-	\begin{block}{Complexity}
-		\begin{itemize}
-			\item \np-complete (general graphs)
-			\item FPT: $O(3.619^k \cdot n^4)$
-			\item 2-approximation polynomial algorithm
-		\end{itemize}
-	\end{block}
-
-	\begin{block}{Algorithms}
-		Surveyed 25+ algorithms across 5 categories:
-		\begin{itemize}
-			\item Exact, Approximation, Randomized, Heuristic, Metaheuristic
-			\item Implementing: Iterative Compression + Genetic Algorithm
-		\end{itemize}
-	\end{block}
-
-	\begin{block}{Applications}
-		From theory to practice:
-		\begin{itemize}
-			\item Theoretical: Complexity theory, graph theory, algorithms
-			\item Practical: OS, VLSI, biology, social networks, finance
-			\item Impact: >\$15B annually, lives saved, system reliability
-		\end{itemize}
-	\end{block}
-\end{frame}
-
-\begin{frame}{Project Timeline}
-	\begin{table}
-		\centering
-		\small
-		\begin{tabular}{@{}llp{6cm}@{}}
-			\toprule
-			\textbf{Week} & \textbf{Milestone}          & \textbf{Deliverables}       \\ \midrule
-			6             & \textbf{Checkpoint}         & This presentation           \\
-			7-8           & Implementation              & Working algorithms          \\
-			9-10          & Experimentation             & Run all experiments         \\
-			11            & Analysis                    & Statistical analysis, plots \\
-			12            & Documentation               & Final report, code docs     \\
-			13            & \textbf{Final Presentation} & Complete results            \\ \bottomrule
-		\end{tabular}
-	\end{table}
-
-	\vspace{0.5cm}
-
-	\begin{block}{Current Progress}
-    \begin{itemize}
-      \item \ding{51} Problem understanding
-      \item \ding{51} Literature review
-      \item \ding{51} Algorithm survey
-      \item \ding{51} Experimental design
-      \item Next: Implementation begins!
-    \end{itemize}
-  \end{block}
-\end{frame}
-
-\begin{frame}{Questions?}
-  \begin{center}
-    \Huge Thank you for your attention!\par\vspace{1cm}
-    \Large Questions and Discussion\par\vspace{1cm}
-    \textbf{Contact:}\par
-    [Your Email]\par
-    [Your Website/GitHub]
-  \end{center}
-\end{frame}
-
-% ============================================
-% BACKUP SLIDES
-% ============================================
-\appendix
-
-\begin{frame}{Backup: Detailed Algorithm Comparison}
-	\begin{table}
-		\tiny
-		\begin{tabular}{@{}llllll@{}}
-			\toprule
-			\textbf{Algorithm} & \textbf{Time}    & \textbf{Space} & \textbf{Quality} & \textbf{Practical} & \textbf{Best For} \\ \midrule
-			Brute Force        & $O(2^n n^3)$     & $O(n^2)$       & Optimal          & $n \leq 15$        & Tiny instances    \\
-			DP Subsets         & $O(2^n n^2)$     & $O(2^n)$       & Optimal          & $n \leq 20$        & Small instances   \\
-			Iter. Compression  & $O(5^k kn^2)$    & $O(n^2)$       & Optimal          & $k \leq 30$        & Small $k$         \\
-			Bounded Search     & $O(4^k n^2)$     & $O(n^2)$       & Optimal          & $k \leq 35$        & Small $k$         \\
-			Current Best FPT   & $O(3.619^k n^4)$ & $O(n^2)$       & Optimal          & $k \leq 50$        & Research          \\
-			2-Approximation    & $O(n^2)$         & $O(n)$         & $2 \times \opt$  & Always             & Speed + guarantee \\
-			LP Rounding        & $O(n^{3.5})$     & $O(n^2)$       & $2 \times \opt$  & $n \leq 10000$     & Medium size       \\
-			Greedy             & $O(n^2 \log n)$  & $O(n)$         & No bound         & Always             & Very fast needed  \\
-			Genetic Alg.       & $O(g p n^2)$       & $O(pn)$        & Good             & $n \leq 10000$     & Large instances   \\
-			Simulated Ann.     & $O(i n^2)$        & $O(n)$         & Good             & $n \leq 10000$     & Large instances   \\
-			\bottomrule
-		\end{tabular}
-	\end{table}
-\end{frame}
-
-\begin{frame}{Backup: More Applications}
-	\begin{enumerate}
-		\item \textbf{Compiler Optimization:}
-		      \begin{itemize}
-			      \item Control flow graph analysis
-			      \item Loop optimization
-			      \item Used in GCC, LLVM
-		      \end{itemize}
-
-		\item \textbf{Ecology:}
-		      \begin{itemize}
-			      \item Keystone species identification
-			      \item Food web analysis
-			      \item Conservation priority
-		      \end{itemize}
-
-		\item \textbf{Transportation:}
-		      \begin{itemize}
-			      \item Traffic light optimization
-			      \item Emergency vehicle routing
-			      \item Supply chain logistics
-		      \end{itemize}
-
-		\item \textbf{Quantum Computing:}
-		      \begin{itemize}
-			      \item Circuit optimization
-			      \item Error propagation analysis
-		      \end{itemize}
-	\end{enumerate}
-\end{frame}
-
-\begin{frame}{Backup: Parameter Settings}
-	\begin{block}{Genetic Algorithm Parameters}
-		\begin{itemize}
-			\item Population size: 100
-			\item Generations: 500
-			\item Crossover rate: 0.8
-			\item Mutation rate: 0.05
-			\item Selection: Tournament (size 3)
-			\item Elitism: Top 10\%
-		\end{itemize}
-	\end{block}
-
-	\begin{block}{Iterative Compression Parameters}
-		\begin{itemize}
-			\item Maximum $k$: 50
-			\item Branching strategy: Min-cut based
-			\item Reduction rules: All standard rules
-			\item Early termination: Yes (if $k$ exceeded)
-		\end{itemize}
-	\end{block}
-\end{frame}
 
 \end{document}
