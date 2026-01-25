@@ -833,31 +833,34 @@
 \end{frame}
 
 \begin{frame}{Iterative Compression for FVS}
-	\textbf{Idea:} Build solution incrementally and compress when it gets too large.
+\small
+\textbf{Idea:} Build solution incrementally and compress when too large.
 
-	\medskip
-	\textbf{Algorithm}
-	\begin{itemize}
-		\item Order vertices $v_1,\dots,v_n$
-		\item Initialize $F \leftarrow \{v_1\}$
-		\item For $i = 2$ to $n$:
-		      \begin{itemize}
-			      \item $F \leftarrow F \cup \{v_i\}$
-			      \item If $|F| = k+1$:
-			            \begin{itemize}
-				            \item Try all partitions $(F_1,F_2)$ of $F$
-				            \item Find $Y \subseteq V \setminus F_2$, $|Y|\le k-|F_1|$
-				            \item If $F_1 \cup Y$ is an FVS, update $F$
-				            \item Else return \textbf{NO}
-			            \end{itemize}
-		      \end{itemize}
-		\item Return $F$ if $|F|\le k$
-	\end{itemize}
+\textbf{Algorithm}
+\begin{algorithmic}[1]
+  \State Order vertices $v_1,\dots,v_n$
+  \State $F \gets \{v_1\}$
+  \For{$i = 2$ to $n$}
+    \State $F \gets F \cup \{v_i\}$
+    \If{$|F| = k+1$}
+      \ForAll{partitions $(F_1,F_2)$ of $F$}
+        \State find $Y \subseteq V \setminus F_2$
+        \If{$F_1 \cup Y$ is an FVS}
+          \State update $F$ and \textbf{break}
+        \EndIf
+      \EndFor
+      \If{no update performed}
+        \State \textbf{return NO}
+      \EndIf
+    \EndIf
+  \EndFor
+  \State \textbf{return} $F$ \textbf{if} $|F| \le k$
+\end{algorithmic}
 
-	\medskip
-	\textbf{Key Insight:} Compress size $k\!+\!1$ solution to size $k$ \\
-	\textbf{Time:} $O(5^k \cdot n^2)$
+\textbf{Key Insight:} Compress size $k\!+\!1$ to $k$ \\
+\textbf{Time:} $O(5^k \cdot n^2)$
 \end{frame}
+
 
 
 \begin{frame}{Algorithm 2: Kernelization + Bounded Search Tree}
@@ -925,34 +928,33 @@
 
 
 \begin{frame}{Kernelization + Bounded Search Tree}
-	\textbf{Idea:} Reduce the graph, then branch on remaining cycles.
+\small
+\textbf{Idea:} Reduce the graph, then branch on remaining cycles.
 
-	\medskip
-	\textbf{Algorithm}
-	\begin{itemize}
-		\item Apply reduction rules:
-		      \begin{itemize}
-			      \item Remove degree $\le 1$ vertices
-			      \item Contract degree-2 vertices
-			      \item Include self-loop vertices
-		      \end{itemize}
-		\item Obtain kernel $(G',k')$
-		\item Recursive search:
-		      \begin{itemize}
-			      \item If $G'$ acyclic: return solution
-			      \item If $k'<0$: return \textbf{NO}
-			      \item Find a cycle $C$
-			      \item For each $v \in C$:
-			            \begin{itemize}
-				            \item Recurse on $(G'-v,\, k'-1)$
-			            \end{itemize}
-		      \end{itemize}
-	\end{itemize}
+\textbf{Algorithm}
+\begin{algorithmic}[1]
+  \State Apply reduction rules:
+  \State \quad remove degree $\le 1$ vertices
+  \State \quad contract degree-2 vertices
+  \State \quad include self-loop vertices
+  \State Obtain kernel $(G',k')$
+  \State \textbf{function} Search$(G',k')$
+  \If{$G'$ is acyclic}
+    \State \textbf{return} solution
+  \EndIf
+  \If{$k' < 0$}
+    \State \textbf{return NO}
+  \EndIf
+  \State find a cycle $C$
+  \For{each $v \in C$}
+    \State recurse on $(G' - v,\, k' - 1)$
+  \EndFor
+\end{algorithmic}
 
-	\medskip
-	\textbf{Key Insight:} Small kernel $\Rightarrow$ small search tree \\
-	\textbf{Time:} $O(4^k + n^2)$
+\textbf{Key Insight:} Small kernel $\Rightarrow$ small search tree \\
+\textbf{Time:} $O(4^k + n^2)$
 \end{frame}
+
 
 
 \begin{frame}{Algorithm 3: Memetic Algorithm (GA + Local Search)}
@@ -1020,29 +1022,28 @@
 
 
 \begin{frame}{Memetic Algorithm for FVS}
-	\textbf{Idea:} Evolutionary search combined with local optimization.
+\small
+\textbf{Idea:} Evolutionary search combined with local optimization.
 
-	\medskip
-	\textbf{Algorithm}
-	\begin{itemize}
-		\item Encode solution as a permutation of vertices
-		\item Decode by removing vertices until graph is acyclic
-		\item Initialize population (greedy + random)
-		\item For each generation:
-		      \begin{itemize}
-			      \item Evaluate fitness: $-|FVS|$
-			      \item Select parents (tournament)
-			      \item Crossover (cycle-aware)
-			      \item Mutation (swap cycle-heavy vertices)
-			      \item Local search (hill-climbing)
-		      \end{itemize}
-		\item Return best solution found
-	\end{itemize}
+\textbf{Algorithm}
+\begin{algorithmic}[1]
+  \State Encode solution as a permutation of vertices
+  \State Decode by removing vertices until graph is acyclic
+  \State Initialize population (greedy + random)
+  \For{each generation}
+    \State Evaluate fitness: $-|FVS|$
+    \State Select parents (tournament)
+    \State Crossover (cycle-aware)
+    \State Mutation (swap cycle-heavy vertices)
+    \State Local search (hill-climbing)
+  \EndFor
+  \State \textbf{return} best solution found
+\end{algorithmic}
 
-	\medskip
-	\textbf{Key Insight:} Exploration + refinement \\
-	\textbf{Type:} Heuristic (near-optimal)
+\textbf{Key Insight:} Exploration + refinement \\
+\textbf{Type:} Heuristic (near-optimal)
 \end{frame}
+
 
 
 \begin{frame}{Why This Three-Algorithm Combination?}
