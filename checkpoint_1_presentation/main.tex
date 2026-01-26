@@ -28,14 +28,14 @@
 
 % Title page information
 \title[Feedback Vertex Set]{The Feedback Vertex Set Problem:\\Theory, Algorithms, and Applications}
-\subtitle{Project Checkpoint Presentation}
-\author{2005090 - Tawkir Aziz Rahman \\
+\subtitle{Project Checkpoint Presentation, CSE 462}
+\author[Group-06]{2005090 - Tawkir Aziz Rahman \\
 		2005074 - Dipanta Kumar Roy Nobo \\
 		2005091 - Waseem Mustak Zisan \\
 		2005104 - Hasin Arafat \\
 		2005109 - Noushin Tabassum Aoishy \\
 		2005068 - Suman Hossain}
-\institute{Bangladesh University of Engineering and Technology (BUET)}
+\institute[CSE,BUET]{Department of Computer Science and Engineering, Bangladesh University of Engineering and Technology}
 \date{\today}
 
 % Custom commands
@@ -54,6 +54,7 @@
 \begin{frame}{Outline}
 	\tableofcontents
 \end{frame}
+
 
 % ============================================
 % SECTION 1: PROBLEM DEFINITION
@@ -97,31 +98,39 @@
 \end{frame}
 
 \begin{frame}{Visual Examples}
-	\begin{columns}[T]
+	\begin{columns}[T]<1->
 		\column{0.33\textwidth}
 		\centering
 		\textbf{Triangle (3-cycle)}\\[0.2cm]
 		\begin{tikzpicture}[scale=0.8]
-			\node[circle,draw,fill=red!30] (1) at (0,1.5) {1};
+			\only <1>{\node[circle,draw, fill=red!30] (1) at (0,1.5) {1};}
+            \only <2->{\node (1) at (0,1.5) {};}
 			\node[circle,draw] (2) at (-1,0) {2};
 			\node[circle,draw] (3) at (1,0) {3};
-			\draw[thick] (1) -- (2) -- (3) -- (1);
+			\only <1>{\draw[thick] (1) -- (2) -- (3) -- (1);}
+			\only<2-> {\draw[thick] (2) -- (3);}
 		\end{tikzpicture}\\[0.1cm]
-		{\small \fvs = \{1\}, Size = 1}
+		\only <2->{\small \fvs = \{1\}, Size = 1}
 
 		\column{0.33\textwidth}
 		\centering
 		\textbf{Complete Graph $K_4$}\\[0.2cm]
 		\begin{tikzpicture}[scale=0.8]
-			\node[circle,draw,fill=red!30] (1) at (0,1.5) {1};
-			\node[circle,draw,fill=red!30] (2) at (-1,0) {2};
+			\only<1-2> {\node[circle,draw] (1) at (0,1.5) {1};}
+			\only<3> {\node[circle,draw,fill=red!30] (1) at (0,1.5) {1};}
+			\only<4-> {\node (1) at (0,1.5) {};}
+			\only<1-3> {\node[circle,draw] (2) at (-1,0) {2};}
+			\only<4>{\node[circle,draw,fill=red!30] (2) at (-1,0) {2};}
+			\only<5->{\node (2) at (-1,0) {};}
 			\node[circle,draw] (3) at (1,0) {3};
 			\node[circle,draw] (4) at (0,-0.5) {4};
-			\draw[thick] (1) -- (2) -- (3) -- (4) -- (1);
-			\draw[thick] (1) -- (3);
-			\draw[thick] (2) -- (4);
+			\only <1-3>{\draw[thick] (1) -- (2) -- (3) -- (4) -- (1);}
+			\only <4-> {\draw[thick] (3) -- (4);} 
+			\only <4> {\draw[thick] (2) -- (3);} 
+			\only <1-3>{\draw[thick] (1) -- (3);}
+			\only <1-4>{\draw[thick] (2) -- (4);}
 		\end{tikzpicture}\\[0.1cm]
-		{\small \fvs = \{1,2\}, Size = 2}
+		\only <5-> {\small \fvs = \{1,2\}, Size = 2}
 
 		\column{0.33\textwidth}
 		\centering
@@ -137,7 +146,7 @@
 			\draw[thick] (2) -- (4);
 			\draw[thick] (3) -- (5);
 		\end{tikzpicture}\\[0.1cm]
-		{\small \fvs = $\emptyset$, Size = 0}
+		\only<7->{\small \fvs = $\emptyset$, Size = 0}
 	\end{columns}
 
 	\vspace{0.5cm}
@@ -146,39 +155,41 @@
 	\end{alertblock}
 \end{frame}
 
+
 \begin{frame}{Important Properties}
-	\begin{enumerate}
-		\item \textbf{NP-Completeness:} \fvs\ is \np-complete (shown via reductions from problems such as Vertex Cover)
-		      
+\begin{enumerate}
+	\item<1-> \textbf{NP-Completeness:} \fvs\ is \np-complete (shown via reductions from problems such as Vertex Cover).\\
+				\small A problem is NP-complete if it is in NP and every problem in NP can be reduced to it in polynomial time.
 
-		      \vspace{0.2cm}
-		\item \textbf{Parameterized Complexity:} Fixed-Parameter Tractable (FPT)
-		      \begin{itemize}
-			      \item Solvable in $O(f(k) \cdot \text{poly}(n))$ time
-				\item One of the best known FPT algorithms runs in time $O(c^k\cdot\text{poly}(n))$ for some $c<4$.
-		      \end{itemize}
+	\item<2-> \textbf{Parameterized Complexity:} Fixed-Parameter Tractable (FPT).
+				\begin{itemize}
+					\item<3-> Solvable in $O(f(k)\cdot\mathrm{poly}(n))$ time.
+					\item<3-> One of the best known FPT algorithms runs in time $O(c^k\cdot\mathrm{poly}(n))$ for some $c<4$.
+				\end{itemize}
 
-		      \vspace{0.2cm}
-		\item \textbf{Bounds:}
-		      \begin{itemize}
-				\item A commonly used heuristic lower bound is $|E| - |V| + c$ (where $c$ = connected components)
-			      \item Upper: $|S| \leq |V| - 1$
-		      \end{itemize}
+	\item<4-> \textbf{Bounds:}
+				\begin{itemize}
+					\item<4-> A commonly used heuristic lower bound is $|E| - |V| + c$ (where $c$ = number of connected components).
+					\item<4-> Upper bound example: $|S| \leq |V| - 1$.
+				\end{itemize}
 
-		      \vspace{0.2cm}
-		\item \textbf{Special Cases:}
-		      \begin{itemize}
-			      \item Trees/Forests: $|S| = 0$
-			      \item Planar graphs: Better approximation algorithms exist
-		      \end{itemize}
-	\end{enumerate}
+	\item<5-> \textbf{Special Cases:}
+				\begin{itemize}
+					\item<5-> Trees/Forests: $|S| = 0$.
+					\item<5-> Planar graphs: Better approximation algorithms exist.
+				\end{itemize}
+\end{enumerate}
 \end{frame}
+
+
 
 
 
 % ============================================
 % SECTION 2: REDUCTIONS
 % ============================================
+
+
 \section{Polynomial-Time Reductions}
 
 \begin{frame}{Reductions: Why They Matter}
@@ -373,8 +384,8 @@
   
   \vspace{0.3cm}
 	\begin{minipage}{\textwidth}
-	\small
-		extbf{Vertex Cover in $G'$: is also a FVS}
+		\small
+		\textbf{Vertex Cover in $G'$: is also a FVS}
 	\begin{itemize}
 		\item Each triangle needs $\ge 2$ vertices in VC
 		\item Triangles with 3 vertices in VC $\leftrightarrow$ vertices in \fvs
@@ -466,7 +477,7 @@
 
 
 
-
+\section{Existing Algorithms Survey}
 
 
 \begin{frame}{Algorithm Survey}
@@ -484,83 +495,78 @@
 % ============================================
 
 \begin{frame}{Five Major Categories of Solution Approaches}
-	\begin{columns}[T]
-		\column{0.48\textwidth}
-
-		% Box 1: Exact Exponential
-		\begin{block}{1. Exact Exponential}
-			\scriptsize
-			\begin{itemize}
-				\item Naive Brute Force
-				\item DP on Subsets
-				\item Iterative Compression
-				\item Bounded Search Tree
-				\item Current Best FPT
-				\item Inclusion-Exclusion DP
-			\end{itemize}
-		\end{block}
-
-		\vspace{0.2cm}
-
-		% Box 2: Approximation
-		\begin{block}{2. Approximation}
-			\scriptsize
-			\begin{itemize}
-				\item 2-Approximation (VC-based)
-				\item Log-Approximation
-				\item LP Rounding
-				\item Primal-Dual
-				\item Local Ratio
-			\end{itemize}
-		\end{block}
-
-		\vspace{0.2cm}
-
-		% Box 3: Randomized
-		\begin{block}{3. Randomized}
-			\scriptsize
-			\begin{itemize}
-				\item Random Sampling
-				\item Randomized Rounding
-				\item Color Coding
-			\end{itemize}
-		\end{block}
-
-		\column{0.48\textwidth}
-
-		% Box 4: Heuristic
-		\begin{block}{4. Heuristic}
-			\scriptsize
-			\begin{itemize}
-				\item Greedy Vertex Selection
-				\item Cycle-Based Greedy
-				\item Maximum Degree Heuristic
-				\item Core-Periphery Decomposition
-				\item Reduction Rules + Greedy
-			\end{itemize}
-		\end{block}
-
-		\vspace{0.2cm}
-
-		% Box 5: Metaheuristic
-		\begin{block}{5. Metaheuristic}
-			\scriptsize
-			\begin{itemize}
-				\item Genetic Algorithm
-				\item Simulated Annealing
-				\item Ant Colony Optimization
-				\item Tabu Search
-				\item Particle Swarm Optimization
-			\end{itemize}
-		\end{block}
-
-	\end{columns}
-
-	\vspace{0.3cm}
-	\centering
-	\textbf{Total: 24+ algorithms surveyed across all categories}
+    \small
+    \begin{columns}[T]
+        % Column 1: Exact + Approximation
+        \column{0.25\textwidth}
+        \begin{block}{1. Exact Exponential}
+            \scriptsize
+            \begin{itemize}
+                \item Naive Brute Force
+                \item DP on Subsets
+                \item Iterative Compression
+                \item Bounded Search Tree
+                \item Current Best FPT
+                \item Inclusion-Exclusion DP
+            \end{itemize}
+        \end{block}
+        
+        
+        \begin{block}{2. Approximation}
+            \scriptsize
+            \begin{itemize}
+                \item 2-Approximation (VC-based)
+                \item Log-Approximation
+                \item LP Rounding
+                \item Primal-Dual
+                \item Local Ratio
+            \end{itemize}
+        \end{block}
+        
+        % Column 2: Randomized + Heuristic
+        \column{0.25\textwidth}
+        \begin{block}{3. Randomized}
+            \scriptsize
+            \begin{itemize}
+                \item Random Sampling
+                \item Randomized Rounding
+                \item Color Coding
+            \end{itemize}
+        \end{block}
+        
+        
+        \begin{block}{4. Heuristic}
+            \scriptsize
+            \begin{itemize}
+                \item Greedy Vertex Selection
+                \item Cycle-Based Greedy
+                \item Maximum Degree Heuristic
+                \item Core-Periphery Decomposition
+                \item Reduction Rules + Greedy
+            \end{itemize}
+        \end{block}
+        
+        % Column 3: Metaheuristic
+        \column{0.25\textwidth}
+        \begin{block}{5. Metaheuristic}
+            \scriptsize
+            \begin{itemize}
+                \item Genetic Algorithm
+                \item Simulated Annealing
+                \item Ant Colony Optimization
+                \item Tabu Search
+                \item Particle Swarm Optimization
+            \end{itemize}
+        \end{block}
+        
+        % Optional: Add a placeholder or spacing to balance the column
+        \vspace{1.8cm} % Adjust to match other columns visually
+    \end{columns}
+    
+    \centering
+    \vspace{0.2cm}
+    \textbf{Total: 24+ algorithms surveyed across all categories}
 \end{frame}
-
 % ============================================
 % Category 1: Exact Exponential Algorithms
 % ============================================
@@ -821,8 +827,7 @@
 	\begin{block}{Overview}
 		\begin{itemize}
 			\item Describe selected algorithms to implement (Iterative Compression, Genetic Algorithm).
-			\item Outline implementation details, complexity, and engineering considerations.
-			\item State expected deliverables and milestones for development.
+			\item Outline implementation details and complexity considerations.
 		\end{itemize}
 	\end{block}
 \end{frame}
@@ -983,8 +988,8 @@
 	\end{columns}
 \end{frame}
 
-\begin{frame}{Iterative Compression for FVS}
-\small
+\begin{frame}{Algorithm 1: Iterative Compression for FVS}
+\scriptsize
 \textbf{Idea:} Build solution incrementally and compress when too large.
 
 \textbf{Algorithm}
@@ -1079,7 +1084,8 @@
 
 
 \begin{frame}{Kernelization + Bounded Search Tree}
-\small
+
+\scriptsize
 \textbf{Idea:} Reduce the graph, then branch on remaining cycles.
 
 \textbf{Algorithm}
@@ -1222,35 +1228,6 @@
 
 \end{frame}
 
-\begin{frame}{Implementation Timeline (6 Weeks)}
-	\begin{table}
-		\tiny
-		\begin{tabular}{@{}clp{7cm}@{}}
-			\toprule
-			\textbf{Week} & \textbf{Phase}        & \textbf{Tasks}                                                                                                  \\
-			\midrule
-			1             & Foundation            & Project setup, graph data structures, basic utilities (cycle detection), testing framework, greedy baseline     \\
-			\midrule
-			2             & Iterative Compression & Core IC algorithm, compression subroutine, reduction rules integration, testing \& validation                   \\
-			\midrule
-			3             & Kernel + BST          & Reduction rules (degree-based, crown, flower), bounded search tree, smart vertex selection, integration         \\
-			\midrule
-			4             & Memetic Algorithm     & Basic GA structure, FVS-specific operators (crossover, mutation), local search, parameter tuning                \\
-			\midrule
-			5             & Experimentation       & Dataset generation (synthetic + real-world), run all experiments, multiple runs for randomized, data collection \\
-			\midrule
-			6             & Analysis              & Statistical analysis, visualization, code documentation, final presentation preparation                         \\
-			\bottomrule
-		\end{tabular}
-	\end{table}
-
-	\vspace{0.2cm}
-
-	\begin{alertblock}{Risk Mitigation}
-		\footnotesize
-		\textbf{If behind schedule:} Drop K+BST (keep IC + GA for max contrast), simplify GA features, reduce experiment scope
-	\end{alertblock}
-\end{frame}
 
 
 
@@ -1260,174 +1237,369 @@
 \section{Experimental Design}
 
 \begin{frame}{Experimental Design}
-	\begin{block}{Overview}
+	\begin{block}{Overview: Comprehensive Evaluation Framework}
 		\begin{itemize}
-			\item Define datasets (synthetic + real-world) and instance sizes.
-			\item Specify performance metrics: solution quality, runtime, robustness.
-			\item Describe protocol: runs per instance, timeouts, reproducibility.
+			\item \textbf{Dataset Construction:} Diverse synthetic and real-world graph instances covering various structural properties and scales
+			\item \textbf{Performance Metrics:} Multi-faceted evaluation including solution quality, computational efficiency, and algorithm robustness
+			\item \textbf{Experimental Protocol:} Reproducible methodology with controlled conditions, statistical rigor, and fair comparisons
+			\item \textbf{Analysis Plan:} Statistical tests, visualization strategies, and interpretation guidelines
 		\end{itemize}
 	\end{block}
+	
+	\vspace{0.2cm}
+	\begin{alertblock}{Goal}
+		Provide actionable insights into when each algorithm excels and practical guidance for algorithm selection
+	\end{alertblock}
 \end{frame}
 
-\begin{frame}{Dataset Design}
-	\begin{table}
+\begin{frame}{Dataset Design: Comprehensive Test Suite}
+	\begin{block}{Design Rationale}
+		Our dataset covers diverse graph structures to test algorithm behavior under different conditions:
+		\begin{itemize}
+			\item \textbf{Size variation:} Small (verification) $\rightarrow$ Medium (comparison) $\rightarrow$ Large (scalability)
+			\item \textbf{Density spectrum:} Sparse to dense graphs (affects FVS size and difficulty)
+			\item \textbf{Structural diversity:} Random, structured, scale-free, small-world properties
+		\end{itemize}
+	\end{block}
+	
+	
+\end{frame}
+
+\begin{frame}{Dataset Design: Comprehensive Test Suite (Continued)}
+\begin{table}
 		\scriptsize
-		\begin{tabular}{@{}lllp{4.5cm}@{}}
+		\begin{tabular}{@{}lllp{4cm}@{}}
 			\toprule
-			\textbf{Graph Type}         & \textbf{Sizes}                               & \textbf{Instances} & \textbf{Purpose}      \\ \midrule
-			Random (Erd\H{o}s--R\'enyi) & $n \in \{10,20,50,100,200,500,1000\}$        & 350                & General performance   \\
-			                            & $p \in \{0.1,0.3,0.5,0.7,0.9\}$              &                    & across densities      \\
+			\textbf{Graph Type}         & \textbf{Sizes/Parameters}                    & \textbf{Count} & \textbf{Evaluation Purpose}      \\ \midrule
+			Random (ER)                 & $n \in \{10,20,50,100,200,500,1000\}$        & 350            & Baseline performance,            \\
+			                            & $p \in \{0.1,0.3,0.5,0.7,0.9\}$              &                & density sensitivity              \\
 			\midrule
-			Scale-Free (BA)             & $n \in \{10,20,50,100,200,500,1000\}$        & 210                & Realistic networks    \\
-			                            & $m \in \{2,3,5\}$                            &                    & (power-law degree)    \\
+			Scale-Free (BA)             & $n \in \{10,20,50,100,200,500,1000\}$        & 210            & Real-world structure,            \\
+			                            & $m \in \{2,3,5\}$                            &                & hub influence                    \\
 			\midrule
-			Grid                        & $\{3\times3, 5\times5, 10\times10,$          & 25                 & Structured graphs     \\
-			                            & $20\times20, 30\times30\}$                   &                    & with known properties \\
+			Grid                        & $\{3\times3, 5\times5, 10\times10,$          & 25             & Structured topology,             \\
+			                            & $20\times20, 30\times30\}$                   &                & predictable bounds               \\
 			\midrule
-			Small-World (WS)            & $n \in \{20,50,100,200,500\}$                & 450                & High clustering,      \\
-			                            & $k \in \{4,6,8\}, \beta \in \{0.1,0.3,0.5\}$ &                    & short paths           \\
+			Small-World (WS)            & $n \in \{20,50,100,200,500\}$                & 450            & Clustering effects,              \\
+			                            & $k \in \{4,6,8\}, \beta \in \{0.1,0.3,0.5\}$ &                & local vs global structure        \\
 			\midrule
-			Cycle-Heavy                 & 4 base cycle counts                          & 120                & Stress test           \\
-			                            & 3 interconnection levels                     &                    & (many cycles)         \\
+			Cycle-Heavy                 & 4 cycle densities $\times$                   & 120            & Worst-case analysis,             \\
+			                            & 3 connection patterns                        &                & stress testing                   \\
 			\midrule
-			Trees                       & $n \in \{10,20,50,100,200\}$                 & 75                 & Baseline              \\
-			                            & Random, Balanced, Star                       &                    & (optimal = 0)         \\
+			Trees                       & $n \in \{10,20,50,100,200\}$                 & 75             & Sanity check                     \\
+			                            & Random, Balanced, Star                       &                & (expected FVS = 0)               \\
 			\midrule
-			\textbf{Real-World}         & Karate, Dolphins, Email,                     & 15-20              & Validation on         \\
-			                            & Political blogs, Power grid                  &                    & real networks         \\ \bottomrule
+			\textbf{Real-World}         & Karate, Dolphins, Email, Blogs,              & 15-20          & Practical validation,            \\
+			                            & Power grid, Bio networks                     &                & domain relevance                 \\ \bottomrule
 		\end{tabular}
 	\end{table}
 
-	\textbf{Total:} $\sim$1,250 synthetic + 20 real-world instances
+	\textbf{Total:} $\sim$1,250 synthetic + 20 real-world instances with controlled variation
 \end{frame}
 
-\begin{frame}{Performance Metrics}
+\begin{frame}{Performance Metrics: Multi-Dimensional Evaluation}
 	\begin{columns}[T]
 		\column{0.5\textwidth}
-		\textbf{Solution Quality:}
+		\textbf{1. Solution Quality Metrics:}
 		\begin{enumerate}
-			\item \textbf{FVS Size:} $|S|$ (smaller is better)
+			\item \textbf{FVS Size:} $|S|$ (primary objective)
+			      \begin{itemize}
+				      \scriptsize
+				      \item Absolute value and ranking
+			      \end{itemize}
 			\item \textbf{Approximation Ratio:}
 			      $$\text{Ratio} = \frac{|S_{\text{alg}}|}{|S_{\text{opt}}|}$$
+			      
 			\item \textbf{Relative Gap:}
 			      $$\text{Gap} = \frac{|S_{\text{alg}}| - |S_{\text{best}}|}{|S_{\text{best}}|} \times 100\%$$
-			\item \textbf{Validity:} $G - S$ acyclic? (must be 100\%)
+			      
+			\item \textbf{Correctness:} Verify $G - S$ is acyclic
+			      \begin{itemize}
+				      \scriptsize
+				      \item Must achieve 100\% validity
+			      \end{itemize}
 		\end{enumerate}
 
 		\column{0.5\textwidth}
-		\textbf{Runtime Performance:}
+		\textbf{2. Computational Efficiency:}
 		\begin{enumerate}
-			\item \textbf{Wall-Clock Time} (seconds)
-			\item \textbf{CPU Time} (process time)
-			\item \textbf{Iterations/Generations}
-			\item \textbf{Function Evaluations}
+			\item \textbf{Wall-Clock Time} (end-to-end)
+			\item \textbf{CPU Time} (actual computation)
+			\item \textbf{Memory Usage} (peak RAM)
+			\item \textbf{Iterations/Generations} (convergence)
 		\end{enumerate}
 
-		\vspace{0.3cm}
+		\vspace{0.1cm}
 
-		\textbf{Robustness:}
+		\textbf{3. Robustness \& Consistency:}
 		\begin{enumerate}
 			\item \textbf{Coefficient of Variation:}
-			      $$CV = \frac{\sigma}{\mu} \times 100\%$$
-			\item \textbf{Success Rate} (solved within timeout)
+			      $$CV = \frac{\sigma_{\text{size}}}{\mu_{\text{size}}} \times 100\%$$
+			
+			\item \textbf{Success Rate:}
+			      $$\text{Success} = \frac{\text{\# solved}}{\text{\# attempted}} \times 100\%$$
+			
 		\end{enumerate}
 	\end{columns}
-\end{frame}
-
-\begin{frame}{Experimental Protocol}
-	\begin{block}{Implementation Environment}
-		\begin{itemize}
-			\item \textbf{Language:} Python 3.x
-			\item \textbf{Libraries:} NetworkX, NumPy, Matplotlib, Pandas
-			\item \textbf{Hardware:} [Specify: CPU, RAM, OS]
-		\end{itemize}
-	\end{block}
-
+	
 	\vspace{0.3cm}
+	\begin{alertblock}{Key Insight}
+		No single metric tells the whole story. We analyze trade-offs: quality vs. time, consistency vs. optimality.
+	\end{alertblock}
+\end{frame}
 
-	\begin{block}{Execution Details}
+\begin{frame}{Experimental Protocol: Ensuring Rigor and Reproducibility}
+	\begin{block}{Implementation Environment}
+		\textbf{Controlled Setup for Fair Comparison:}
 		\begin{itemize}
-			\item \textbf{Runs per instance:} 10 for randomized algorithms, 1 for deterministic
-			\item \textbf{Timeout limits:}
-			      \begin{itemize}
-				      \item Small ($n \leq 50$): 60 seconds
-				      \item Medium ($50 < n \leq 200$): 300 seconds
-				      \item Large ($n > 200$): 600 seconds
-			      \end{itemize}
-			\item \textbf{Random seeds:} Fixed for reproducibility
-			\item \textbf{Data collection:} CSV format with all metrics
+			\item \textbf{Language:} Python 3.10+ (consistency across implementations)
+			\item \textbf{Libraries:} NetworkX (graphs), NumPy (computation), Matplotlib/Seaborn (visualization), Pandas (analysis)
+			\item \textbf{Hardware:} [To specify: CPU model, cores, RAM, OS] - document for reproducibility
+			\item \textbf{Isolation:} Single-threaded execution, no concurrent processes
 		\end{itemize}
+	\end{block}
+
+
+	
+\end{frame}
+
+\begin{frame}{Experimental Protocol: Ensuring Rigor and Reproducibility(Continued)}
+\begin{block}{Execution Protocol}
+		\textbf{Standardized Testing Procedure:}
+		\begin{itemize}
+			\item \textbf{Repetitions:} 10 independent runs for randomized algorithms (GA), 1 run for deterministic (IC, Kernel+BST)
+			\item \textbf{Timeout Strategy:}
+			      \begin{itemize}
+				      \scriptsize
+				      \item Small instances ($n \leq 50$): 60 seconds
+				      \item Medium instances ($50 < n \leq 200$): 300 seconds (5 min)
+				      \item Large instances ($n > 200$): 600 seconds (10 min)
+			      \end{itemize}
+			\item \textbf{Random Seeds:} Fixed seeds (1-10) for reproducibility of stochastic algorithms
+			\item \textbf{Warm-up:} Discard first run to eliminate JIT/caching effects
+			\item \textbf{Data Logging:} Structured CSV/JSON with all metrics, timestamps, and parameters
+		\end{itemize}
+	\end{block}
+	
+\end{frame}
+
+\begin{frame}{Experimental Design: Core Research Questions}
+	\begin{block}{Research Questions Driving Our Experiments}
+		\begin{enumerate}
+			\item \textbf{RQ1: Solution Quality}
+			      \begin{itemize}
+				      \scriptsize
+				      \item How close do our algorithms get to optimal solutions?
+				      \item Which algorithm provides best quality for different graph types?
+			      \end{itemize}
+			
+			\item \textbf{RQ2: Scalability \& Efficiency}
+			      \begin{itemize}
+				      \scriptsize
+				      \item What is the largest instance each algorithm can handle?
+				      \item How does runtime scale with graph size and density?
+			      \end{itemize}
+			
+			\item \textbf{RQ3: Quality-Time Trade-off}
+			      \begin{itemize}
+				      \scriptsize
+				      \item Given a time budget, which algorithm is most effective?
+				      \item Where is the sweet spot: exact slow vs. fast approximate?
+			      \end{itemize}
+			
+			\item \textbf{RQ4: Graph Structure Sensitivity}
+			      \begin{itemize}
+				      \scriptsize
+				      \item Do algorithms perform differently on random vs. scale-free graphs?
+				      \item Which structural properties favor which algorithms?
+			      \end{itemize}
+			
+			\item \textbf{RQ5: Algorithm Stability}
+			      \begin{itemize}
+				      \scriptsize
+				      \item How consistent are results across multiple runs (for GA)?
+				      \item What is the variance in solution quality?
+			      \end{itemize}
+		\end{enumerate}
 	\end{block}
 \end{frame}
 
-\begin{frame}{Key Experiments}
+\begin{frame}{Key Experiments: Systematic Evaluation Plan}
 	\begin{enumerate}
-		\item \textbf{Correctness Verification}
+		\item \textbf{Experiment 1: Correctness \& Validation}
 		      \begin{itemize}
-			      \item Verify all solutions are valid FVS (100\% required)
+			      \scriptsize
+			      \item \textit{Goal:} Verify all solutions are valid feedback vertex sets
+			      \item \textit{Method:} For each solution $S$, verify $G - S$ is acyclic using DFS
+			      \item \textit{Expected:} 100\% validity across all algorithms and instances
 		      \end{itemize}
 
-		      \vspace{0.2cm}
-		\item \textbf{Solution Quality Comparison}
+		      \vspace{0.15cm}
+		\item \textbf{Experiment 2: Solution Quality Comparison}
 		      \begin{itemize}
-			      \item Compare FVS sizes across algorithms
-			      \item Box plots, statistical tests
+			      \scriptsize
+			      \item \textit{Goal:} Compare FVS sizes across algorithms
+			      \item \textit{Method:} Box plots per graph type, statistical significance tests (Wilcoxon, Friedman)
+			      \item \textit{Analysis:} Rank algorithms by median FVS size, identify significant differences
 		      \end{itemize}
 
-		      \vspace{0.2cm}
-		\item \textbf{Runtime Performance}
+		      \vspace{0.15cm}
+		\item \textbf{Experiment 3: Runtime \& Scalability Analysis}
 		      \begin{itemize}
-			      \item Runtime vs. graph size (scalability)
-			      \item Log-scale plots
+			      \scriptsize
+			      \item \textit{Goal:} Assess computational efficiency and scaling behavior
+			      \item \textit{Method:} Plot runtime vs. $n$ (log-log scale), fit power-law curves
+			      \item \textit{Analysis:} Identify crossover points, determine practical size limits
 		      \end{itemize}
 
-		      \vspace{0.2cm}
-		\item \textbf{Quality-Runtime Trade-off}
+		      \vspace{0.15cm}
+		\item \textbf{Experiment 4: Quality-Runtime Pareto Analysis}
 		      \begin{itemize}
-			      \item Pareto frontier analysis
-			      \item Best algorithm for given time budget
-		      \end{itemize}
-
-		      \vspace{0.2cm}
-		\item \textbf{Graph Type Sensitivity}
-		      \begin{itemize}
-			      \item Performance heatmap across graph types
-			      \item Identify algorithm strengths
+			      \scriptsize
+			      \item \textit{Goal:} Find optimal algorithm for given time constraints
+			      \item \textit{Method:} Pareto frontier plot (FVS size vs. time), dominated solution analysis
+			      \item \textit{Insight:} Practical algorithm selection guide
 		      \end{itemize}
 	\end{enumerate}
 \end{frame}
 
 \begin{frame}{Key Experiments (continued)}
 	\begin{enumerate}
-		\setcounter{enumi}{5}
-		\item \textbf{Parameter Sensitivity (GA)}
+		\setcounter{enumi}{4}
+		\item \textbf{Experiment 5: Graph Structure Sensitivity Analysis}
 		      \begin{itemize}
-			      \item Population size: $\{20, 50, 100, 200, 500\}$
-			      \item Mutation rate: $\{0.01, 0.05, 0.1, 0.2\}$
-			      \item Crossover rate: $\{0.5, 0.7, 0.8, 0.9\}$
+			      \scriptsize
+			      \item \textit{Goal:} Understand how graph properties affect algorithm performance
+			      \item \textit{Method:} Performance heatmap (algorithm $\times$ graph type), correlation analysis
+			      \item \textit{Analysis:} Identify which algorithm excels on which structure (e.g., GA on scale-free, IC on sparse)
 		      \end{itemize}
 
 		      \vspace{0.2cm}
-		\item \textbf{Convergence Behavior}
+		\item \textbf{Experiment 6: Parameter Sensitivity (Genetic Algorithm)}
 		      \begin{itemize}
-			      \item Track best solution over iterations/time
-			      \item Convergence curves
+			      \scriptsize
+			      \item \textit{Goal:} Optimize GA hyperparameters for best performance
+			      \item \textit{Variables:} Population size $\{20, 50, 100, 200, 500\}$, Mutation rate $\{0.01, 0.05, 0.1, 0.2\}$, Crossover rate $\{0.5, 0.7, 0.8, 0.9\}$
+			      \item \textit{Method:} Grid search or Latin hypercube sampling, response surface analysis
+			      \item \textit{Output:} Recommended parameter settings
 		      \end{itemize}
 
 		      \vspace{0.2cm}
-		\item \textbf{Optimality Gap (small instances)}
+		\item \textbf{Experiment 7: Convergence Analysis}
 		      \begin{itemize}
-			      \item For $n \leq 20$: compute optimal with exact algorithm
-			      \item Measure gap: (approx - optimal) / optimal
+			      \scriptsize
+			      \item \textit{Goal:} Study how solution quality improves over time/iterations
+			      \item \textit{Method:} Track best FVS size vs. time/generation, convergence curves
+			      \item \textit{Insight:} Determine when to stop (diminishing returns)
 		      \end{itemize}
 
 		      \vspace{0.2cm}
-		\item \textbf{Real-World Performance}
+		\item \textbf{Experiment 8: Optimality Gap Assessment}
 		      \begin{itemize}
-			      \item Validate on realistic networks
-			      \item Compare to synthetic results
+			      \scriptsize
+			      \item \textit{Goal:} Quantify approximation quality on small instances
+			      \item \textit{Method:} For $n \leq 20$, compute optimal using brute force or exact solver
+			      \item \textit{Metric:} $(|S_{\text{approx}}| - |S_{\text{opt}}|) / |S_{\text{opt}}| \times 100\%$
 		      \end{itemize}
 	\end{enumerate}
+\end{frame}
+
+
+
+\begin{frame}{Additional Experiments \& Statistical Analysis}
+	\begin{enumerate}
+		\setcounter{enumi}{8}
+		\item \textbf{Experiment 9: Real-World Validation}
+		      \begin{itemize}
+			      \scriptsize
+			      \item \textit{Goal:} Validate performance on realistic network instances
+			      \item \textit{Datasets:} Social networks, biological networks, infrastructure graphs
+			      \item \textit{Analysis:} Compare synthetic vs. real-world performance, domain-specific insights
+		      \end{itemize}
+
+		      \vspace{0.2cm}
+		\item \textbf{Experiment 10: Robustness \& Stability Testing}
+		      \begin{itemize}
+			      \scriptsize
+			      \item \textit{Goal:} Assess consistency of randomized algorithm (GA)
+			      \item \textit{Method:} Coefficient of variation across 10 runs, best/worst/median analysis
+			      \item \textit{Insight:} Reliability for practical deployment
+		      \end{itemize}
+	\end{enumerate}
+
+	\vspace{0.2cm}
+
+	\begin{block}{Statistical Analysis Plan}
+		\textbf{Ensuring Scientific Rigor:}
+		\begin{itemize}
+			\item \textbf{Hypothesis Testing:} Wilcoxon signed-rank test (pairwise), Friedman test (multiple algorithms)
+			\item \textbf{Effect Size:} Compute Cohen's $d$ or rank-biserial correlation for practical significance
+			\item \textbf{Confidence Intervals:} Report 95\% CI for mean/median metrics
+			\item \textbf{Multiple Testing Correction:} Bonferroni or Holm-Bonferroni adjustment
+		\end{itemize}
+	\end{block}
+\end{frame}
+
+\begin{frame}{Visualization \& Reporting Strategy}
+	\begin{columns}[T]
+		\column{0.5\textwidth}
+		\textbf{Planned Visualizations:}
+		\begin{enumerate}
+			\scriptsize
+			\item \textbf{Box Plots}
+			      \begin{itemize}
+				      \scriptsize
+				      \item FVS size distribution per algorithm
+				      \item Identify outliers and spread
+			      \end{itemize}
+			\item \textbf{Scaling Curves}
+			      \begin{itemize}
+				      \scriptsize
+				      \item Runtime vs. $n$ (log-log)
+				      \item Empirical complexity validation
+			      \end{itemize}
+			\item \textbf{Pareto Frontiers}
+			      \begin{itemize}
+				      \scriptsize
+				      \item Quality vs. time trade-off
+				      \item Dominated region shading
+			      \end{itemize}
+			\item \textbf{Heatmaps}
+			      \begin{itemize}
+				      \scriptsize
+				      \item Performance matrix (algorithm $\times$ graph type)
+				      \item Parameter sensitivity grids
+			      \end{itemize}
+			\item \textbf{Convergence Plots}
+			      \begin{itemize}
+				      \scriptsize
+				      \item Best solution over time/generation
+				      \item Multiple runs with confidence bands
+			      \end{itemize}
+		\end{enumerate}
+
+		\column{0.5\textwidth}
+		\textbf{Reporting Structure:}
+		\begin{itemize}
+			\scriptsize
+			\item \textbf{Summary Tables:} Mean, median, std dev, min/max for key metrics
+			\item \textbf{Performance Profiles:} Cumulative distribution of solution quality
+			\item \textbf{Ranking Analysis:} Win/tie/loss records between algorithms
+			\item \textbf{Case Studies:} Deep dive into interesting instances
+		\end{itemize}
+
+		\vspace{0.3cm}
+
+		\begin{alertblock}{Deliverables}
+			\scriptsize
+			\begin{itemize}
+				\item Comprehensive experimental report
+				\item Interactive visualizations (if time permits)
+				\item Open-source code repository
+				\item Reproducible benchmark suite
+			\end{itemize}
+		\end{alertblock}
+	\end{columns}
 \end{frame}
 
 \begin{frame}{Expected Results Visualization}
@@ -1435,38 +1607,48 @@
 		\centering
 		\begin{tikzpicture}
 			\begin{axis}[
-					title={Expected Runtime vs. Graph Size},
-					xlabel={Number of Vertices},
+					title={Expected Runtime vs. Graph Size (Illustrative)},
+					xlabel={Number of Vertices ($n$)},
 					ylabel={Runtime (seconds, log scale)},
 					ymode=log,
 					xmin=0, xmax=550,
 					ymin=0.01, ymax=1000,
+					legend style={font=\tiny, draw=none, fill=white, fill opacity=0.7, text opacity=1, cells={anchor=west}},
+					legend style={font=\tiny, draw=none, fill=white, fill opacity=0.7, text opacity=1, cells={anchor=west}},
 					legend pos=north west,
 					grid=major,
-					width=0.8\textwidth,
+					width=0.85\textwidth,
 					height=0.5\textwidth
 				]
 
 				\addplot[color=blue,thick,mark=*] coordinates {
 						(10,0.05) (20,0.2) (50,2) (100,20) (200,300)
 					};
-				\addlegendentry{Iterative Compression}
+				\addlegendentry{Iterative Compression (Exact)}
+
+				\addplot[color=green,thick,mark=triangle*] coordinates {
+						(10,0.1) (20,0.5) (50,5) (100,30) (200,150) (500,400)
+					};
+				\addlegendentry{Kernel + BST (Exact)}
 
 				\addplot[color=red,thick,mark=square*] coordinates {
-						(10,0.1) (20,0.3) (50,2) (100,10) (200,50) (500,200)
+						(10,0.1) (20,0.3) (50,2) (100,10) (200,50) (500,200) (1000,600)
 					};
-				\addlegendentry{Genetic Algorithm}
+				\addlegendentry{Memetic Algorithm (Approx)}
 
 			\end{axis}
 		\end{tikzpicture}
-		\caption{Hypothetical runtime comparison (actual results may vary)}
+		\caption{Hypothetical runtime comparison showing expected scalability trends. Actual results will be empirically determined.}
 	\end{figure}
+	
+	\vspace{0.2cm}
+	\footnotesize
+	\textbf{Key Observation:} We expect exact algorithms to struggle beyond $n \approx 200$, while GA maintains reasonable performance on large instances.
 \end{frame}
 
 
-% ============================================
-% SECTION 6: APPLICATIONS
-% ============================================
+
+
 \section{Applications}
 
 \begin{frame}{Applications}

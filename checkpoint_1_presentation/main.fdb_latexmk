@@ -1,5 +1,5 @@
 # Fdb version 4
-["pdflatex"] 1769373832.94278 "c:/Users/TAWKIR/Documents/GitHub/Feedback_Vertex_Set_Problem_Algorithm_Project_4-2/checkpoint_1_presentation/main.tex" "main.pdf" "main" 1769373837.45634 0
+["pdflatex"] 1769396143.89763 "c:/Users/TAWKIR/Documents/GitHub/Feedback_Vertex_Set_Problem_Algorithm_Project_4-2/checkpoint_1_presentation/main.tex" "main.pdf" "main" 1769396148.65336 0
   "C:/Users/TAWKIR/AppData/Local/MiKTeX/fonts/map/pdftex/pdftex.map" 1765474825 229457 49ca68e6665cc8defdcf9a7c42fbab78 ""
   "C:/Users/TAWKIR/AppData/Local/MiKTeX/miktex/data/le/pdftex/pdflatex.fmt" 1757160032 13257826 88ac9faf8003347f75b71f2822e63a59 ""
   "C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/tfm/adobe/symbol/psyr.tfm" 1136750654 1408 5937f58aa508ea2cea4901c07d10f5fe ""
@@ -21,6 +21,7 @@
   "C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/tfm/public/cm/cmmi8.tfm" 1136765053 1520 eccf95517727cb11801f4f1aee3a21b4 ""
   "C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/tfm/public/cm/cmmi9.tfm" 1136765053 1524 d89e2d087a9828407a196f428428ef4a ""
   "C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/tfm/public/cm/cmr10.tfm" 1136765053 1296 45809c5a464d5f32c8f98ba97c1bb47f ""
+  "C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/tfm/public/cm/cmr12.tfm" 1136765053 1288 655e228510b4c2a1abe905c368440826 ""
   "C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/tfm/public/cm/cmr6.tfm" 1136765053 1300 b62933e007d01cfd073f79b963c01526 ""
   "C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/tfm/public/cm/cmr8.tfm" 1136765053 1292 21c1c5bfeaebccffdb478fd231a0997d ""
   "C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/tfm/public/cm/cmr9.tfm" 1136765053 1292 6b21b9c2c7bebb38aa2273f7ca0fb3af ""
@@ -30,6 +31,7 @@
   "C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/tfm/public/cm/cmss9.tfm" 1136765053 1320 49357c421c0d469f88b867dd0c3d10e8 ""
   "C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/tfm/public/cm/cmssbx10.tfm" 1136765053 1272 e2d13f0df30bf3ad990bb9d028e37f34 ""
   "C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/tfm/public/cm/cmssi10.tfm" 1136765053 1520 ca2bb4b78ac9800bd686e30c6d19ef95 ""
+  "C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/tfm/public/cm/cmssi8.tfm" 1136765053 1500 7f49257eca65a87057f17452e9fe3ef5 ""
   "C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/tfm/public/cm/cmsy10.tfm" 1136765053 1124 6c73e740cf17375f03eec0ee63599741 ""
   "C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/tfm/public/cm/cmsy6.tfm" 1136765053 1116 933a60c408fc0a863a92debe84b2d294 ""
   "C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/fonts/tfm/public/cm/cmsy8.tfm" 1136765053 1120 8b7d695260f3cff42e636090a8002094 ""
@@ -302,12 +304,12 @@
   "C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/tex/latex/translator/translator.sty" 1622471510 8765 56d370785f0143111ff9898b5adfe08e ""
   "C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/tex/latex/url/url.sty" 1388490452 12796 8edb7d69a20b857904dd0ea757c14ec9 ""
   "C:/Users/TAWKIR/AppData/Local/Programs/MiKTeX/tex/latex/xcolor/xcolor.sty" 1729265222 55384 b454dec21c2d9f45ec0b793f0995b992 ""
-  "c:/Users/TAWKIR/Documents/GitHub/Feedback_Vertex_Set_Problem_Algorithm_Project_4-2/checkpoint_1_presentation/main.tex" 1769373832 61582 623291334253c9c09578d4565ea309cc ""
-  "main.aux" 1769373837 8170 101ea2d370ae2124e1e256f7f7682203 "pdflatex"
-  "main.nav" 1769373837 5486 5b2af49ebc5b89518053db33076c8090 "pdflatex"
-  "main.out" 1769373837 891 19b9eb1d68f42092723cd141c52f142d "pdflatex"
-  "main.tex" 1769373832 61582 623291334253c9c09578d4565ea309cc ""
-  "main.toc" 1769373837 343 db3d7800de24e48b1f245d175f9812e5 "pdflatex"
+  "c:/Users/TAWKIR/Documents/GitHub/Feedback_Vertex_Set_Problem_Algorithm_Project_4-2/checkpoint_1_presentation/main.tex" 1769396143 71156 5e718e96f785e248dbaad6f7b09575bc ""
+  "main.aux" 1769396148 9026 99b01414a516bc695f746cda930b0dc6 "pdflatex"
+  "main.nav" 1769396148 6062 2571d3fe4441dda99f13a78cf55b96ab "pdflatex"
+  "main.out" 1769396148 1070 00ef2dbcfc3669ce33ead1cc7ae408e5 "pdflatex"
+  "main.tex" 1769396143 71156 5e718e96f785e248dbaad6f7b09575bc ""
+  "main.toc" 1769396148 407 d712f18e1b938803a13f79b7703a60d7 "pdflatex"
   (generated)
   "main.aux"
   "main.log"
