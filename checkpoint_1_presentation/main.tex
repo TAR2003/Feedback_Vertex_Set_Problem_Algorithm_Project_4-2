@@ -28,8 +28,8 @@
 
 % Title page information
 \title[Feedback Vertex Set]{The Feedback Vertex Set Problem:\\Theory, Algorithms, and Applications}
-\subtitle{Project Checkpoint Presentation, CSE 462}
-\author[Group-06]{2005090 - Tawkir Aziz Rahman \\
+\subtitle{Project Checkpoint Presentation, CSE 462, Group-06}
+\author[Group-06 CSE462]{2005090 - Tawkir Aziz Rahman \\
 		2005074 - Dipanta Kumar Roy Nobo \\
 		2005091 - Waseem Mustak Zisan \\
 		2005104 - Hasin Arafat \\
@@ -61,7 +61,7 @@
 % ============================================
 \section{Problem Definition}
 
-\begin{frame}{Problem Definition}
+\begin{frame}{1. Problem Definition}
 	\begin{block}{Overview}
 		\begin{itemize}
 			\item Define the Feedback Vertex Set (\fvs) problem and formal statement.
@@ -192,7 +192,7 @@
 
 \section{Polynomial-Time Reductions}
 
-\begin{frame}{Reductions: Why They Matter}
+\begin{frame}{2. Reductions: Why They Matter}
   \begin{block}{Purpose of Reductions}
     \begin{itemize}
       \item Prove \fvs\ is \np-hard by reducing from known \np-complete problems
@@ -480,7 +480,7 @@
 \section{Existing Algorithms Survey}
 
 
-\begin{frame}{Algorithm Survey}
+\begin{frame}{3. Algorithm Survey}
 	\begin{block}{Overview}
 		\begin{itemize}
 			\item Classify algorithms: Exact, Approximation, Randomized, Heuristic, Metaheuristic.
@@ -618,9 +618,6 @@
 		\end{tabular}
 	\end{table}
 
-	\vspace{0.2cm}
-	\footnotesize
-	\textbf{Key Insight:} FPT algorithms practical for $k \leq 50$; exponential in $n$ feasible only for $n \leq 20$
 \end{frame}
 
 % ============================================
@@ -668,9 +665,6 @@
 		\end{tabular}
 	\end{table}
 
-	\vspace{0.2cm}
-	\footnotesize
-	\textbf{Open Question:} Does $(2-\varepsilon)$-approximation exist? Under UGC, 2 might be optimal.
 \end{frame}
 
 % ============================================
@@ -812,9 +806,6 @@
 		\end{tabular}
 	\end{table}
 
-	\vspace{0.2cm}
-	\footnotesize
-	\textbf{Legend:} $g$ = generations, $p$ = population size, $i$ = iterations
 \end{frame}
 
 
@@ -823,7 +814,7 @@
 % ============================================
 \section{Implementation Plan}
 
-\begin{frame}{Implementation Plan}
+\begin{frame}{4. Implementation Plan}
 	\begin{block}{Overview}
 		\begin{itemize}
 			\item Describe selected algorithms to implement (Iterative Compression, Genetic Algorithm).
@@ -1083,7 +1074,7 @@
 \end{frame}
 
 
-\begin{frame}{Kernelization + Bounded Search Tree}
+\begin{frame}{Algorithm 2: Kernelization + Bounded Search Tree}
 
 \scriptsize
 \textbf{Idea:} Reduce the graph, then branch on remaining cycles.
@@ -1178,7 +1169,7 @@
 \end{frame}
 
 
-\begin{frame}{Memetic Algorithm for FVS}
+\begin{frame}{Algorithm 3: Memetic Algorithm for FVS}
 \small
 \textbf{Idea:} Evolutionary search combined with local optimization.
 
@@ -1236,7 +1227,7 @@
 % ============================================
 \section{Experimental Design}
 
-\begin{frame}{Experimental Design}
+\begin{frame}{5. Experimental Design}
 	\begin{block}{Overview: Comprehensive Evaluation Framework}
 		\begin{itemize}
 			\item \textbf{Dataset Construction:} Diverse synthetic and real-world graph instances covering various structural properties and scales
@@ -1651,7 +1642,7 @@
 
 \section{Applications}
 
-\begin{frame}{Applications}
+\begin{frame}{6. Applications}
 	\begin{block}{Overview}
 		\begin{itemize}
 			\item Survey theoretical and practical applications of \fvs.
@@ -1872,7 +1863,7 @@
 % ============================================
 \section{Potential Research Directions}
 
-\begin{frame}{Potential Research Directions}
+\begin{frame}{7. Potential Research Directions}
 	\begin{block}{Overview}
 		\begin{itemize}
 			\item Highlight open theoretical problems (approximation gap, faster FPT, kernels).
