@@ -1,19 +1,36 @@
 #include "utils.h"
 #include <chrono>
 #include <functional>
+#include <fstream>
 #include <stdexcept>
 #include <queue>
 #include <stack>
 
 MeasureResult measure_function_runtime(std::function<void()> f) {
+    long rss_kb = 0;
+    
+#ifdef _WIN32
+    // Windows: Use GetProcessMemoryInfo
+    PROCESS_MEMORY_COUNTERS_EX pmc;
+    auto t1 = std::chrono::high_resolution_clock::now();
+    f();
+    auto t2 = std::chrono::high_resolution_clock::now();
+    
+    if (GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&pmc, sizeof(pmc))) {
+        rss_kb = pmc.WorkingSetSize / 1024; // Convert bytes to KB
+    }
+#else
+    // Unix/Linux: Use getrusage
     struct rusage usage_before, usage_after;
     getrusage(RUSAGE_SELF, &usage_before);
     auto t1 = std::chrono::high_resolution_clock::now();
     f();
     auto t2 = std::chrono::high_resolution_clock::now();
     getrusage(RUSAGE_SELF, &usage_after);
+    rss_kb = usage_after.ru_maxrss; // typically in kilobytes on Linux
+#endif
+    
     double elapsed = std::chrono::duration<double, std::milli>(t2 - t1).count();
-    long rss_kb = usage_after.ru_maxrss; // typically in kilobytes on Linux
     return {elapsed, rss_kb};
 }
 

@@ -1,9 +1,11 @@
 #include "genetic.h"
 #include "utils.h"
+#include "alg_approx.h"
 #include <random>
 #include <algorithm>
 #include <numeric>
 #include <bitset>
+#include <stack>
 
 static int evaluate_fitness(const Graph &G, const std::vector<char> &removed, int &violations) {
     // violations = number of backedges found across DFSs

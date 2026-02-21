@@ -2,7 +2,15 @@
 #include "graph.h"
 #include <vector>
 #include <string>
-#include <sys/resource.h>
+#include <functional>
+
+// Platform-specific headers for memory tracking
+#ifdef _WIN32
+    #include <windows.h>
+    #include <psapi.h>
+#else
+    #include <sys/resource.h>
+#endif
 
 struct MeasureResult {
     double runtime_ms;

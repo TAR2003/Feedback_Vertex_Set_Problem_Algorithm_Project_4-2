@@ -10,16 +10,28 @@
 #include "alg_exact.h"
 #include "alg_approx.h"
 #include "genetic.h"
+#include "alg_iterative_compression.h"
+#include "alg_kernelization.h"
+#include "alg_bounded_search_tree.h"
+#include "alg_memetic.h"
 
 void print_usage(){
     std::cout << "FVS Project - usage:\n";
     std::cout << "  ./fvs -i <graph_file> -a <alg> [options]\n";
-    std::cout << "Algorithms: exact, twoapprox, greedy, ga\n";
-    std::cout << "Options:\n";
-    std::cout << "  -k <k>        : parameter k for exact bounded search\n";
+    std::cout << "\nAlgorithms:\n";
+    std::cout << "  exact       : Exact branching (bounded by k)\n";
+    std::cout << "  ic          : Iterative Compression (FPT, O(5^k * n^2))\n";
+    std::cout << "  kernelbst   : Kernelization + Bounded Search Tree\n";
+    std::cout << "  twoapprox   : 2-approximation (cycle-based)\n";
+    std::cout << "  greedy      : Greedy max-degree heuristic\n";
+    std::cout << "  ga          : Genetic Algorithm\n";
+    std::cout << "  memetic     : Memetic Algorithm (GA + Local Search)\n";
+    std::cout << "\nOptions:\n";
+    std::cout << "  -k <k>        : parameter k for exact/IC/BST (default: 10)\n";
     std::cout << "  -o <csv_out>  : write CSV result (default: results.csv)\n";
-    std::cout << "  --ga-pop <p>  : GA population (default 100)\n";
-    std::cout << "  --ga-gen <g>  : GA generations (default 300)\n";
+    std::cout << "  --ga-pop <p>  : GA/Memetic population (default 100)\n";
+    std::cout << "  --ga-gen <g>  : GA/Memetic generations (default 300)\n";
+    std::cout << "  -h            : print this help message\n";
 }
 
 int main(int argc, char** argv){
@@ -28,6 +40,7 @@ int main(int argc, char** argv){
     int k = 10;
     std::string csv_out = "results.csv";
     GA_Params ga_params;
+    Memetic_Params memetic_params;
 
     static struct option long_options[] = {
         {"ga-pop", required_argument, 0, 0},
@@ -40,8 +53,14 @@ int main(int argc, char** argv){
     while ((opt = getopt_long(argc, argv, "i:a:k:o:h", long_options, &option_index)) != -1){
         if (opt==0){
             std::string name = long_options[option_index].name;
-            if (name=="ga-pop") ga_params.population = std::stoi(optarg);
-            if (name=="ga-gen") ga_params.generations = std::stoi(optarg);
+            if (name=="ga-pop") {
+                ga_params.population = std::stoi(optarg);
+                memetic_params.population = std::stoi(optarg);
+            }
+            if (name=="ga-gen") {
+                ga_params.generations = std::stoi(optarg);
+                memetic_params.generations = std::stoi(optarg);
+            }
             continue;
         }
         switch(opt){
@@ -64,12 +83,18 @@ int main(int argc, char** argv){
     MeasureResult mr;
     if (alg=="exact"){
         mr = measure_function_runtime([&]{ exact_fvs_bounded(G, k, result); });
+    } else if (alg=="ic"){
+        mr = measure_function_runtime([&]{ iterative_compression_fvs(G, k, result); });
+    } else if (alg=="kernelbst"){
+        mr = measure_function_runtime([&]{ bounded_search_tree_fvs(G, k, result); });
     } else if (alg=="twoapprox"){
         mr = measure_function_runtime([&]{ result = two_approximation(G); });
     } else if (alg=="greedy"){
         mr = measure_function_runtime([&]{ result = greedy_max_degree(G); });
     } else if (alg=="ga"){
         mr = measure_function_runtime([&]{ result = genetic_fvs(G, ga_params, true); });
+    } else if (alg=="memetic"){
+        mr = measure_function_runtime([&]{ result = memetic_fvs(G, memetic_params, true); });
     } else {
         std::cerr << "Unknown algorithm: " << alg << "\n"; return 1;
     }
@@ -83,7 +108,8 @@ int main(int argc, char** argv){
     std::ofstream out(csv_out, std::ios::app);
     if (out.tellp()==0){ out << "graph,algorithm,n,m,k_or_,time_ms,mem_kb,fvs_size,valid,remaining_nodes\n"; }
     auto nm = G.edge_count();
-    out << infile << "," << alg << "," << nm.first << "," << nm.second << "," << (alg=="exact"?std::to_string(k):"-") << ",";
+    bool uses_k = (alg=="exact" || alg=="ic" || alg=="kernelbst");
+    out << infile << "," << alg << "," << nm.first << "," << nm.second << "," << (uses_k?std::to_string(k):"-") << ",";
     out << mr.runtime_ms << "," << mr.memory_kb << "," << result.size() << "," << (valid?"1":"0") << "," << remaining_nodes << "\n";
     out.close();
 
