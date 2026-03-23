@@ -94,10 +94,10 @@ class IterativeCompression(FVSSolver):
         if not nodes:
             return set()
 
-        # Start with the first vertex as a trivially valid FVS for the 1-node graph
-        F: set = {nodes[0]}
+        # Start with empty FVS for the 1-node graph (no cycles in a single vertex)
+        F: set = set()
 
-        for v in nodes[1:]:
+        for idx, v in enumerate(nodes[1:], 1):
             F.add(v)
             iterations[0] += 1
 
@@ -106,7 +106,9 @@ class IterativeCompression(FVSSolver):
                 return None  # Impossible to compress further
 
             if len(F) == k + 1:
-                compressed = self._compress(graph, F, k, iterations)
+                # Work with the subgraph induced by first idx+1 nodes
+                subgraph = graph.subgraph(nodes[:idx+1])
+                compressed = self._compress(subgraph, F, k, iterations)
                 if compressed is None:
                     return None
                 F = compressed
@@ -150,7 +152,10 @@ class IterativeCompression(FVSSolver):
 
             Y = self._disjoint_fvs(g_minus_F2, F2, k_remaining, iterations)
             if Y is not None:
-                return F1 | Y
+                candidate = F1 | Y
+                # Validate: ensure candidate is a valid FVS for the full graph
+                if is_valid_fvs(graph, candidate):
+                    return candidate
 
         return None  # All partitions failed
 

@@ -170,23 +170,24 @@ class MemeticGA(FVSSolver):
 
     def _decode(self, perm: list, graph: nx.Graph) -> set:
         """
-        Greedy decoder: scan left-to-right; add vertex to FVS only if
-        the remaining graph (without current FVS) still has cycles.
+        Greedy decoder: process vertices in permutation order.
+        For each vertex, check if the processed subgraph (excluding current FVS)
+        has cycles. If yes, add the vertex to FVS.
 
         Always produces a valid FVS.
         """
         fvs: set = set()
-        # Build working subgraph: all nodes not yet in FVS
-        remaining = set(perm)
+        processed = set()
 
         for v in perm:
-            remaining.discard(v)
-            # Does removing v (and current fvs) break all cycles?
-            test_graph = graph.subgraph(remaining)
+            processed.add(v)
+            # Check: does the processed subgraph still have cycles?
+            # (considering vertices not in fvs)
+            test_vertices = [u for u in processed if u not in fvs]
+            test_graph = graph.subgraph(test_vertices)
             if has_cycle(test_graph):
-                # Need v in FVS to kill cycles through it
+                # Need v in FVS to help break cycles
                 fvs.add(v)
-            # else: removing v doesn't create new cycles; skip it
 
         return fvs
 
