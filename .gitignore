@@ -1,6 +1,6 @@
 # Keep data folder itself but ignore everything inside
-/data/*
-!/data/
+# /data/*
+# !/data/
 
 # Ignore venv directory and its contents
 /venv/
