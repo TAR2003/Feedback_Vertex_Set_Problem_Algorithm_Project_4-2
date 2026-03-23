@@ -1,6 +1,118 @@
-# Keep data folder itself but ignore everything inside
-# /data/*
-# !/data/
+# ============================================================================
+# Data Files (Generated/Downloaded at Runtime)
+# ============================================================================
+# These should NOT be committed to Git; they are reproducibly generated
+# or downloaded automatically by the project. Users run "python main.py" to regenerate.
 
-# Ignore venv directory and its contents
+# Synthetic graphs (generated via data/generator.py)
+/data/synthetic/
+/data/synthetic/*
+!data/synthetic/.gitkeep
+
+# Real-world graphs (downloaded via data/downloader.py)
+/data/real_world/
+/data/real_world/*
+!data/real_world/.gitkeep
+
+# ============================================================================
+# Experiment Results & Outputs (Auto-Generated)
+# ============================================================================
+
+# Experiment results, logs, and intermediate data
+/results/
+/results/*
+!results/.gitkeep
+
+# Generated figures (from plot.py)
+/figures/
+/figures/*
+!figures/.gitkeep
+
+# ============================================================================
+# Python & Virtual Environments
+# ============================================================================
+
+# Virtual environment
 /venv/
+env/
+ENV/
+.venv/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Unit test / coverage
+.coverage
+.pytest_cache/
+htmlcov/
+
+# IDE & Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS artifacts
+Thumbs.db
+.DS_Store
+
+# ============================================================================
+# Presentation Materials (Optional)
+# ============================================================================
+# LaTeX build artifacts (keep .tex source, ignore build files)
+checkpoint_1_presentation/*.aux
+checkpoint_1_presentation/*.fdb_latexmk
+checkpoint_1_presentation/*.fls
+checkpoint_1_presentation/*.nav
+checkpoint_1_presentation/*.snm
+checkpoint_1_presentation/*.synctex.gz
+checkpoint_1_presentation/*.toc
+checkpoint_1_presentation/*.vrb
+checkpoint_1_presentation/*.log
+checkpoint_1_presentation/*.out
+checkpoint_1_presentation/*.bbl
+checkpoint_1_presentation/*.blg
+
+# ============================================================================
+# Temporary & Debug Files
+# ============================================================================
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+*.swp
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# pytest cache
+.pytest_cache/
+
+# Local configuration (if needed)
+.env.local
+.env.*.local
