@@ -1,5 +1,0 @@
-# Ignore everything under data/ directory
-/data/*
-
-# Keep the data directory itself in git
-!/data/
