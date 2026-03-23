@@ -1,4 +1,0 @@
-# Simple triangle graph (0-based vertices)
-0 1
-1 2
-2 0

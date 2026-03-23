@@ -1,6 +1,0 @@
-graph,algorithm,n,m,k_or_,time_ms,mem_kb,fvs_size,valid,remaining_nodes
-.\data\graphs\sample_triangle.txt,ic,3,3,5,0.0166,4524,3,1,0
-graph,algorithm,n,m,k_or_,time_ms,mem_kb,fvs_size,valid,remaining_nodes
-.\data\graphs\sample_triangle.txt,kernelbst,3,3,5,0.0509,4552,0,0,3
-graph,algorithm,n,m,k_or_,time_ms,mem_kb,fvs_size,valid,remaining_nodes
-.\data\graphs\sample_triangle.txt,twoapprox,3,3,-,0.0208,4516,2,1,1
