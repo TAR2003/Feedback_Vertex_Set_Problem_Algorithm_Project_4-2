@@ -36,10 +36,10 @@ PERF_COLUMNS = [
 ]
 
 # Timeout limits by instance size (n vertices)
-# Set to essentially infinite (no practical timeout)
-TIMEOUT_N_SMALL  = 999999     # n ≤ 50
-TIMEOUT_N_MEDIUM = 999999    # 51 ≤ n ≤ 200
-TIMEOUT_N_LARGE  = 999999    # n > 200
+# NO TIMEOUTS - set to None to run indefinitely
+TIMEOUT_N_SMALL  = None     # n ≤ 50
+TIMEOUT_N_MEDIUM = None     # 51 ≤ n ≤ 200
+TIMEOUT_N_LARGE  = None     # n > 200
 
 
 # ---------------------------------------------------------------------------
@@ -48,11 +48,13 @@ TIMEOUT_N_LARGE  = 999999    # n > 200
 
 def load_done_set(perf_csv_path: Path) -> set:
     """
-    Load (instance_id, algorithm) pairs that are already done/timed-out
+    Load (instance_id, algorithm) pairs that are already done (COMPLETED only)
     from performance.csv.
 
     Returns:
         set of (instance_id, algorithm) strings.
+    
+    NOTE: Only includes COMPLETED status, not TIMEOUT or ERROR.
     """
     done: set = set()
     if not perf_csv_path.exists():
@@ -62,7 +64,8 @@ def load_done_set(perf_csv_path: Path) -> set:
             reader = csv.DictReader(f)
             for row in reader:
                 status = row.get("status", "")
-                if status in ("COMPLETED", "TIMEOUT"):
+                # Only count COMPLETED, not TIMEOUT or ERROR
+                if status == "COMPLETED":
                     done.add((row["instance_id"], row["algorithm"]))
     except Exception as exc:
         logger.error("Failed to read performance.csv: %s", exc)
@@ -127,16 +130,17 @@ def get_timeout(n_vertices: int) -> int:
 def run_with_timeout(
     func: Callable,
     args: tuple,
-    timeout_sec: int,
+    timeout_sec: int | None = None,
 ) -> tuple:
     """
-    Run *func(*args)* in a thread with a timeout.
+    Run *func(*args)* in a thread with optional timeout.
 
     Returns:
         (result, elapsed_wall, elapsed_cpu, peak_memory_mb, error_msg)
 
     On timeout:  result=None, error_msg="TIMEOUT"
     On exception: result=None, error_msg=str(exc)
+    On success:   error_msg=None
     """
     result_container: list = [None]
     error_container:  list = [None]
@@ -155,6 +159,8 @@ def run_with_timeout(
 
     thread = threading.Thread(target=_target, daemon=True)
     thread.start()
+    
+    # If timeout_sec is None, wait indefinitely
     thread.join(timeout=timeout_sec)
 
     elapsed_wall = time.perf_counter() - start_wall
@@ -163,7 +169,7 @@ def run_with_timeout(
     peak_mem     = max(0.0, mem_after - mem_before)
 
     if thread.is_alive():
-        # Thread is still running — timeout occurred
+        # Thread is still running — timeout occurred (but should not with timeout_sec=None)
         return None, elapsed_wall, elapsed_cpu, peak_mem, "TIMEOUT"
 
     if error_container[0] is not None:
@@ -233,15 +239,14 @@ def run_algorithm_safely(
     n = graph.number_of_nodes()
     timeout = get_timeout(n)
 
-    logger.info("[RUN ] %s | %s  (n=%d, timeout=%ds)",
-                instance_id, algorithm_name, n, timeout)
+    logger.info("[RUN ] %s | %s  (n=%d)", instance_id, algorithm_name, n)
 
     result, wall, cpu, mem, error = run_with_timeout(
         solver.solve, (graph,), timeout_sec=timeout
     )
 
     if error == "TIMEOUT":
-        logger.warning("[TIMEOUT] %s | %s exceeded %ds", instance_id, algorithm_name, timeout)
+        logger.warning("[TIMEOUT] %s | %s exceeded time limit", instance_id, algorithm_name)
         save_performance_row(perf_csv_path, instance_id, algorithm_name, "TIMEOUT")
         done_set.add(key)
         return None
