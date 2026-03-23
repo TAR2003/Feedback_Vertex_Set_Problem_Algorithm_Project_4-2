@@ -36,9 +36,10 @@ PERF_COLUMNS = [
 ]
 
 # Timeout limits by instance size (n vertices)
-TIMEOUT_N_SMALL  = 60     # n ≤ 50
-TIMEOUT_N_MEDIUM = 300    # 51 ≤ n ≤ 200
-TIMEOUT_N_LARGE  = 600    # n > 200
+# Set to essentially infinite (no practical timeout)
+TIMEOUT_N_SMALL  = 999999     # n ≤ 50
+TIMEOUT_N_MEDIUM = 999999    # 51 ≤ n ≤ 200
+TIMEOUT_N_LARGE  = 999999    # n > 200
 
 
 # ---------------------------------------------------------------------------

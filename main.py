@@ -208,6 +208,10 @@ def main() -> None:
                 completed += 1
                 elapsed = time.perf_counter() - t0
                 logger.info("--- %s completed in %.1fs ---", exp_id, elapsed)
+                
+                # Regenerate plots after each experiment completes
+                logger.info("--- Regenerating plots with latest data ---")
+                _run_plot_py()
             except Exception as exc:
                 logger.error("--- %s FAILED: %s ---", exp_id, exc, exc_info=True)
 
