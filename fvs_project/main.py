@@ -1,0 +1,250 @@
+"""
+main.py
+-------
+Single entry point for the FVS research project.
+
+Usage:
+  python main.py                  # Full pipeline
+  python main.py --quick          # QUICK_MODE: only n ≤ 200 instances
+  python main.py --plots-only     # Skip experiments, generate plots only
+  python main.py --exp EXP3       # Run only experiment 3
+  python main.py --download-only  # Only generate/download datasets
+"""
+
+import argparse
+import logging
+import os
+import sys
+import time
+from pathlib import Path
+
+import psutil
+
+# ---------------------------------------------------------------------------
+# Project root setup — add fvs_project/ to sys.path so all imports work
+# ---------------------------------------------------------------------------
+PROJECT_DIR = Path(__file__).parent
+if str(PROJECT_DIR) not in sys.path:
+    sys.path.insert(0, str(PROJECT_DIR))
+
+
+# ---------------------------------------------------------------------------
+# Logging setup — file + stdout
+# ---------------------------------------------------------------------------
+RESULTS_DIR = PROJECT_DIR / "results"
+RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+
+log_format = "[%(asctime)s] [%(levelname)s] %(message)s"
+logging.basicConfig(
+    level=logging.INFO,
+    format=log_format,
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler(RESULTS_DIR / "run.log", mode="a"),
+    ],
+)
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Banner
+# ---------------------------------------------------------------------------
+
+BANNER = r"""
+╔══════════════════════════════════════════════════════════════╗
+║        FEEDBACK VERTEX SET — CSE 462 Research Project        ║
+║   Algorithms: IterativeCompression | KernelBST | MemeticGA   ║
+║   Experiments: EXP1–EXP10 | Plots: 12 figures                ║
+╚══════════════════════════════════════════════════════════════╝
+"""
+
+
+def print_banner(quick_mode: bool) -> None:
+    """Print startup banner with system info."""
+    print(BANNER)
+    cores = os.cpu_count()
+    ram   = psutil.virtual_memory().total / 1e9
+    print(f"  CPU cores : {cores}")
+    print(f"  RAM       : {ram:.1f} GB")
+    print(f"  QUICK_MODE: {quick_mode}")
+    print(f"  Project   : {PROJECT_DIR}")
+    print()
+
+
+# ---------------------------------------------------------------------------
+# Directory bootstrap
+# ---------------------------------------------------------------------------
+
+def create_directories() -> None:
+    """Create all required project subdirectories."""
+    dirs = [
+        PROJECT_DIR / "data" / "synthetic",
+        PROJECT_DIR / "data" / "real_world",
+        PROJECT_DIR / "results",
+        PROJECT_DIR / "figures",
+    ]
+    for d in dirs:
+        d.mkdir(parents=True, exist_ok=True)
+    logger.info("All directories ready.")
+
+
+# ---------------------------------------------------------------------------
+# Experiment registry
+# ---------------------------------------------------------------------------
+
+def _load_experiments(selector: str | None) -> list:
+    """
+    Import and return experiment modules to run.
+
+    Args:
+        selector: E.g. "EXP3" to run only experiment 3, or None for all.
+    """
+    from experiments import (
+        exp1_correctness, exp2_solution_quality, exp3_runtime_scalability,
+        exp4_pareto, exp5_structure_sensitivity, exp6_ga_parameters,
+        exp7_convergence, exp8_optimality_gap, exp9_realworld, exp10_robustness,
+    )
+    all_exps = [
+        ("EXP1",  exp1_correctness),
+        ("EXP2",  exp2_solution_quality),
+        ("EXP3",  exp3_runtime_scalability),
+        ("EXP4",  exp4_pareto),
+        ("EXP5",  exp5_structure_sensitivity),
+        ("EXP6",  exp6_ga_parameters),
+        ("EXP7",  exp7_convergence),
+        ("EXP8",  exp8_optimality_gap),
+        ("EXP9",  exp9_realworld),
+        ("EXP10", exp10_robustness),
+    ]
+    if selector:
+        return [(k, m) for k, m in all_exps if k == selector.upper()]
+    return all_exps
+
+
+# ---------------------------------------------------------------------------
+# Main pipeline
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    """Full pipeline: generate data → run experiments → generate plots."""
+    parser = argparse.ArgumentParser(description="FVS Research Project")
+    parser.add_argument("--quick",         action="store_true",
+                        help="Quick mode: only n ≤ 200 instances")
+    parser.add_argument("--plots-only",    action="store_true",
+                        help="Skip experiments; generate plots only")
+    parser.add_argument("--download-only", action="store_true",
+                        help="Only generate/download datasets")
+    parser.add_argument("--exp",           type=str, default=None,
+                        help="Run only a specific experiment (e.g. EXP3)")
+    args = parser.parse_args()
+
+    # Apply QUICK_MODE
+    quick = args.quick or (os.environ.get("FVS_QUICK_MODE", "1") != "0")
+    if quick:
+        os.environ["FVS_QUICK_MODE"] = "1"
+    else:
+        os.environ["FVS_QUICK_MODE"] = "0"
+
+    print_banner(quick_mode=quick)
+    create_directories()
+
+    perf_csv = PROJECT_DIR / "performance.csv"
+
+    # --- Dataset generation ---
+    if not args.plots_only:
+        logger.info("=== Step 1: Generating synthetic datasets ===")
+        from data.generator import generate_all
+        generate_all(quick_mode=quick)
+
+        logger.info("=== Step 2: Downloading real-world datasets ===")
+        from data.downloader import download_all
+        download_all()
+
+    if args.download_only:
+        logger.info("Download-only mode: done.")
+        return
+
+    # --- Load all instances ---
+    from data.generator import load_all_graphs as load_synthetic
+    from data.downloader import load_all_graphs as load_realworld
+    from experiments.runner import (
+        load_done_set, sort_instances, print_execution_order,
+    )
+    from analysis.report_writer import ReportWriter
+
+    if not args.plots_only:
+        synthetic   = load_synthetic(quick_mode=quick)
+        real_world  = load_realworld()
+        all_instances = sort_instances(synthetic + real_world)
+
+        print_execution_order(all_instances)
+
+        done_set = load_done_set(perf_csv)
+        total    = len(all_instances)
+        already  = len(done_set)
+        logger.info("Total instances: %d | Already completed: %d | "
+                    "Remaining: ~%d", total, already, total - already)
+
+        report_writer = ReportWriter(RESULTS_DIR)
+
+        config = {
+            "perf_csv_path":  perf_csv,
+            "results_dir":    RESULTS_DIR,
+            "figures_dir":    PROJECT_DIR / "figures",
+            "all_instances":  all_instances,
+            "quick_mode":     quick,
+        }
+
+        # --- Run experiments ---
+        logger.info("=== Step 3: Running experiments ===")
+        experiments = _load_experiments(args.exp)
+        completed   = 0
+
+        for exp_id, exp_module in experiments:
+            t0 = time.perf_counter()
+            logger.info("--- Starting %s ---", exp_id)
+            try:
+                exp_module.run(config, report_writer, done_set)
+                completed += 1
+                elapsed = time.perf_counter() - t0
+                logger.info("--- %s completed in %.1fs ---", exp_id, elapsed)
+            except Exception as exc:
+                logger.error("--- %s FAILED: %s ---", exp_id, exc, exc_info=True)
+
+        logger.info("Experiments completed: %d/%d", completed, len(experiments))
+
+    # --- Generate plots ---
+    logger.info("=== Step 4: Generating figures ===")
+    _run_plot_py()
+
+    # --- Summary ---
+    fig_count = len(list((PROJECT_DIR / "figures").glob("*.pdf")))
+    print()
+    print("=" * 50)
+    print(f"  Results saved to : {RESULTS_DIR / 'report.csv'}")
+    print(f"  Figures saved to : {PROJECT_DIR / 'figures'}/")
+    print(f"  Figures generated: {fig_count}")
+    print(f"  Log              : {RESULTS_DIR / 'run.log'}")
+    print("=" * 50)
+
+
+def _run_plot_py() -> None:
+    """Import and run plot.py in the same Python process."""
+    plot_script = PROJECT_DIR / "plot.py"
+    if not plot_script.exists():
+        logger.warning("plot.py not found; skipping figure generation")
+        return
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("plot", str(plot_script))
+        mod  = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        if hasattr(mod, "main"):
+            mod.main()
+        logger.info("plot.py completed successfully")
+    except Exception as exc:
+        logger.error("plot.py failed: %s", exc, exc_info=True)
+
+
+if __name__ == "__main__":
+    main()
