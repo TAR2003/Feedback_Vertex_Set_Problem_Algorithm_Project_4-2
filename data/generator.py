@@ -178,7 +178,7 @@ def _make_nested_cycles(n: int, extra_frac: float, seed: int) -> nx.Graph:
 def _make_random_cycle_overlay(n: int, extra_frac: float, seed: int) -> nx.Graph:
     """Random spanning tree with additional edges to plant cycles."""
     rng = np.random.default_rng(seed)
-    g   = nx.random_tree(n, seed=int(rng.integers(0, 2**31)))
+    g   = nx.random_labeled_tree(n, seed=int(rng.integers(0, 2**31)))
     _add_extra_edges(g, extra_frac, rng)
     return g
 
@@ -224,7 +224,7 @@ def _generate_tree_graphs() -> list[Path]:
         for ttype in TREE_TYPES:
             fname = SYNTHETIC_DIR / f"Tree_{ttype}_n{n}.graphml"
             if ttype == "random":
-                g = nx.random_tree(n, seed=42)
+                g = nx.random_labeled_tree(n, seed=42)
             elif ttype == "binary":
                 g = nx.balanced_tree(2, max(1, int(np.log2(n + 1))))
                 g = nx.convert_node_labels_to_integers(g)
