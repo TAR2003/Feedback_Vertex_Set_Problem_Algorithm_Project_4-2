@@ -112,6 +112,7 @@ Thumbs.db
 *.nav
 *.snm
 *.synctex.gz
+*.synctex
 *.toc
 *.vrb
 *.log
