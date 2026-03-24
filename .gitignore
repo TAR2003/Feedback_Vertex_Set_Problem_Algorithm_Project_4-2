@@ -22,6 +22,7 @@
 /results/
 /results/*
 !results/.gitkeep
+!results/report.csv
 
 # Generated figures (from plot.py)
 # /figures/
