@@ -63,7 +63,7 @@ BANNER = r"""
 ╔══════════════════════════════════════════════════════════════╗
 ║        FEEDBACK VERTEX SET — CSE 462 Research Project        ║
 ║   Algorithms: IterativeCompression | KernelBST | MemeticGA   ║
-║   Experiments: EXP1–EXP10 | Plots: 12 figures                ║
+║   Experiments: EXP1–EXP10 | Plots: 16 figures                ║
 ╚══════════════════════════════════════════════════════════════╝
 """
 

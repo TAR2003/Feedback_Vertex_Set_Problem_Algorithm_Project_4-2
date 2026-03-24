@@ -1,7 +1,7 @@
 """
 plot.py
 -------
-Generate all 12 figures for the FVS research project report.
+Generate figures for the FVS research project report.
 
 Reads ONLY from results/report.csv and results/*.json.
 Never re-runs any algorithms.
@@ -118,7 +118,7 @@ def fig1_fvs_size_boxplot(df: pd.DataFrame) -> None:
             exp2[(exp2["graph_type"] == gtype) & (exp2["algorithm"] == a)]["fvs_size"].dropna()
             for a in algos
         ]
-        bp = ax.boxplot(data_by_algo, labels=algos, patch_artist=True)
+        bp = ax.boxplot(data_by_algo, tick_labels=algos, patch_artist=True)
         for patch, algo in zip(bp["boxes"], algos):
             patch.set_facecolor(ALGO_STYLE.get(algo, {}).get("color", "grey"))
             patch.set_alpha(0.7)
@@ -624,11 +624,127 @@ def fig12_summary_table(df: pd.DataFrame) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Figure 13-16 — Runtime points + linear regression by algorithm
+# ---------------------------------------------------------------------------
+
+def _runtime_points_from_exp3(df: pd.DataFrame, algo: str) -> pd.DataFrame:
+    """Return cleaned EXP3 runtime points for one algorithm."""
+    sub = df[
+        (df["experiment_id"] == "EXP3")
+        & (df["algorithm"] == algo)
+        & (df["is_valid_solution"] == True)
+    ].copy()
+    if sub.empty:
+        return sub
+
+    sub = sub.dropna(subset=["n_vertices", "wall_time_sec"])
+    sub = sub[sub["wall_time_sec"] >= 0]
+    return sub
+
+
+def _draw_runtime_regression(ax: plt.Axes, points: pd.DataFrame, algo: str, title: str) -> bool:
+    """Draw scatter + linear fit for one algorithm; returns True if data exists."""
+    if points.empty:
+        return False
+
+    style = ALGO_STYLE.get(algo, {"color": "#333333", "marker": "o"})
+    x = points["n_vertices"].to_numpy(dtype=float)
+    y = points["wall_time_sec"].to_numpy(dtype=float)
+
+    ax.scatter(x, y, color=style["color"], marker=style["marker"], alpha=0.65, s=36)
+
+    # Linear regression on raw scale: runtime = a*n + b
+    if len(x) >= 2 and len(np.unique(x)) >= 2:
+        a, b = np.polyfit(x, y, deg=1)
+        xr = np.linspace(x.min(), x.max(), 100)
+        yr = a * xr + b
+        ax.plot(xr, yr, color=style["color"], lw=2.0, linestyle="--",
+                label=f"fit: y={a:.4f}n+{b:.3f}")
+        ax.legend(fontsize=8)
+
+    ax.set_title(title, fontsize=12)
+    ax.set_xlabel("n (vertices)")
+    ax.set_ylabel("Wall Time (s)")
+    ax.grid(True, alpha=0.3)
+    return True
+
+
+def fig13_ic_runtime_points(df: pd.DataFrame) -> None:
+    pts = _runtime_points_from_exp3(df, "IC")
+    if pts.empty:
+        logger.warning("[FIG13] No EXP3 IC data; skipping")
+        return
+    fig, ax = plt.subplots(figsize=(8, 5))
+    _draw_runtime_regression(ax, pts, "IC", "IC Runtime Points vs n (Linear Fit)")
+    plt.tight_layout()
+    _save(fig, "fig13_ic_runtime_points")
+
+
+def fig14_kbst_runtime_points(df: pd.DataFrame) -> None:
+    pts = _runtime_points_from_exp3(df, "KBST")
+    if pts.empty:
+        logger.warning("[FIG14] No EXP3 KBST data; skipping")
+        return
+    fig, ax = plt.subplots(figsize=(8, 5))
+    _draw_runtime_regression(ax, pts, "KBST", "KBST Runtime Points vs n (Linear Fit)")
+    plt.tight_layout()
+    _save(fig, "fig14_kbst_runtime_points")
+
+
+def fig15_memetic_runtime_points(df: pd.DataFrame) -> None:
+    pts = _runtime_points_from_exp3(df, "MEMETIC")
+    if pts.empty:
+        logger.warning("[FIG15] No EXP3 MEMETIC data; skipping")
+        return
+    fig, ax = plt.subplots(figsize=(8, 5))
+    _draw_runtime_regression(ax, pts, "MEMETIC", "MEMETIC Runtime Points vs n (Linear Fit)")
+    plt.tight_layout()
+    _save(fig, "fig15_memetic_runtime_points")
+
+
+def fig16_runtime_points_comparison(df: pd.DataFrame) -> None:
+    fig, ax = plt.subplots(figsize=(9, 6))
+    ax.set_title("Runtime Points vs n: IC vs KBST vs MEMETIC (Linear Fits)", fontsize=12)
+
+    any_data = False
+    for algo in ["IC", "KBST", "MEMETIC"]:
+        pts = _runtime_points_from_exp3(df, algo)
+        if pts.empty:
+            continue
+        any_data = True
+
+        style = ALGO_STYLE.get(algo, {"color": "#333333", "marker": "o"})
+        x = pts["n_vertices"].to_numpy(dtype=float)
+        y = pts["wall_time_sec"].to_numpy(dtype=float)
+
+        ax.scatter(x, y, color=style["color"], marker=style["marker"], alpha=0.5,
+                   s=30, label=f"{algo} points")
+
+        if len(x) >= 2 and len(np.unique(x)) >= 2:
+            a, b = np.polyfit(x, y, deg=1)
+            xr = np.linspace(x.min(), x.max(), 100)
+            ax.plot(xr, a * xr + b, color=style["color"], linestyle="--", lw=2,
+                    label=f"{algo} fit")
+
+    if not any_data:
+        logger.warning("[FIG16] No EXP3 data; skipping")
+        plt.close(fig)
+        return
+
+    ax.set_xlabel("n (vertices)")
+    ax.set_ylabel("Wall Time (s)")
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=8, ncol=2)
+    plt.tight_layout()
+    _save(fig, "fig16_runtime_points_comparison")
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    """Generate all 12 figures from report.csv and JSON files."""
+    """Generate figures from report.csv and JSON files."""
     logging.basicConfig(level=logging.INFO,
                         format="[%(asctime)s] [%(levelname)s] %(message)s",
                         stream=sys.stdout)
@@ -638,25 +754,38 @@ def main() -> None:
     logger.info("Loaded report.csv: %d rows", len(df))
 
     generators = [
-        ("fig1",  fig1_fvs_size_boxplot),
-        ("fig2",  fig2_runtime_scaling),
-        ("fig3",  fig3_pareto_frontier),
-        ("fig4",  fig4_structure_heatmap),
-        ("fig5",  fig5_runtime_heatmap),
-        ("fig6",  fig6_ga_parameter_sensitivity),
-        ("fig7",  fig7_convergence_curves),
-        ("fig8",  fig8_optimality_gap),
-        ("fig9",  fig9_realworld_performance),
-        ("fig10", fig10_robustness_violin),
-        ("fig11", fig11_win_matrix),
-        ("fig12", fig12_summary_table),
+        ("fig1",  "fig1_fvs_size_boxplot",       fig1_fvs_size_boxplot),
+        ("fig2",  "fig2_runtime_scaling",         fig2_runtime_scaling),
+        ("fig3",  "fig3_pareto_frontier",         fig3_pareto_frontier),
+        ("fig4",  "fig4_structure_heatmap",       fig4_structure_heatmap),
+        ("fig5",  "fig5_runtime_heatmap",         fig5_runtime_heatmap),
+        ("fig6",  "fig6_ga_parameter_sensitivity", fig6_ga_parameter_sensitivity),
+        ("fig7",  "fig7_convergence_curves",      fig7_convergence_curves),
+        ("fig8",  "fig8_optimality_gap",          fig8_optimality_gap),
+        ("fig9",  "fig9_realworld_performance",   fig9_realworld_performance),
+        ("fig10", "fig10_robustness_violin",      fig10_robustness_violin),
+        ("fig11", "fig11_win_matrix",             fig11_win_matrix),
+        ("fig12", "fig12_summary_table",          fig12_summary_table),
+        ("fig13", "fig13_ic_runtime_points",      fig13_ic_runtime_points),
+        ("fig14", "fig14_kbst_runtime_points",    fig14_kbst_runtime_points),
+        ("fig15", "fig15_memetic_runtime_points", fig15_memetic_runtime_points),
+        ("fig16", "fig16_runtime_points_comparison", fig16_runtime_points_comparison),
     ]
 
     saved = 0
-    for name, fn in generators:
+    for name, file_stem, fn in generators:
+        # Remove stale files first so counting reflects this run only.
+        for ext in ("png", "pdf"):
+            target = FIGURES_DIR / f"{file_stem}.{ext}"
+            if target.exists():
+                target.unlink()
+
         try:
             fn(df)
-            saved += 1
+            png_ok = (FIGURES_DIR / f"{file_stem}.png").exists()
+            pdf_ok = (FIGURES_DIR / f"{file_stem}.pdf").exists()
+            if png_ok and pdf_ok:
+                saved += 1
         except Exception as exc:
             logger.error("Failed to generate %s: %s", name, exc)
 

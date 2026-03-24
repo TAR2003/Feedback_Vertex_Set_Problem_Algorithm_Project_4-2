@@ -9,7 +9,6 @@ import json
 import logging
 from pathlib import Path
 
-import networkx as nx
 import pandas as pd
 
 from algorithms.iterative_compression import IterativeCompression
@@ -34,8 +33,6 @@ SOLVERS = [
 
 def run(config: dict, report_writer: ReportWriter, done_set: set) -> None:
     """Run EXP4: Pareto frontier analysis on mixed-size instances."""
-    import pandas as pd
-    
     results_dir = config["results_dir"]
     all_instances = config.get("all_instances", [])
     
@@ -46,18 +43,29 @@ def run(config: dict, report_writer: ReportWriter, done_set: set) -> None:
     if report_csv.exists():
         try:
             df = pd.read_csv(report_csv)
-            # Filter for EXP4 data or all EXP data with selected sizes
-            exp_data = df[(df['experiment_id'].isin(['EXP4', 'EXP1', 'EXP2'])) & 
-                         (df['n_vertices'].isin(PARETO_N_VALUES))]
-            
-            # Extract unique instance-algo combinations
+            # Pareto must be built from a single consistent source experiment.
+            # EXP3 contains both runtime and quality for all algorithms.
+            exp_data = df[
+                (df["experiment_id"] == "EXP3")
+                & (df["n_vertices"].isin(PARETO_N_VALUES))
+                & (df["is_valid_solution"] == True)
+            ].copy()
+
+            # Keep one point per (instance, algorithm): best observed runtime.
+            exp_data["fvs_size"] = pd.to_numeric(exp_data["fvs_size"], errors="coerce")
+            exp_data["wall_time_sec"] = pd.to_numeric(exp_data["wall_time_sec"], errors="coerce")
+            exp_data = exp_data.dropna(subset=["fvs_size", "wall_time_sec"])
+            exp_data = exp_data[exp_data["fvs_size"] >= 0]
+            exp_data = exp_data.sort_values(["instance_id", "algorithm", "wall_time_sec"])
+            exp_data = exp_data.drop_duplicates(subset=["instance_id", "algorithm"], keep="first")
+
             for _, row in exp_data.iterrows():
-                if row['is_valid_solution'] and pd.notna(row['fvs_size']) and pd.notna(row['wall_time_sec']):
+                if row["is_valid_solution"]:
                     pareto_data.append({
-                        "instance_id": row['instance_id'],
-                        "algorithm": row['algorithm'],
-                        "fvs_size": int(row['fvs_size']),
-                        "wall_time": float(row['wall_time_sec']),
+                        "instance_id": str(row["instance_id"]),
+                        "algorithm": str(row["algorithm"]),
+                        "fvs_size": int(row["fvs_size"]),
+                        "wall_time": float(row["wall_time_sec"]),
                     })
             logger.info("[EXP4] Pareto: Loaded %d data points from report.csv", len(pareto_data))
         except Exception as exc:
