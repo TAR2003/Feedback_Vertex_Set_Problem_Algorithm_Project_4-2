@@ -19,7 +19,7 @@
 # ============================================================================
 
 # Experiment results, logs, and intermediate data
-/results/
+# /results/
 /results/*
 !results/.gitkeep
 !results/report.csv
