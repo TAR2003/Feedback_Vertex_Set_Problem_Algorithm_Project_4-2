@@ -40,6 +40,7 @@ python main.py
 
 # Run with options:
 python main.py --quick              # QUICK_MODE: only instances with n ≤ 200
+python main.py --tiny               # TINY_MODE: only 30 smallest instances
 python main.py --exp EXP3           # Run only experiment 3 (runtime scalability)
 python main.py --download-only      # Generate/download datasets (no experiments)
 python main.py --plots-only         # Generate plots from existing results
@@ -176,7 +177,25 @@ python main.py --quick
 Runs only instances with **n ≤ 200 vertices**, reducing runtime to ~30 minutes.
 Ideal for development & debugging.
 
-### 3. Run Individual Experiments
+### 3. Tiny Mode (Minimal Dataset)
+
+```bash
+python main.py --tiny
+```
+
+Runs only the **30 smallest instances** (by vertex count n).
+**Fastest execution path** — completes in ~3–5 minutes.
+Perfect for quick testing and validation during development.
+
+**Customizing TINY_MODE:**
+To change the number of instances, edit `main.py` and modify:
+```python
+TINY_MODE_COUNT = 30  # Change this value to run fewer/more instances
+```
+
+**Note:** `--tiny` automatically enables `--quick` mode under the hood.
+
+### 4. Run Individual Experiments
 
 ```bash
 python main.py --exp EXP1            # Correctness validation
@@ -185,7 +204,7 @@ python main.py --exp EXP6            # GA hyperparameter study
 python main.py --exp EXP9            # Real-world networks
 ```
 
-### 4. Generate Plots Only
+### 5. Generate Plots Only
 
 ```bash
 python main.py --plots-only
@@ -193,7 +212,7 @@ python main.py --plots-only
 
 Reads existing `results/report.csv` and generates 12 figures without re-running algorithms.
 
-### 5. Generate/Download Data Only
+### 6. Generate/Download Data Only
 
 ```bash
 python main.py --download-only
@@ -201,7 +220,7 @@ python main.py --download-only
 
 Creates synthetic and real-world instances without running experiments.
 
-### 6. Resume Interrupted Run
+### 7. Resume Interrupted Run
 
 All experiments checkpoint to `results/performance.csv`. If execution is interrupted, simply re-run:
 

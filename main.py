@@ -6,6 +6,7 @@ Single entry point for the FVS research project.
 Usage:
   python main.py                  # Full pipeline
   python main.py --quick          # QUICK_MODE: only n ≤ 200 instances
+  python main.py --tiny           # TINY_MODE: only 30 smallest instances
   python main.py --plots-only     # Skip experiments, generate plots only
   python main.py --exp EXP3       # Run only experiment 3
   python main.py --download-only  # Only generate/download datasets
@@ -47,6 +48,14 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Configuration Constants
+# ---------------------------------------------------------------------------
+
+# TINY_MODE: Number of smallest instances to run (easily configurable)
+TINY_MODE_COUNT = 30  # Change this to run fewer/more instances in --tiny mode
+
+
+# ---------------------------------------------------------------------------
 # Banner
 # ---------------------------------------------------------------------------
 
@@ -59,7 +68,7 @@ BANNER = r"""
 """
 
 
-def print_banner(quick_mode: bool) -> None:
+def print_banner(quick_mode: bool, tiny_mode: bool = False) -> None:
     """Print startup banner with system info."""
     print(BANNER)
     cores = os.cpu_count()
@@ -67,6 +76,7 @@ def print_banner(quick_mode: bool) -> None:
     print(f"  CPU cores : {cores}")
     print(f"  RAM       : {ram:.1f} GB")
     print(f"  QUICK_MODE: {quick_mode}")
+    print(f"  TINY_MODE : {tiny_mode}")
     print(f"  Project   : {PROJECT_DIR}")
     print()
 
@@ -130,6 +140,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="FVS Research Project")
     parser.add_argument("--quick",         action="store_true",
                         help="Quick mode: only n ≤ 200 instances")
+    parser.add_argument("--tiny",          action="store_true",
+                        help="Tiny mode: only 30 smallest instances")
     parser.add_argument("--plots-only",    action="store_true",
                         help="Skip experiments; generate plots only")
     parser.add_argument("--download-only", action="store_true",
@@ -138,14 +150,20 @@ def main() -> None:
                         help="Run only a specific experiment (e.g. EXP3)")
     args = parser.parse_args()
 
-    # Apply QUICK_MODE
+    # Apply QUICK_MODE and TINY_MODE
     quick = args.quick or (os.environ.get("FVS_QUICK_MODE", "1") != "0")
+    tiny  = args.tiny
+    
+    # TINY_MODE implies QUICK_MODE
+    if tiny:
+        quick = True
+    
     if quick:
         os.environ["FVS_QUICK_MODE"] = "1"
     else:
         os.environ["FVS_QUICK_MODE"] = "0"
 
-    print_banner(quick_mode=quick)
+    print_banner(quick_mode=quick, tiny_mode=tiny)
     create_directories()
 
     perf_csv = PROJECT_DIR / "performance.csv"
@@ -177,6 +195,15 @@ def main() -> None:
         real_world  = load_realworld()
         all_instances = sort_instances(synthetic + real_world)
 
+        # Apply TINY_MODE: keep only smallest instances by n
+        if tiny:
+            all_instances_sorted_by_n = sorted(
+                all_instances,
+                key=lambda x: x[1].number_of_nodes()
+            )
+            all_instances = all_instances_sorted_by_n[:TINY_MODE_COUNT]
+            logger.info("TINY_MODE: Filtered to %d smallest instances", TINY_MODE_COUNT)
+
         print_execution_order(all_instances)
 
         done_set = load_done_set(perf_csv)
@@ -193,6 +220,7 @@ def main() -> None:
             "figures_dir":    PROJECT_DIR / "figures",
             "all_instances":  all_instances,
             "quick_mode":     quick,
+            "tiny_mode":      tiny,
         }
 
         # --- Run experiments ---
