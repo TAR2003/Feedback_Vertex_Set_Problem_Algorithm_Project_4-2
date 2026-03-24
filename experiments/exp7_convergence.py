@@ -12,7 +12,7 @@ from pathlib import Path
 from algorithms.memetic_ga import MemeticGA
 from analysis.report_writer import ReportWriter
 from data.validator import is_valid_fvs, graph_stats
-from experiments.runner import run_algorithm_safely
+from experiments.runner import is_run_done, run_algorithm_safely
 from experiments.exp1_correctness import _infer_graph_type
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,6 @@ N_RUNS = 5
 
 def run(config: dict, report_writer: ReportWriter, done_set: set) -> None:
     """Run EXP7: convergence analysis — 5 independent runs on 5 instances."""
-    perf_csv    = config["perf_csv_path"]
     results_dir = config["results_dir"]
     all_instances = config.get("all_instances", [])
 
@@ -44,7 +43,20 @@ def run(config: dict, report_writer: ReportWriter, done_set: set) -> None:
                 random_seed=seed,
             )
             run_id = f"EXP7_{instance_id}_run{seed}"
-            outcome = run_algorithm_safely(solver, graph, run_id, "MEMETIC", perf_csv, done_set)
+            if is_run_done(done_set, EXPERIMENT_ID, run_id, "MEMETIC", run_number=seed):
+                logger.info("[SKIP] %s | MEMETIC run=%d already recorded for %s",
+                            run_id, seed, EXPERIMENT_ID)
+                continue
+
+            outcome = run_algorithm_safely(
+                solver,
+                graph,
+                EXPERIMENT_ID,
+                run_id,
+                "MEMETIC",
+                done_set,
+                run_number=seed,
+            )
 
             if outcome is None:
                 continue

@@ -16,7 +16,7 @@ import pandas as pd
 from algorithms.memetic_ga import MemeticGA
 from analysis.report_writer import ReportWriter
 from data.validator import is_valid_fvs, graph_stats
-from experiments.runner import run_algorithm_safely, sort_instances
+from experiments.runner import is_run_done, run_algorithm_safely, sort_instances
 from experiments.exp1_correctness import _infer_graph_type
 
 logger = logging.getLogger(__name__)
@@ -44,7 +44,6 @@ def _params_hash(pop: int, mut: float, cross: float) -> str:
 
 def run(config: dict, report_writer: ReportWriter, done_set: set) -> None:
     """Run EXP6: GA parameter grid search on 5 representative instances."""
-    perf_csv    = config["perf_csv_path"]
     results_dir = config["results_dir"]
     all_instances = config.get("all_instances", [])
 
@@ -85,8 +84,18 @@ def run(config: dict, report_writer: ReportWriter, done_set: set) -> None:
                         crossover_rate=cross,
                         random_seed=42,
                     )
+                    if is_run_done(done_set, EXPERIMENT_ID, inst_id, "MEMETIC", run_number=1):
+                        logger.info("[SKIP] %s | MEMETIC already recorded for %s", inst_id, EXPERIMENT_ID)
+                        continue
+
                     outcome = run_algorithm_safely(
-                        solver, graph, inst_id, "MEMETIC", perf_csv, done_set
+                        solver,
+                        graph,
+                        EXPERIMENT_ID,
+                        inst_id,
+                        "MEMETIC",
+                        done_set,
+                        run_number=1,
                     )
 
                     if outcome is None:

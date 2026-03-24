@@ -2,7 +2,7 @@
 experiments/runner.py
 ---------------------
 Master experiment orchestrator with:
-  - Checkpoint loading/saving (performance.csv)
+    - Checkpoint loading from report.csv
   - Threading-based timeouts
   - Instance sorting (smallest → largest)
   - Progress tracking
@@ -11,12 +11,8 @@ Master experiment orchestrator with:
 import csv
 import logging
 import os
-import sys
 import time
 import threading
-import concurrent.futures
-import traceback
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -29,12 +25,6 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-PERF_COLUMNS = [
-    "instance_id", "algorithm", "status",
-    "wall_time_sec", "cpu_time_sec", "peak_memory_mb",
-    "fvs_size", "timestamp",
-]
-
 # Timeout limits by instance size (n vertices)
 # NO TIMEOUTS - set to None to run indefinitely
 TIMEOUT_N_SMALL  = None     # n ≤ 50
@@ -43,74 +33,68 @@ TIMEOUT_N_LARGE  = None     # n > 200
 
 
 # ---------------------------------------------------------------------------
-# performance.csv helpers
+# report.csv checkpoint helpers
 # ---------------------------------------------------------------------------
 
-def load_done_set(perf_csv_path: Path) -> set:
+def _normalize_run_number(value: Any) -> int:
+    """Normalize run number values from CSV to an int key component."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 1
+
+
+def load_done_set(report_csv_path: Path) -> set:
     """
-    Load (instance_id, algorithm) pairs that are already done (COMPLETED only)
-    from performance.csv.
+    Load completed rows from report.csv.
+
+    A completed key is:
+      (experiment_id, instance_id, algorithm, run_number)
 
     Returns:
-        set of (instance_id, algorithm) strings.
-    
-    NOTE: Only includes COMPLETED status, not TIMEOUT or ERROR.
+        Set of completion keys.
     """
     done: set = set()
-    if not perf_csv_path.exists():
+    if not report_csv_path.exists():
         return done
+
     try:
-        with open(perf_csv_path, newline="") as f:
+        with open(report_csv_path, newline="") as f:
             reader = csv.DictReader(f)
             for row in reader:
-                status = row.get("status", "")
-                # Only count COMPLETED, not TIMEOUT or ERROR
-                if status == "COMPLETED":
-                    done.add((row["instance_id"], row["algorithm"]))
+                exp = str(row.get("experiment_id", "")).strip()
+                iid = str(row.get("instance_id", "")).strip()
+                algo = str(row.get("algorithm", "")).strip()
+                if not (exp and iid and algo):
+                    continue
+
+                # Only treat successful/completed runs as done.
+                # Legacy rows with skipped/failed states often use fvs_size < 0.
+                try:
+                    fvs_size = float(row.get("fvs_size", "nan"))
+                except (TypeError, ValueError):
+                    fvs_size = float("nan")
+                if not (fvs_size >= 0):
+                    continue
+
+                run_number = _normalize_run_number(row.get("run_number", 1))
+                done.add((exp, iid, algo, run_number))
     except Exception as exc:
-        logger.error("Failed to read performance.csv: %s", exc)
+        logger.error("Failed to read report.csv for checkpoint loading: %s", exc)
+
     return done
 
 
-def save_performance_row(
-    perf_csv_path: Path,
+def is_run_done(
+    done_set: set,
+    experiment_id: str,
     instance_id: str,
-    algorithm: str,
-    status: str,
-    wall_time_sec: Any = "",
-    cpu_time_sec: Any  = "",
-    peak_memory_mb: Any = "",
-    fvs_size: Any      = "",
-) -> None:
-    """Append one row to performance.csv (thread-safe via file locking)."""
-    perf_csv_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Create header row if file is new/empty
-    if not perf_csv_path.exists() or perf_csv_path.stat().st_size == 0:
-        try:
-            with open(perf_csv_path, "w", newline="") as f:
-                writer = csv.DictWriter(f, fieldnames=PERF_COLUMNS)
-                writer.writeheader()
-        except Exception as exc:
-            logger.error("Failed to create performance.csv header: %s", exc)
-
-    row = {
-        "instance_id":    instance_id,
-        "algorithm":      algorithm,
-        "status":         status,
-        "wall_time_sec":  wall_time_sec,
-        "cpu_time_sec":   cpu_time_sec,
-        "peak_memory_mb": peak_memory_mb,
-        "fvs_size":       fvs_size,
-        "timestamp":      datetime.utcnow().isoformat(),
-    }
-    try:
-        with open(perf_csv_path, "a", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=PERF_COLUMNS, extrasaction="ignore")
-            writer.writerow(row)
-            f.flush()
-    except Exception as exc:
-        logger.error("Failed to append to performance.csv: %s", exc)
+    algorithm_name: str,
+    run_number: int = 1,
+) -> bool:
+    """Return True if this exact run key already exists in report.csv state."""
+    key = (experiment_id, instance_id, algorithm_name, int(run_number))
+    return key in done_set
 
 
 # ---------------------------------------------------------------------------
@@ -212,13 +196,14 @@ def print_execution_order(instances: list[tuple[str, nx.Graph]]) -> None:
 def run_algorithm_safely(
     solver,
     graph: nx.Graph,
+    experiment_id: str,
     instance_id: str,
     algorithm_name: str,
-    perf_csv_path: Path,
     done_set: set,
+    run_number: int = 1,
 ) -> Optional[tuple]:
     """
-    Run *solver.solve(graph)* with full checkpoint/timeout/error protection.
+    Run *solver.solve(graph)* with checkpoint/timeout/error protection.
 
     Returns:
         (fvs_set, info_dict, wall_time, cpu_time, peak_mem) on success.
@@ -226,14 +211,16 @@ def run_algorithm_safely(
 
     Side-effects:
         - Emits [SKIP] log if already done.
-        - Appends to performance.csv on completion/timeout/error.
-        - Updates *done_set* in-place on completion.
+        - Updates *done_set* in-place after timeout/error/success so repeated
+          calls in the same process do not duplicate work.
     """
-    key = (instance_id, algorithm_name)
+    run_number = int(run_number)
+    key = (experiment_id, instance_id, algorithm_name, run_number)
 
     # --- Checkpoint check ---
     if key in done_set:
-        logger.info("[SKIP] %s | %s already done", instance_id, algorithm_name)
+        logger.info("[SKIP] %s | %s | %s run=%d already done",
+                    experiment_id, instance_id, algorithm_name, run_number)
         return None
 
     n = graph.number_of_nodes()
@@ -247,26 +234,17 @@ def run_algorithm_safely(
 
     if error == "TIMEOUT":
         logger.warning("[TIMEOUT] %s | %s exceeded time limit", instance_id, algorithm_name)
-        save_performance_row(perf_csv_path, instance_id, algorithm_name, "TIMEOUT")
         done_set.add(key)
         return None
 
     if error is not None:
         logger.error("[ERROR] %s | %s — %s", instance_id, algorithm_name, error)
-        save_performance_row(perf_csv_path, instance_id, algorithm_name, "ERROR")
         done_set.add(key)
         return None
 
     fvs_set, info_dict = result
     fvs_size = len(fvs_set) if fvs_set is not None else -1
 
-    save_performance_row(
-        perf_csv_path, instance_id, algorithm_name, "COMPLETED",
-        wall_time_sec=f"{wall:.6f}",
-        cpu_time_sec=f"{cpu:.6f}",
-        peak_memory_mb=f"{mem:.3f}",
-        fvs_size=fvs_size,
-    )
     done_set.add(key)
     logger.info("[DONE] %s | %s → fvs=%d  (%.2fs)",
                 instance_id, algorithm_name, fvs_size, wall)

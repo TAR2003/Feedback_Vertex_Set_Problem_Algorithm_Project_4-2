@@ -15,7 +15,7 @@ from algorithms.kernelization_bst import KernelizationBST
 from algorithms.memetic_ga import MemeticGA
 from analysis.report_writer import ReportWriter
 from data.validator import is_valid_fvs, graph_stats
-from experiments.runner import run_algorithm_safely, sort_instances
+from experiments.runner import is_run_done, run_algorithm_safely, sort_instances
 
 logger = logging.getLogger(__name__)
 
@@ -40,9 +40,8 @@ def run(
     Args:
         config:        Configuration dict from main.py.
         report_writer: ReportWriter instance for results/report.csv.
-        done_set:      Mutable set of (instance_id, algorithm) already done.
+        done_set:      Mutable completion-key set loaded from report.csv.
     """
-    perf_csv = config["perf_csv_path"]
     all_instances: list = config.get("all_instances", [])
 
     # Filter to small instances only
@@ -63,8 +62,18 @@ def run(
 
         for solver in SOLVERS:
             algo = solver.short_name()
+            if is_run_done(done_set, EXPERIMENT_ID, instance_id, algo, run_number=1):
+                logger.info("[SKIP] %s | %s already recorded for %s", instance_id, algo, EXPERIMENT_ID)
+                continue
+
             outcome = run_algorithm_safely(
-                solver, graph, instance_id, algo, perf_csv, done_set
+                solver,
+                graph,
+                EXPERIMENT_ID,
+                instance_id,
+                algo,
+                done_set,
+                run_number=1,
             )
 
             if outcome is None:

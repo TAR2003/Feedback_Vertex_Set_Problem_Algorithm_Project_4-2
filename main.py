@@ -131,6 +131,9 @@ def _load_experiments(selector: str | None) -> list:
     return all_exps
 
 
+PER_INSTANCE_EXPERIMENTS = {"EXP1", "EXP2", "EXP3", "EXP8", "EXP9"}
+
+
 # ---------------------------------------------------------------------------
 # Main pipeline
 # ---------------------------------------------------------------------------
@@ -165,8 +168,6 @@ def main() -> None:
 
     print_banner(quick_mode=quick, tiny_mode=tiny)
     create_directories()
-
-    perf_csv = PROJECT_DIR / "performance.csv"
 
     # --- Dataset generation ---
     if not args.plots_only:
@@ -206,16 +207,15 @@ def main() -> None:
 
         print_execution_order(all_instances)
 
-        done_set = load_done_set(perf_csv)
+        report_csv = RESULTS_DIR / "report.csv"
+        done_set = load_done_set(report_csv)
         total    = len(all_instances)
-        already  = len(done_set)
-        logger.info("Total instances: %d | Already completed: %d | "
-                    "Remaining: ~%d", total, already, total - already)
+        logger.info("Total instances to consider: %d", total)
+        logger.info("Loaded %d completed run keys from report.csv", len(done_set))
 
         report_writer = ReportWriter(RESULTS_DIR)
 
         config = {
-            "perf_csv_path":  perf_csv,
             "results_dir":    RESULTS_DIR,
             "figures_dir":    PROJECT_DIR / "figures",
             "all_instances":  all_instances,
@@ -226,9 +226,34 @@ def main() -> None:
         # --- Run experiments ---
         logger.info("=== Step 3: Running experiments ===")
         experiments = _load_experiments(args.exp)
-        completed   = 0
+        per_instance = [(eid, mod) for eid, mod in experiments if eid in PER_INSTANCE_EXPERIMENTS]
+        batch_only = [(eid, mod) for eid, mod in experiments if eid not in PER_INSTANCE_EXPERIMENTS]
 
-        for exp_id, exp_module in experiments:
+        completed = 0
+
+        if per_instance:
+            logger.info("--- Running per-instance sequence for %d experiments ---", len(per_instance))
+            for idx, (instance_id, graph) in enumerate(all_instances, 1):
+                n = graph.number_of_nodes()
+                m = graph.number_of_edges()
+                logger.info("=== Instance %d/%d: %s (n=%d, m=%d) ===",
+                            idx, len(all_instances), instance_id, n, m)
+                per_instance_config = dict(config)
+                per_instance_config["all_instances"] = [(instance_id, graph)]
+
+                for exp_id, exp_module in per_instance:
+                    t0 = time.perf_counter()
+                    logger.info("--- Starting %s on %s ---", exp_id, instance_id)
+                    try:
+                        exp_module.run(per_instance_config, report_writer, done_set)
+                        completed += 1
+                        logger.info("--- %s on %s completed in %.1fs ---",
+                                    exp_id, instance_id, time.perf_counter() - t0)
+                    except Exception as exc:
+                        logger.error("--- %s on %s FAILED: %s ---",
+                                     exp_id, instance_id, exc, exc_info=True)
+
+        for exp_id, exp_module in batch_only:
             t0 = time.perf_counter()
             logger.info("--- Starting %s ---", exp_id)
             try:
@@ -236,14 +261,10 @@ def main() -> None:
                 completed += 1
                 elapsed = time.perf_counter() - t0
                 logger.info("--- %s completed in %.1fs ---", exp_id, elapsed)
-                
-                # Regenerate plots after each experiment completes
-                logger.info("--- Regenerating plots with latest data ---")
-                _run_plot_py()
             except Exception as exc:
                 logger.error("--- %s FAILED: %s ---", exp_id, exc, exc_info=True)
 
-        logger.info("Experiments completed: %d/%d", completed, len(experiments))
+        logger.info("Experiment executions completed: %d", completed)
 
     # --- Generate plots ---
     logger.info("=== Step 4: Generating figures ===")

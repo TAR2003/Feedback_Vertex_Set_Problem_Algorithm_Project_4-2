@@ -50,7 +50,7 @@ def wilcoxon_test(scores_a: list, scores_b: list) -> dict:
         logger.warning("Wilcoxon test failed: %s", exc)
         return {"statistic": float("nan"), "p_value": float("nan"), "significant": False}
 
-    return {"statistic": float(stat), "p_value": float(p), "significant": p < 0.05}
+    return {"statistic": float(stat), "p_value": float(p), "significant": bool(p < 0.05)}
 
 
 def friedman_test(*score_groups) -> dict:
@@ -77,7 +77,7 @@ def friedman_test(*score_groups) -> dict:
         logger.warning("Friedman test failed: %s", exc)
         return {"statistic": float("nan"), "p_value": float("nan"), "significant": False}
 
-    return {"statistic": float(stat), "p_value": float(p), "significant": p < 0.05}
+    return {"statistic": float(stat), "p_value": float(p), "significant": bool(p < 0.05)}
 
 
 # ---------------------------------------------------------------------------

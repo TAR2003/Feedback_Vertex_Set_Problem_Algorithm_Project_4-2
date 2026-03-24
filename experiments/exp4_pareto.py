@@ -17,7 +17,7 @@ from algorithms.kernelization_bst import KernelizationBST
 from algorithms.memetic_ga import MemeticGA
 from analysis.report_writer import ReportWriter
 from data.validator import is_valid_fvs, graph_stats
-from experiments.runner import run_algorithm_safely, sort_instances
+from experiments.runner import is_run_done, run_algorithm_safely, sort_instances
 from experiments.exp1_correctness import _infer_graph_type
 
 logger = logging.getLogger(__name__)
@@ -36,7 +36,6 @@ def run(config: dict, report_writer: ReportWriter, done_set: set) -> None:
     """Run EXP4: Pareto frontier analysis on mixed-size instances."""
     import pandas as pd
     
-    perf_csv    = config["perf_csv_path"]
     results_dir = config["results_dir"]
     all_instances = config.get("all_instances", [])
     
@@ -78,7 +77,19 @@ def run(config: dict, report_writer: ReportWriter, done_set: set) -> None:
 
             for solver in SOLVERS:
                 algo    = solver.short_name()
-                outcome = run_algorithm_safely(solver, graph, instance_id, algo, perf_csv, done_set)
+                if is_run_done(done_set, EXPERIMENT_ID, instance_id, algo, run_number=1):
+                    logger.info("[SKIP] %s | %s already recorded for %s", instance_id, algo, EXPERIMENT_ID)
+                    continue
+
+                outcome = run_algorithm_safely(
+                    solver,
+                    graph,
+                    EXPERIMENT_ID,
+                    instance_id,
+                    algo,
+                    done_set,
+                    run_number=1,
+                )
 
                 if outcome is None:
                     wall, cpu, mem = 0.0, 0.0, 0.0

@@ -12,13 +12,14 @@ from pathlib import Path
 from collections import defaultdict
 
 import networkx as nx
+import pandas as pd
 
 from algorithms.iterative_compression import IterativeCompression
 from algorithms.kernelization_bst import KernelizationBST
 from algorithms.memetic_ga import MemeticGA
 from analysis.report_writer import ReportWriter
 from data.validator import is_valid_fvs, graph_stats
-from experiments.runner import run_algorithm_safely, sort_instances
+from experiments.runner import is_run_done, run_algorithm_safely, sort_instances
 from experiments.exp1_correctness import _infer_graph_type
 
 logger = logging.getLogger(__name__)
@@ -31,7 +32,6 @@ KBST_MAX_N  = 500
 
 def run(config: dict, report_writer: ReportWriter, done_set: set) -> None:
     """Run EXP3: runtime scalability on ALL instances."""
-    perf_csv    = config["perf_csv_path"]
     results_dir = config["results_dir"]
     all_instances = sort_instances(config.get("all_instances", []))
 
@@ -41,9 +41,6 @@ def run(config: dict, report_writer: ReportWriter, done_set: set) -> None:
         (MemeticGA(max_generations=100, population_size=50, random_seed=42),
          10**9, "MEMETIC"),
     ]
-
-    # Collect runtime data per (algorithm, graph_type)
-    scaling_data: dict = defaultdict(lambda: defaultdict(list))
 
     logger.info("[EXP3] Scalability: %d instances", len(all_instances))
 
@@ -58,7 +55,19 @@ def run(config: dict, report_writer: ReportWriter, done_set: set) -> None:
                             algo, n)
                 continue
 
-            outcome = run_algorithm_safely(solver, graph, instance_id, algo, perf_csv, done_set)
+            if is_run_done(done_set, EXPERIMENT_ID, instance_id, algo, run_number=1):
+                logger.info("[SKIP] %s | %s already recorded for %s", instance_id, algo, EXPERIMENT_ID)
+                continue
+
+            outcome = run_algorithm_safely(
+                solver,
+                graph,
+                EXPERIMENT_ID,
+                instance_id,
+                algo,
+                done_set,
+                run_number=1,
+            )
 
             if outcome is None:
                 wall, cpu, mem = 0.0, 0.0, 0.0
@@ -70,10 +79,6 @@ def run(config: dict, report_writer: ReportWriter, done_set: set) -> None:
                 valid    = is_valid_fvs(graph, fvs_set)
                 fvs_size = len(fvs_set)
                 notes    = "TIMEOUT" if fvs_size < 0 else ""
-                scaling_data[algo][gtype].append({
-                    "n": n,
-                    "wall_time_sec": wall,
-                })
 
             report_writer.write_row(
                 experiment_id=EXPERIMENT_ID,
@@ -91,6 +96,28 @@ def run(config: dict, report_writer: ReportWriter, done_set: set) -> None:
                 is_valid_solution=valid,
                 notes=notes,
             )
+
+    # Rebuild cumulative scaling data from report.csv so repeated per-instance
+    # calls still produce a complete scalability artifact.
+    scaling_data: dict = defaultdict(lambda: defaultdict(list))
+    report_csv = results_dir / "report.csv"
+    if report_csv.exists():
+        try:
+            df = pd.read_csv(report_csv)
+            exp3_rows = df[(df["experiment_id"] == EXPERIMENT_ID) & (df["is_valid_solution"] == True)]
+            for _, row in exp3_rows.iterrows():
+                algo = row.get("algorithm")
+                gtype = row.get("graph_type")
+                n_val = pd.to_numeric(row.get("n_vertices"), errors="coerce")
+                t_val = pd.to_numeric(row.get("wall_time_sec"), errors="coerce")
+                if pd.isna(n_val) or pd.isna(t_val):
+                    continue
+                scaling_data[str(algo)][str(gtype)].append({
+                    "n": int(n_val),
+                    "wall_time_sec": float(t_val),
+                })
+        except Exception as exc:
+            logger.warning("[EXP3] Failed to aggregate cumulative scaling data: %s", exc)
 
     # Save scaling data as JSON for plot.py
     _save_json(dict(scaling_data), results_dir / "exp3_scaling.json")

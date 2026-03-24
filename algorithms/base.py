@@ -45,5 +45,5 @@ class FVSSolver(ABC):
         return self.__class__.__name__
 
     def short_name(self) -> str:
-        """Short identifier used in performance.csv and report.csv."""
+        """Short identifier used in report.csv and experiment summaries."""
         return self.__class__.__name__.upper()

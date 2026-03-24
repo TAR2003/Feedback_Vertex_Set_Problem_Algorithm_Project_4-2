@@ -127,7 +127,6 @@ Feedback_Vertex_Set_Problem_Algorithm_Project_4-2/
 │
 ├── results/                # Experiment outputs (auto-created)
 │   ├── report.csv          # Master results table (18 columns)
-│   ├── performance.csv     # Runtime checkpoints for resume capability
 │   ├── exp{N}_*.json       # Experiment-specific intermediate data
 │   └── run.log             # Detailed execution log
 │
@@ -162,8 +161,8 @@ This will:
 1. **Generate 40+ synthetic graphs** (ER, BA, Grid, Watts-Strogatz, Cycle-Heavy)
 2. **Download 5+ real-world networks** (social/infrastructure networks)
 3. **Execute all 10 experiments** (1000+ algorithm runs)
-4. **Checkpoint progress** in `results/performance.csv` (resume-safe)
-5. **Create results/report.csv** with 18 metrics per run
+4. **Checkpoint progress** in `results/report.csv` (resume-safe)
+5. **Generate experiment JSON summaries** in `results/`
 6. **Generate 12 figures** in `figures/` directory
 
 **Execution time:** ~2–4 hours (depending on hardware and QUICK_MODE)
@@ -222,10 +221,10 @@ Creates synthetic and real-world instances without running experiments.
 
 ### 7. Resume Interrupted Run
 
-All experiments checkpoint to `results/performance.csv`. If execution is interrupted, simply re-run:
+All experiments checkpoint to `results/report.csv`. If execution is interrupted, simply re-run:
 
 ```bash
-python main.py  # Automatically skips completed (instance, algorithm) pairs
+python main.py  # Automatically skips completed (experiment, instance, algorithm, run) keys
 ```
 
 ---
@@ -374,22 +373,7 @@ EXP1,ER_n50_p0.3_seed1,ER,50,375,0.31,IC,1,12,12,1.00,0.00,0.523,0.502,45.2,true
 EXP3,BA_n500_m3_seed1,BA,500,1497,0.01,MEMETIC,1,87,unknown,unknown,unknown,3.456,3.201,256.8,true,"Converged",2024-03-15T10:25:12Z
 ```
 
-### 2. results/performance.csv
-**Checkpointing table** tracking progress:
-| Column | Purpose |
-|--------|---------|
-| `instance_id` | Graph identifier |
-| `algorithm` | Solver name |
-| `status` | "SUCCESS", "TIMEOUT", "ERROR" |
-| `wall_time_sec` | Execution time |
-| `cpu_time_sec` | CPU time |
-| `peak_memory_mb` | RAM usage |
-| `fvs_size` | Result size |
-| `timestamp` | Completion time |
-
-**Used by runner.py to skip already-completed (instance, algorithm) pairs**.
-
-### 3. results/exp{N}_*.json
+### 2. results/exp{N}_*.json
 **Experiment-specific intermediate data:**
 - `exp3_scaling_data.json` — Runtime vs. n for each algorithm
 - `exp4_pareto.json` — Quality-time Pareto fronts
@@ -397,7 +381,7 @@ EXP3,BA_n500_m3_seed1,BA,500,1497,0.01,MEMETIC,1,87,unknown,unknown,unknown,3.45
 - `exp7_convergence.json` — Generation-by-generation GA fitness
 - `exp8_gap_analysis.json` — Optimality gap statistics
 
-### 4. results/run.log
+### 3. results/run.log
 **Detailed execution log** with timestamps:
 ```
 [2024-03-15 10:00:00,123] [INFO] Starting FVS Research Pipeline...
@@ -408,7 +392,7 @@ EXP3,BA_n500_m3_seed1,BA,500,1497,0.01,MEMETIC,1,87,unknown,unknown,unknown,3.45
 ...
 ```
 
-### 5. figures/ Directory
+### 4. figures/ Directory
 **12 publication-ready PNG + PDF figures:**
 
 | Figure | Description |
@@ -502,8 +486,8 @@ class FVSSolver(ABC):
 ```
 All algorithms inherit from this, ensuring consistent interface.
 
-**2. Checkpointing with performance.csv**
-- `runner.load_done_set()` loads completed (instance, algorithm) pairs
+**2. Checkpointing with report.csv**
+- `runner.load_done_set()` loads completed (experiment, instance, algorithm, run) keys
 - Experiments skip already-finished runs
 - Safe to interrupt and resume
 
@@ -611,7 +595,7 @@ python main.py
 **Solution:**
 ```bash
 # Delete checkpoint to re-run:
-rm results/performance.csv
+rm results/report.csv
 
 # Then re-run:
 python main.py

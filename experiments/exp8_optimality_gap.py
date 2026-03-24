@@ -14,7 +14,7 @@ from algorithms.kernelization_bst import KernelizationBST
 from algorithms.memetic_ga import MemeticGA
 from analysis.report_writer import ReportWriter
 from data.validator import is_valid_fvs, graph_stats
-from experiments.runner import run_algorithm_safely, sort_instances
+from experiments.runner import is_run_done, run_algorithm_safely, sort_instances
 from experiments.exp1_correctness import _infer_graph_type
 
 logger = logging.getLogger(__name__)
@@ -31,7 +31,6 @@ BF_SOLVER = BruteForce()
 
 def run(config: dict, report_writer: ReportWriter, done_set: set) -> None:
     """Run EXP8: optimality gap on all n ≤ 20 instances."""
-    perf_csv    = config["perf_csv_path"]
     all_instances = config.get("all_instances", [])
 
     tiny = [(iid, g) for iid, g in all_instances
@@ -45,9 +44,19 @@ def run(config: dict, report_writer: ReportWriter, done_set: set) -> None:
         gtype = _infer_graph_type(instance_id)
 
         # --- Ground truth: Brute Force ---
-        bf_outcome = run_algorithm_safely(
-            BF_SOLVER, graph, instance_id, "BRUTE_FORCE", perf_csv, done_set
-        )
+        if is_run_done(done_set, EXPERIMENT_ID, instance_id, "BRUTE_FORCE", run_number=1):
+            logger.info("[SKIP] %s | BRUTE_FORCE already recorded for %s", instance_id, EXPERIMENT_ID)
+            bf_outcome = None
+        else:
+            bf_outcome = run_algorithm_safely(
+                BF_SOLVER,
+                graph,
+                EXPERIMENT_ID,
+                instance_id,
+                "BRUTE_FORCE",
+                done_set,
+                run_number=1,
+            )
         if bf_outcome is None:
             optimal_size = None
         else:
@@ -76,7 +85,19 @@ def run(config: dict, report_writer: ReportWriter, done_set: set) -> None:
         # --- Approximate algorithms ---
         for solver in APPROX_SOLVERS:
             algo = solver.short_name()
-            outcome = run_algorithm_safely(solver, graph, instance_id, algo, perf_csv, done_set)
+            if is_run_done(done_set, EXPERIMENT_ID, instance_id, algo, run_number=1):
+                logger.info("[SKIP] %s | %s already recorded for %s", instance_id, algo, EXPERIMENT_ID)
+                continue
+
+            outcome = run_algorithm_safely(
+                solver,
+                graph,
+                EXPERIMENT_ID,
+                instance_id,
+                algo,
+                done_set,
+                run_number=1,
+            )
 
             if outcome is None:
                 fvs_size, wall, cpu, mem = -1, 0.0, 0.0, 0.0

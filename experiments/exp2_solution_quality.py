@@ -10,6 +10,7 @@ import logging
 from pathlib import Path
 
 import networkx as nx
+import pandas as pd
 
 from algorithms.iterative_compression import IterativeCompression
 from algorithms.kernelization_bst import KernelizationBST
@@ -17,7 +18,7 @@ from algorithms.memetic_ga import MemeticGA
 from analysis.report_writer import ReportWriter
 from analysis.statistics import friedman_test
 from data.validator import is_valid_fvs, graph_stats
-from experiments.runner import run_algorithm_safely, sort_instances
+from experiments.runner import is_run_done, run_algorithm_safely, sort_instances
 from experiments.exp1_correctness import _infer_graph_type
 
 logger = logging.getLogger(__name__)
@@ -34,16 +35,12 @@ SOLVERS = [
 
 def run(config: dict, report_writer: ReportWriter, done_set: set) -> None:
     """Run EXP2: solution quality comparison on instances with n ≤ MAX_N."""
-    perf_csv = config["perf_csv_path"]
     results_dir: Path = config["results_dir"]
     all_instances = config.get("all_instances", [])
 
     medium = [(iid, g) for iid, g in all_instances
               if g.number_of_nodes() <= MAX_N]
     medium = sort_instances(medium)
-
-    # Store per-instance fvs sizes for statistical analysis
-    fvs_by_algo: dict = {s.short_name(): [] for s in SOLVERS}
 
     logger.info("[EXP2] Quality comparison: %d instances × %d algorithms",
                 len(medium), len(SOLVERS))
@@ -55,7 +52,19 @@ def run(config: dict, report_writer: ReportWriter, done_set: set) -> None:
 
         for solver in SOLVERS:
             algo    = solver.short_name()
-            outcome = run_algorithm_safely(solver, graph, instance_id, algo, perf_csv, done_set)
+            if is_run_done(done_set, EXPERIMENT_ID, instance_id, algo, run_number=1):
+                logger.info("[SKIP] %s | %s already recorded for %s", instance_id, algo, EXPERIMENT_ID)
+                continue
+
+            outcome = run_algorithm_safely(
+                solver,
+                graph,
+                EXPERIMENT_ID,
+                instance_id,
+                algo,
+                done_set,
+                run_number=1,
+            )
 
             if outcome is None:
                 fvs_size = -1
@@ -67,8 +76,6 @@ def run(config: dict, report_writer: ReportWriter, done_set: set) -> None:
                 valid    = is_valid_fvs(graph, fvs_set)
                 fvs_size = len(fvs_set)
                 notes    = "" if valid else "INVALID_FVS"
-                if valid:
-                    fvs_by_algo[algo].append(fvs_size)
                 sizes[algo] = fvs_size
 
             report_writer.write_row(
@@ -91,7 +98,24 @@ def run(config: dict, report_writer: ReportWriter, done_set: set) -> None:
         # Compute win/tie rankings for this instance
         _log_instance_ranking(instance_id, sizes)
 
-    # Friedman test across all algorithms
+    # Build cumulative statistics from report.csv so summary remains correct
+    # even when EXP2 runs in per-instance sequencing mode.
+    fvs_by_algo: dict = {s.short_name(): [] for s in SOLVERS}
+    report_csv = results_dir / "report.csv"
+    if report_csv.exists():
+        try:
+            df = pd.read_csv(report_csv)
+            exp2_rows = df[(df["experiment_id"] == EXPERIMENT_ID) & (df["is_valid_solution"] == True)]
+            for algo in fvs_by_algo:
+                vals = pd.to_numeric(
+                    exp2_rows[exp2_rows["algorithm"] == algo]["fvs_size"],
+                    errors="coerce",
+                ).dropna()
+                fvs_by_algo[algo] = [int(v) for v in vals if v >= 0]
+        except Exception as exc:
+            logger.warning("[EXP2] Failed to aggregate cumulative stats from report.csv: %s", exc)
+
+    # Friedman test across all algorithms (cumulative)
     groups = [fvs_by_algo[s.short_name()] for s in SOLVERS]
     friedman = friedman_test(*groups)
     logger.info("[EXP2] Friedman test p-value=%.4f, significant=%s",
