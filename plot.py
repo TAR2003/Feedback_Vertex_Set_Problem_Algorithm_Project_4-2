@@ -46,14 +46,13 @@ DPI = 300
 
 
 def _save(fig: plt.Figure, name: str) -> None:
-    """Save figure as both PNG and PDF."""
+    """Save figure as PNG only."""
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
-    for ext in ("png", "pdf"):
-        path = FIGURES_DIR / f"{name}.{ext}"
-        try:
-            fig.savefig(str(path), dpi=DPI, bbox_inches="tight")
-        except Exception as exc:
-            logger.error("Failed to save %s: %s", path, exc)
+    path = FIGURES_DIR / f"{name}.png"
+    try:
+        fig.savefig(str(path), dpi=DPI, bbox_inches="tight")
+    except Exception as exc:
+        logger.error("Failed to save %s: %s", path, exc)
     plt.close(fig)
     logger.info("Saved: %s", name)
 
@@ -775,16 +774,14 @@ def main() -> None:
     saved = 0
     for name, file_stem, fn in generators:
         # Remove stale files first so counting reflects this run only.
-        for ext in ("png", "pdf"):
-            target = FIGURES_DIR / f"{file_stem}.{ext}"
-            if target.exists():
-                target.unlink()
+        target = FIGURES_DIR / f"{file_stem}.png"
+        if target.exists():
+            target.unlink()
 
         try:
             fn(df)
             png_ok = (FIGURES_DIR / f"{file_stem}.png").exists()
-            pdf_ok = (FIGURES_DIR / f"{file_stem}.pdf").exists()
-            if png_ok and pdf_ok:
+            if png_ok:
                 saved += 1
         except Exception as exc:
             logger.error("Failed to generate %s: %s", name, exc)

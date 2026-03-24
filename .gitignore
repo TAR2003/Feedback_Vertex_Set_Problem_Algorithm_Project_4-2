@@ -24,9 +24,9 @@
 !results/.gitkeep
 
 # Generated figures (from plot.py)
-/figures/
-/figures/*
-!figures/.gitkeep
+# /figures/
+# /figures/*
+# #!figures/.gitkeep
 
 # ============================================================================
 # Python & Virtual Environments
