@@ -97,7 +97,7 @@ class KernelizationBST(FVSSolver):
         """
         changed = True
         sol = set(partial_sol)
-        g = graph
+        g = graph.copy() if graph is not graph else graph
 
         while changed:
             changed = False
@@ -123,20 +123,25 @@ class KernelizationBST(FVSSolver):
                     to_force.append(v)
                     changed = True
 
-            for v in to_delete_free:
-                if g.has_node(v):
-                    g = g.copy()
-                    g.remove_node(v)
-            for v in to_force:
-                if g.has_node(v):
-                    g = g.copy()
-                    sol.add(v)
-                    g.remove_node(v)
-                    k -= 1
-                    if k < 0:
-                        return g, sol, -1  # Over-budget
+            # Batch delete free vertices (degree ≤ 1)
+            if to_delete_free:
+                g = g.copy()
+                to_remove = [v for v in to_delete_free if g.has_node(v)]
+                g.remove_nodes_from(to_remove)
+
+            # Force high-degree/self-loop vertices into FVS
+            if to_force:
+                g = g.copy()
+                for v in to_force:
+                    if g.has_node(v):
+                        sol.add(v)
+                        g.remove_node(v)
+                        k -= 1
+                        if k < 0:
+                            return g, sol, -1  # Over-budget
 
             # Rule 4: degree-2 contraction
+            contracted = False
             for v in list(g.nodes()):
                 if not g.has_node(v) or g.degree(v) != 2:
                     continue
@@ -145,15 +150,21 @@ class KernelizationBST(FVSSolver):
                     continue
                 u, w = neighbors[0], neighbors[1]
                 if u == w:
-                    continue  # Multi-edge case; handled by Rule 3/branching
+                    continue  # Self-loop case; would be handled by Rule 3
+                
+                # Check if u and w are already connected
+                if g.has_edge(u, w):
+                    # Triangle exists; must branch here (don't contract)
+                    # Leave for BST to handle
+                    continue
+                
+                # Safe to contract: remove v, add (u,w) edge
                 g = g.copy()
-                # If (u, w) edge already exists → triangle; branch in BST
-                if not g.has_edge(u, w):
-                    # Safe to contract: remove v, add (u,w)
-                    g.remove_node(v)
-                    g.add_edge(u, w)
-                    changed = True
-                    break  # Restart inner loop after mutation
+                g.remove_node(v)
+                g.add_edge(u, w)
+                changed = True
+                contracted = True
+                break  # Restart loop after mutation
 
         return g, sol, k
 

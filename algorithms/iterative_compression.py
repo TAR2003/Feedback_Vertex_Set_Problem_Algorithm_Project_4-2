@@ -94,8 +94,8 @@ class IterativeCompression(FVSSolver):
         if not nodes:
             return set()
 
-        # Start with empty FVS for the 1-node graph (no cycles in a single vertex)
-        F: set = set()
+        # Start with the first node (not empty!)
+        F: set = {nodes[0]}
 
         for idx, v in enumerate(nodes[1:], 1):
             F.add(v)
@@ -189,9 +189,13 @@ class IterativeCompression(FVSSolver):
         if cycle is None:
             return forced
 
-        for v in cycle:
-            if v in forbidden:
-                continue  # Must not include forbidden nodes
+        # Try branching on each cycle vertex that is not forbidden
+        branchable = [v for v in cycle if v not in forbidden]
+        if not branchable:
+            # All cycle vertices are forbidden — cannot solve this subproblem
+            return None
+
+        for v in branchable:
             iterations[0] += 1
             g2 = g.copy()
             g2.remove_node(v)
@@ -208,8 +212,8 @@ class IterativeCompression(FVSSolver):
     @staticmethod
     def _find_cycle(graph: nx.Graph) -> Optional[list]:
         """
-        DFS-based cycle finder.  Returns list of vertex IDs in a cycle.
-        Returns None if graph is acyclic.  O(V+E).
+        DFS-based cycle finder. Returns list of vertex IDs in a cycle.
+        Returns None if graph is acyclic. O(V+E).
         """
         visited: dict = {}  # node -> parent
         cycle_nodes: list = []
@@ -220,12 +224,17 @@ class IterativeCompression(FVSSolver):
                 if w == parent:
                     continue
                 if w in visited:
-                    # Reconstruct cycle
+                    # Reconstruct cycle: from w back to v via parent chain
                     path = [w, v]
                     cur = v
-                    while cur != w:
+                    max_steps = len(graph)  # Safety limit
+                    steps = 0
+                    while cur != w and steps < max_steps:
+                        if cur not in visited:
+                            break  # Malformed parent chain; stop
                         cur = visited[cur]
                         path.append(cur)
+                        steps += 1
                     cycle_nodes.extend(path)
                     return True
                 if dfs(w, v):

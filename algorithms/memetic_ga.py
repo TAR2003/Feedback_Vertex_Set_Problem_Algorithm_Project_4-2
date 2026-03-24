@@ -171,35 +171,33 @@ class MemeticGA(FVSSolver):
     def _decode(self, perm: list, graph: nx.Graph) -> set:
         """
         Greedy decoder: process vertices in permutation order.
-        For each vertex, check if including it in FVS (vs not including it)
-        helps break cycles. Add vertex to FVS only if removing it from consideration
-        leaves cycles involving it.
-
+        For each vertex, if the graph currently has cycles, try removing it
+        and check if cycles persist. If cycles disappear, the vertex was necessary.
+        
+        This is a standard greedy FVS decoder for permutation encoding.
         Always produces a valid FVS.
         """
         fvs: set = set()
-        processed = set()
-
+        g = graph.copy()
+        
         for v in perm:
-            processed.add(v)
-            # Check: if we do NOT add v to FVS, do cycles remain in processed vertices?
-            # Test with candidate FVS (without v added yet)
-            test_vertices = [u for u in processed if u not in fvs]
-            test_graph = graph.subgraph(test_vertices)
-            if has_cycle(test_graph):
-                # Cycles exist. Check if v is actually part of them.
-                # If v is in a cycle, include it in FVS.
-                test_without_v = [u for u in test_vertices if u != v]
-                if test_without_v:
-                    test_graph_without_v = graph.subgraph(test_without_v)
-                    # If graph still has cycles without v, v is not essential yet.
-                    # If cycles are gone, v breaks them.
-                    if not has_cycle(test_graph_without_v):
-                        fvs.add(v)
-                else:
-                    # v is the only processed vertex; no cycles possible yet
-                    pass
-
+            if not g.has_node(v):
+                # Vertex already removed
+                continue
+            
+            if not has_cycle(g):
+                # No cycles remain; done
+                break
+            
+            # Test: does removing v help?
+            g_test = g.copy()
+            g_test.remove_node(v)
+            
+            if not has_cycle(g_test):
+                # Yes, removing v breaks all cycles; include it in FVS
+                fvs.add(v)
+                g = g_test
+        
         return fvs
 
     def _fitness(self, perm: list, graph: nx.Graph) -> float:
