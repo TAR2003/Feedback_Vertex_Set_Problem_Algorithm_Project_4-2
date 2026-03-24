@@ -11,6 +11,7 @@ import logging
 from pathlib import Path
 
 import networkx as nx
+import pandas as pd
 
 from algorithms.memetic_ga import MemeticGA
 from analysis.report_writer import ReportWriter
@@ -54,13 +55,20 @@ def run(config: dict, report_writer: ReportWriter, done_set: set) -> None:
     total = len(REPRESENTATIVE_IDS) * len(POP_SIZES) * len(MUTATION_RATES) * len(CROSSOVER_RATES)
     logger.info("[EXP6] GA grid search: %d runs total", total)
 
+    # Try to load from report if available
+    report_csv = results_dir / "report.csv"
+    instances_found = 0
+    instances_skipped = 0
+    
     for base_id in REPRESENTATIVE_IDS:
         # Try to find the instance (partial match)
         graph = _find_instance(instance_map, base_id)
         if graph is None:
             logger.warning("[EXP6] Instance not found: %s — skipping", base_id)
+            instances_skipped += 1
             continue
-
+        
+        instances_found += 1
         stats = graph_stats(graph)
         gtype = _infer_graph_type(base_id)
 
@@ -89,14 +97,15 @@ def run(config: dict, report_writer: ReportWriter, done_set: set) -> None:
                         fvs_set, _, wall, cpu, mem = outcome
                         valid    = is_valid_fvs(graph, fvs_set)
                         fvs_size = len(fvs_set)
-                        grid_results.append({
-                            "base_id":    base_id,
-                            "pop":        pop,
-                            "mut":        mut,
-                            "cross":      cross,
-                            "fvs_size":   fvs_size,
-                            "wall_time":  wall,
-                        })
+                        if valid:
+                            grid_results.append({
+                                "base_id":    base_id,
+                                "pop":        pop,
+                                "mut":        mut,
+                                "cross":      cross,
+                                "fvs_size":   fvs_size,
+                                "wall_time":  wall,
+                            })
 
                     report_writer.write_row(
                         experiment_id=EXPERIMENT_ID,
@@ -115,6 +124,30 @@ def run(config: dict, report_writer: ReportWriter, done_set: set) -> None:
                         notes=f"pop={pop},mut={mut},cross={cross}",
                     )
 
+    # If no instances were found/processed, try to load from report.csv
+    if instances_found == 0 and report_csv.exists():
+        logger.info("[EXP6] No instances to run; attempting to load from report.csv")
+        try:
+            df = pd.read_csv(report_csv)
+            exp6_data = df[(df['experiment_id'] == 'EXP6') & (df['is_valid_solution'] == True)]
+            for _, row in exp6_data.iterrows():
+                if pd.notna(row['fvs_size']) and pd.notna(row['wall_time_sec']):
+                    # Extract parameters from notes field if available
+                    notes = str(row.get('notes', ''))
+                    grid_results.append({
+                        "base_id":    row['instance_id'],
+                        "pop":        -1,  # Can't easily extract
+                        "mut":        -1,
+                        "cross":      -1,
+                        "fvs_size":   int(row['fvs_size']),
+                        "wall_time":  float(row['wall_time_sec']),
+                    })
+            logger.info("[EXP6] Loaded %d grid results from report.csv", len(grid_results))
+        except Exception as exc:
+            logger.warning("[EXP6] Failed to load from report.csv: %s", exc)
+
+    logger.info("[EXP6] Saving %d grid results. (Found: %d, Skipped: %d)", 
+                len(grid_results), instances_found, instances_skipped)
     _save_json({"grid_results": grid_results}, results_dir / "exp6_grid.json")
 
 
