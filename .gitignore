@@ -79,22 +79,7 @@ htmlcov/
 Thumbs.db
 .DS_Store
 
-# ============================================================================
-# Presentation Materials (Optional)
-# ============================================================================
-# LaTeX build artifacts (keep .tex source, ignore build files)
-checkpoint_1_presentation/*.aux
-checkpoint_1_presentation/*.fdb_latexmk
-checkpoint_1_presentation/*.fls
-checkpoint_1_presentation/*.nav
-checkpoint_1_presentation/*.snm
-checkpoint_1_presentation/*.synctex.gz
-checkpoint_1_presentation/*.toc
-checkpoint_1_presentation/*.vrb
-checkpoint_1_presentation/*.log
-checkpoint_1_presentation/*.out
-checkpoint_1_presentation/*.bbl
-checkpoint_1_presentation/*.blg
+
 
 # ============================================================================
 # Temporary & Debug Files
