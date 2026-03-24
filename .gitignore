@@ -116,3 +116,24 @@ checkpoint_1_presentation/*.blg
 # Local configuration (if needed)
 .env.local
 .env.*.local
+
+# ============================================================================
+# LaTeX interim build artifacts (global)
+# Keep .tex, .bib, .pdf; ignore everything else from LaTeX builds everywhere
+# ============================================================================
+*.aux
+*.fdb_latexmk
+*.fls
+*.nav
+*.snm
+*.synctex.gz
+*.toc
+*.vrb
+*.log
+*.out
+*.bbl
+*.blg
+
+!*.tex
+!*.bib
+!*.pdf
