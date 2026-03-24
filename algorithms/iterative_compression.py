@@ -107,7 +107,8 @@ class IterativeCompression(FVSSolver):
 
             if len(F) == k + 1:
                 # Work with the subgraph induced by first idx+1 nodes
-                subgraph = graph.subgraph(nodes[:idx+1])
+                # Must use .copy() because subgraph() returns a read-only view
+                subgraph = graph.subgraph(nodes[:idx+1]).copy()
                 compressed = self._compress(subgraph, F, k, iterations)
                 if compressed is None:
                     return None

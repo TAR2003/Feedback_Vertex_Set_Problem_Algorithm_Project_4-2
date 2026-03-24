@@ -41,8 +41,8 @@ class BruteForce(FVSSolver):
 
         Returns:
             (fvs_set, info_dict) where fvs_set is the minimum FVS found.
-            Returns (None, info_dict) if the graph has no cycles (FVS = empty set
-            would be valid — returned as empty set to signal true optimality).
+            Returns (None, info_dict) if no FVS is found within the size limit k.
+            Returns (empty set, info_dict) if the graph is already acyclic.
         """
         n = graph.number_of_nodes()
         if n > MAX_VERTICES:
@@ -81,7 +81,7 @@ class BruteForce(FVSSolver):
 
         # No FVS of size ≤ k found (or no FVS at all, which can't happen for connected graph)
         logger.warning("BruteForce: no FVS found after %d iterations", iterations)
-        return set(nodes), {
+        return None, {
             "iterations": iterations,
             "time_sec": 0.0,
             "memory_mb": 0.0,

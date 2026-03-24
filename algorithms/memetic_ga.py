@@ -171,8 +171,9 @@ class MemeticGA(FVSSolver):
     def _decode(self, perm: list, graph: nx.Graph) -> set:
         """
         Greedy decoder: process vertices in permutation order.
-        For each vertex, check if the processed subgraph (excluding current FVS)
-        has cycles. If yes, add the vertex to FVS.
+        For each vertex, check if including it in FVS (vs not including it)
+        helps break cycles. Add vertex to FVS only if removing it from consideration
+        leaves cycles involving it.
 
         Always produces a valid FVS.
         """
@@ -181,13 +182,23 @@ class MemeticGA(FVSSolver):
 
         for v in perm:
             processed.add(v)
-            # Check: does the processed subgraph still have cycles?
-            # (considering vertices not in fvs)
+            # Check: if we do NOT add v to FVS, do cycles remain in processed vertices?
+            # Test with candidate FVS (without v added yet)
             test_vertices = [u for u in processed if u not in fvs]
             test_graph = graph.subgraph(test_vertices)
             if has_cycle(test_graph):
-                # Need v in FVS to help break cycles
-                fvs.add(v)
+                # Cycles exist. Check if v is actually part of them.
+                # If v is in a cycle, include it in FVS.
+                test_without_v = [u for u in test_vertices if u != v]
+                if test_without_v:
+                    test_graph_without_v = graph.subgraph(test_without_v)
+                    # If graph still has cycles without v, v is not essential yet.
+                    # If cycles are gone, v breaks them.
+                    if not has_cycle(test_graph_without_v):
+                        fvs.add(v)
+                else:
+                    # v is the only processed vertex; no cycles possible yet
+                    pass
 
         return fvs
 

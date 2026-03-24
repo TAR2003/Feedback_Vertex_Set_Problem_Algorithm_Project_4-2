@@ -61,26 +61,31 @@ def run(config: dict, report_writer: ReportWriter, done_set: set) -> None:
             optimal_size = None
         else:
             bf_fvs, _, bf_wall, bf_cpu, bf_mem = bf_outcome
-            optimal_size = len(bf_fvs)
-            report_writer.write_row(
-                experiment_id=EXPERIMENT_ID,
-                instance_id=instance_id,
-                graph_type=gtype,
-                n_vertices=stats["n_vertices"],
-                n_edges=stats["n_edges"],
-                graph_density=stats["density"],
-                algorithm="BRUTE_FORCE",
-                run_number=1,
-                fvs_size=optimal_size,
-                optimal_fvs_size=optimal_size,
-                approximation_ratio=1.0,
-                optimality_gap_pct=0.0,
-                wall_time_sec=bf_wall,
-                cpu_time_sec=bf_cpu,
-                peak_memory_mb=bf_mem,
-                is_valid_solution=True,
-                notes="Ground truth",
-            )
+            if bf_fvs is None:
+                # BruteForce could not find FVS within size limit
+                optimal_size = None
+                logger.warning("[SKIP] %s | BRUTE_FORCE returned None (no FVS found)", instance_id)
+            else:
+                optimal_size = len(bf_fvs)
+                report_writer.write_row(
+                    experiment_id=EXPERIMENT_ID,
+                    instance_id=instance_id,
+                    graph_type=gtype,
+                    n_vertices=stats["n_vertices"],
+                    n_edges=stats["n_edges"],
+                    graph_density=stats["density"],
+                    algorithm="BRUTE_FORCE",
+                    run_number=1,
+                    fvs_size=optimal_size,
+                    optimal_fvs_size=optimal_size,
+                    approximation_ratio=1.0,
+                    optimality_gap_pct=0.0,
+                    wall_time_sec=bf_wall,
+                    cpu_time_sec=bf_cpu,
+                    peak_memory_mb=bf_mem,
+                    is_valid_solution=True,
+                    notes="Ground truth",
+                )
 
         # --- Approximate algorithms ---
         for solver in APPROX_SOLVERS:
