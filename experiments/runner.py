@@ -168,15 +168,15 @@ def run_with_timeout(
 
 def sort_instances(instances: list[tuple[str, nx.Graph]]) -> list[tuple[str, nx.Graph]]:
     """
-    Sort instances by (n_vertices + n_edges) ascending — smallest first.
+    Sort instances by n_vertices (number of nodes) in ascending order — smallest first.
 
     Args:
         instances: List of (instance_id, graph) pairs.
 
     Returns:
-        Sorted list.
+        Sorted list by n values in ascending order.
     """
-    return sorted(instances, key=lambda x: x[1].number_of_nodes() + x[1].number_of_edges())
+    return sorted(instances, key=lambda x: x[1].number_of_nodes())
 
 
 def print_execution_order(instances: list[tuple[str, nx.Graph]]) -> None:
