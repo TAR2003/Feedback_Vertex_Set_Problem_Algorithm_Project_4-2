@@ -315,6 +315,8 @@ std::vector<int> UndirectedGraph::find_shortest_cycle() const
                 {
                     best_len = static_cast<int>(cycle.size());
                     best_cycle = std::move(cycle);
+                    if (best_len <= 3)
+                        return best_cycle;
                 }
             }
         }

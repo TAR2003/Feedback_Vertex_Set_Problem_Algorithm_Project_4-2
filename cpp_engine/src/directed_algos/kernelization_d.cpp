@@ -101,8 +101,8 @@ void apply_directed_kernelization(
                 {
                     for (int s : successors)
                     {
-                        if (p != s)
-                            g.add_edge(p, s);
+                        // Keep p == s as a self-loop; D0 will force-include it.
+                        g.add_edge(p, s);
                     }
                 }
 

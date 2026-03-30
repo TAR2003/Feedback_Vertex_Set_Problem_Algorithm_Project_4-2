@@ -50,6 +50,11 @@ static bool bst_recurse(UndirectedGraph g, int k, std::vector<int> &fvs)
 
     // Check if the reduced graph is already a forest
     std::vector<int> cycle = g.find_shortest_cycle();
+    if (cycle.empty() && g.has_cycle())
+    {
+        // Safety fallback: preserve correctness if shortest-cycle extraction misses.
+        cycle = g.find_cycle();
+    }
     if (cycle.empty())
     {
         // No cycles remain — all forced vertices form a valid FVS
