@@ -44,35 +44,60 @@ sys.path.insert(0, str(PROJECT_ROOT))
 try:
     import cpp_engine
 except ImportError as e:
-    print("ERROR: Cannot import cpp_engine. Did you compile it?")
-    print("  cd cpp_engine && mkdir -p build && cd build && cmake .. && make")
-    print(f"  ({e})")
-    sys.exit(1)
+    HAS_CPP_ENGINE = False
+    cpp_engine = None
+else:
+    HAS_CPP_ENGINE = True
 
 # Try importing PyTorch — graceful fallback if not installed
-try:
-    import torch
-    HAS_TORCH = True
-except ImportError:
-    HAS_TORCH = False
+# NOTE: PyTorch is imported lazily in functions that need it to avoid long startup times
+HAS_TORCH = None  # None = not determined yet, will check on first use
 
-# Try importing GNN models — graceful fallback
-try:
-    from gnn_model.model_undirected import UndirectedFVSNet
-    from gnn_model.model_directed   import DirectedFVSNet
-    HAS_GNN = True
-except ImportError:
-    HAS_GNN = False
-
-# Import parsers and verifiers from benchmark scripts
-from experiments.benchmark_undirected import parse_graph_file, verify_fvs
-from experiments.benchmark_directed   import parse_directed_graph_file, verify_dfvs
+# Try importing GNN models — graceful fallback (lazy loaded to avoid slow startup)
+HAS_GNN = None  # None = not determined yet, will check on first use
+UndirectedFVSNet = None
+DirectedFVSNet = None
 
 try:
     import networkx as nx
     HAS_NX = True
 except ImportError:
     HAS_NX = False
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Lazy PyTorch import (to avoid slow startup)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def get_torch():
+    """Lazy import of PyTorch - only imported when GNN functions are called."""
+    global torch, HAS_TORCH
+    if HAS_TORCH is None:
+        try:
+            import torch as torch_module
+            torch = torch_module
+            HAS_TORCH = True
+        except ImportError:
+            HAS_TORCH = False
+            torch = None
+    return torch if HAS_TORCH else None
+
+
+def get_gnn_models():
+    """Lazy import of GNN models - only imported when needed."""
+    global HAS_GNN, UndirectedFVSNet, DirectedFVSNet
+    if HAS_GNN is None:
+        try:
+            from gnn_model.model_undirected import UndirectedFVSNet as UNet
+            from gnn_model.model_directed import DirectedFVSNet as DNet
+            UndirectedFVSNet = UNet
+            DirectedFVSNet = DNet
+            HAS_GNN = True
+        except (ImportError, ModuleNotFoundError):
+            HAS_GNN = False
+            UndirectedFVSNet = None
+            DirectedFVSNet = None
+    return HAS_GNN, UndirectedFVSNet, DirectedFVSNet
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -136,6 +161,9 @@ def make_edge_index(edges, n, bidirected=False):
     Convert edge list to PyTorch edge_index tensor.
     bidirected=True adds reverse edges (for undirected graphs).
     """
+    torch = get_torch()
+    if torch is None:
+        return None
     if not edges:
         return torch.zeros((2, 0), dtype=torch.long)
     ei = torch.tensor(list(edges), dtype=torch.long).t().contiguous()
@@ -182,6 +210,10 @@ def _load_model_with_checkpoint(model_cls, weights_path, directed=False, hidden_
     """
     Build model with compatible hidden_dim and load checkpoint.
     """
+    torch = get_torch()
+    if torch is None:
+        return None, None
+    
     ckpt = torch.load(weights_path, map_location="cpu")
     state_dict = _extract_state_dict(ckpt)
 
@@ -206,9 +238,11 @@ def run_gnn_undirected(n, edges, threshold=0.4, hidden_dim=None):
     Run undirected GNN. Returns set of predicted FVS vertex indices.
     Returns None if GNN is unavailable.
     """
+    torch = get_torch()
+    has_gnn, UNet, _ = get_gnn_models()
     weights_path = PROJECT_ROOT / "gnn_model" / "weights" / "undirected_fvs_gcn.pt"
 
-    if not HAS_TORCH or not HAS_GNN:
+    if not has_gnn or torch is None:
         print("  [GNN] PyTorch/GNN not available. Skipping GNN step.")
         return None
 
@@ -219,7 +253,7 @@ def run_gnn_undirected(n, edges, threshold=0.4, hidden_dim=None):
 
     try:
         model, used_hidden = _load_model_with_checkpoint(
-            UndirectedFVSNet,
+            UNet,
             weights_path,
             directed=False,
             hidden_dim_override=hidden_dim,
@@ -248,9 +282,11 @@ def run_gnn_directed(n, edges, threshold=0.4, hidden_dim=None):
     Run directed GNN (DiGCN). Returns set of predicted DFVS vertex indices.
     Returns None if GNN is unavailable.
     """
+    torch = get_torch()
+    has_gnn, _, DNet = get_gnn_models()
     weights_path = PROJECT_ROOT / "gnn_model" / "weights" / "directed_fvs_gcn.pt"
 
-    if not HAS_TORCH or not HAS_GNN:
+    if not has_gnn or torch is None:
         print("  [GNN] PyTorch/GNN not available. Skipping GNN step.")
         return None
 
@@ -261,7 +297,7 @@ def run_gnn_directed(n, edges, threshold=0.4, hidden_dim=None):
 
     try:
         model, used_hidden = _load_model_with_checkpoint(
-            DirectedFVSNet,
+            DNet,
             weights_path,
             directed=True,
             hidden_dim_override=hidden_dim,
@@ -297,6 +333,9 @@ def hybrid_solve_undirected(n, edges, pop_size=60, max_gens=300,
     GNN predictions are used as a warm-start hint to MA.  If GNN is
     unavailable, falls back to pure MA.
     """
+    if not HAS_CPP_ENGINE:
+        raise RuntimeError("cpp_engine not available. Please compile it first.")
+    
     # Step 1: GNN prediction
     gnn_candidates = run_gnn_undirected(
         n, edges, threshold=gnn_threshold, hidden_dim=gnn_hidden_dim
@@ -320,6 +359,9 @@ def hybrid_solve_directed(n, edges, pop_size=60, max_gens=300,
     """
     HYBRID: GNN prediction → MA refinement for directed FVS.
     """
+    if not HAS_CPP_ENGINE:
+        raise RuntimeError("cpp_engine not available. Please compile it first.")
+    
     gnn_candidates = run_gnn_directed(
         n, edges, threshold=gnn_threshold, hidden_dim=gnn_hidden_dim
     )
@@ -374,6 +416,10 @@ def main():
 
     args = parser.parse_args()
 
+    # ── Local imports to avoid circular dependency ─────────────────────────────
+    from experiments.benchmark_undirected import parse_graph_file, verify_fvs
+    from experiments.benchmark_directed   import parse_directed_graph_file, verify_dfvs
+
     filepath = Path(args.graph)
     if not filepath.exists():
         print(f"ERROR: File not found: {args.graph}")
@@ -397,6 +443,12 @@ def main():
 
     # ── HYBRID run ────────────────────────────────────────────────────────────
     print(f"\n  ── HYBRID (GNN + MA) ──")
+    
+    if not HAS_CPP_ENGINE:
+        print("ERROR: cpp_engine not available. Please compile it:")
+        print("  cd cpp_engine && mkdir -p build && cd build && cmake .. && make")
+        sys.exit(1)
+    
     start = time.perf_counter()
 
     if args.type == "undirected":

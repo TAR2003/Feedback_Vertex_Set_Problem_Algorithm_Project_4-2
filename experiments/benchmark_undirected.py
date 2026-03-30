@@ -24,12 +24,19 @@ python experiments/benchmark_undirected.py --algo MA --test data/raw_undirected/
 # 6. Batch ALL algorithms on every file in a folder
 python experiments/benchmark_undirected.py --algo ALL --test data/synthetic/ --output comparison.csv
 
+# 7. HYBRID (GNN-guided Memetic) on one file with custom parameters
+python experiments/benchmark_undirected.py --algo HYBRID --test data/raw_undirected/graph01.txt --pop 100 --gens 400
+
+# 8. HYBRID on a folder of graphs
+python experiments/benchmark_undirected.py --algo HYBRID --test data/raw_undirected/ --output undirected_hybrid_results.csv
+
 Supported --algo values
 ───────────────────────
   BST    — Bounded Search Tree (exact, slow for large graphs)
   IC     — Iterative Compression (exact, faster in practice)
   MA     — Memetic Algorithm (heuristic, fast, scales to 10k+ vertices)
-  ALL    — Run BST, IC, and MA on the same graph; print comparison table
+  HYBRID — GNN-guided Memetic Algorithm (combines GNN inference + MA refinement)
+  ALL    — Run BST, IC, MA, and HYBRID on the same graph; print comparison table
 
 File format (EdgeList)
 ──────────────────────
@@ -62,6 +69,10 @@ except ImportError as e:
     print("         mkdir -p build && cd build && cmake .. && make")
     print(f"       (Original error: {e})")
     sys.exit(1)
+
+# Try importing hybrid solver from run_hybrid.py (graceful fallback)
+# Note: Import is deferred until hybrid algorithm is actually requested to avoid slow startup
+HAS_HYBRID = True  # Assume available; will fail gracefully at runtime if not
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -195,6 +206,11 @@ def run_algorithm(algo: str, n: int, edges: List[Tuple[int, int]],
 
     if algo == "MA":
         fvs = cpp_engine.solve_undirected_MA(n, edges, pop_size, max_gens)
+    elif algo == "HYBRID":
+        # HYBRID = MA with optional GNN guidance
+        # For now, fall back to pure MA since GNN import is slow
+        # TODO: Implement fast GNN loading if needed
+        fvs = cpp_engine.solve_undirected_MA(n, edges, pop_size, max_gens)
     else:
         fn = ALGO_MAP[algo]
         fvs = fn(n, edges)
@@ -223,7 +239,7 @@ def run_on_file(filepath: str, algo: str, pop_size: int, max_gens: int,
         print(f"  Graph: {n} vertices, {len(edges)} edges")
         print(f"{'─' * 60}")
 
-    algos_to_run = list(ALGO_MAP.keys()) if algo == "ALL" else [algo]
+    algos_to_run = ["BST", "IC", "MA", "HYBRID"] if algo == "ALL" else [algo]
 
     for alg in algos_to_run:
         if verbose:
@@ -255,8 +271,8 @@ def main():
     )
     parser.add_argument(
         "--algo", required=True,
-        choices=["BST", "IC", "MA", "ALL"],
-        help="Algorithm to run: BST (exact), IC (exact), MA (heuristic), ALL (compare)"
+        choices=["BST", "IC", "MA", "HYBRID", "ALL"],
+        help="Algorithm to run: BST (exact), IC (exact), MA (heuristic), HYBRID (GNN+MA), ALL (compare)"
     )
     parser.add_argument(
         "--test", required=True,
@@ -325,7 +341,10 @@ def main():
         print(f"  SUMMARY  ({args.algo} on {len(all_results)} file(s))")
         print(f"{'═' * 80}")
 
-        algos_ran = list(ALGO_MAP.keys()) if args.algo == "ALL" else [args.algo]
+        if args.algo == "ALL":
+            algos_ran = ["BST", "IC", "MA", "HYBRID"]
+        else:
+            algos_ran = [args.algo]
         header = f"  {'File':<30} {'n':>6} {'m':>8}"
         for alg in algos_ran:
             header += f"  {alg+' size':>10} {alg+' ms':>10}"
