@@ -79,6 +79,38 @@ void apply_directed_kernelization(
                 changed = true;
                 continue;
             }
+
+            // ── Rule D2 & D3: Bypass IN-degree 1 or OUT-degree 1 ───────────
+            if (in_deg == 1 || out_deg == 1)
+            {
+                std::vector<int> predecessors;
+                std::vector<int> successors;
+
+                for (int u = 0; u < g.n; ++u)
+                {
+                    if (g.active[u] && g.out_adj[u].count(v))
+                        predecessors.push_back(u);
+                }
+                for (int w : g.out_adj[v])
+                {
+                    if (g.active[w])
+                        successors.push_back(w);
+                }
+
+                for (int p : predecessors)
+                {
+                    for (int s : successors)
+                    {
+                        if (p != s)
+                            g.add_edge(p, s);
+                    }
+                }
+
+                std::vector<std::pair<int, int>> dummy;
+                g.deactivate_full(v, dummy);
+                changed = true;
+                continue;
+            }
         }
     }
 }

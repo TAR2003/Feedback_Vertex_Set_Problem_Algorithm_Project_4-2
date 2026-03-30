@@ -16,7 +16,7 @@ from __future__ import annotations
 import argparse
 import random
 from pathlib import Path
-from typing import Iterable, List, Tuple
+from typing import Iterable, List, Set, Tuple
 
 import networkx as nx
 
@@ -32,9 +32,20 @@ def ensure_dirs() -> None:
     DIR_OUT.mkdir(parents=True, exist_ok=True)
 
 
-def write_edge_list(edges: Iterable[Tuple[int, int]], path: Path) -> None:
+def normalize_edges(edges: Iterable[Tuple[int, int]], directed: bool) -> List[Tuple[int, int]]:
+    """Normalize and deduplicate edges to keep all generated files consistent."""
+    seen: Set[Tuple[int, int]] = set()
+    for u_raw, v_raw in edges:
+        u = int(u_raw)
+        v = int(v_raw)
+        edge = (u, v) if directed else ((u, v) if u <= v else (v, u))
+        seen.add(edge)
+    return sorted(seen)
+
+
+def write_edge_list(edges: Iterable[Tuple[int, int]], path: Path, directed: bool) -> None:
     with path.open("w", encoding="utf-8") as f:
-        for u, v in edges:
+        for u, v in normalize_edges(edges, directed=directed):
             f.write(f"{u} {v}\n")
 
 
@@ -109,9 +120,9 @@ def maybe_write_graph(
 
     if directed:
         d = orient_graph_randomly(graph_obj, seed=500 + n)
-        write_edge_list(d.edges(), out_path)
+        write_edge_list(d.edges(), out_path, directed=True)
     else:
-        write_edge_list(graph_obj.edges(), out_path)
+        write_edge_list(graph_obj.edges(), out_path, directed=False)
 
     return True, out_path
 

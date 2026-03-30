@@ -187,7 +187,7 @@ data/synthetic_benchmark/*
 # Add your downloaded SNAP / PACE datasets here.
 # Keep sample files for quick testing.
 data/raw_undirected/*.txt
-data/raw_directed/*.gr
+data/raw_directed/*.txt
 # Exception: keep the small sample files we committed
 !data/raw_undirected/triangle.txt
 !data/raw_undirected/sample_petersen.txt

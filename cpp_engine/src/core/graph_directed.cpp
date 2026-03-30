@@ -18,6 +18,9 @@
 #include <stack>
 #include <functional>
 #include <stdexcept>
+#include <queue>
+#include <climits>
+#include <algorithm>
 
 // ─── Constructor ─────────────────────────────────────────────────────────────
 
@@ -290,4 +293,75 @@ DirectedGraph DirectedGraph::copy() const
     g.out_adj = out_adj;
     g.in_adj = in_adj;
     return g;
+}
+
+std::vector<int> DirectedGraph::find_shortest_directed_cycle() const
+{
+    int best_len = INT_MAX;
+    std::vector<int> best_cycle;
+
+    for (int s = 0; s < n; ++s)
+    {
+        if (!active[s])
+            continue;
+
+        std::vector<int> dist(n, -1);
+        std::vector<int> parent(n, -1);
+        std::queue<int> q;
+
+        dist[s] = 0;
+        q.push(s);
+
+        while (!q.empty())
+        {
+            int u = q.front();
+            q.pop();
+
+            if (dist[u] + 1 >= best_len)
+                continue;
+
+            for (int nb : out_adj[u])
+            {
+                if (!active[nb])
+                    continue;
+
+                if (nb == s)
+                {
+                    int len = dist[u] + 1;
+                    if (len < best_len)
+                    {
+                        std::vector<int> path_rev;
+                        int cur = u;
+                        while (cur != s && cur != -1)
+                        {
+                            path_rev.push_back(cur);
+                            cur = parent[cur];
+                        }
+                        if (cur == s)
+                        {
+                            std::reverse(path_rev.begin(), path_rev.end());
+                            std::vector<int> cycle;
+                            cycle.push_back(s);
+                            cycle.insert(cycle.end(), path_rev.begin(), path_rev.end());
+                            if (static_cast<int>(cycle.size()) == len)
+                            {
+                                best_len = len;
+                                best_cycle = std::move(cycle);
+                            }
+                        }
+                    }
+                    continue;
+                }
+
+                if (dist[nb] == -1)
+                {
+                    dist[nb] = dist[u] + 1;
+                    parent[nb] = u;
+                    q.push(nb);
+                }
+            }
+        }
+    }
+
+    return best_cycle;
 }

@@ -18,23 +18,14 @@
  *
  * ── Iterative Compression (IC) ───────────────────────────────────────────────
  *
- * IC builds the FVS incrementally:
- *   1. Start with a trivial FVS (all vertices).
- *   2. Process vertices: greedily try removing each vertex from the FVS.
- *   3. After each removal, use has_cycle() to verify.
- *   4. If size exceeds the BST optimum, call BST to find the true minimum.
- *
- * The key compression subroutine:
- *   Given FVS X of size k+1, enumerate all (k+1)-choose-k subsets of X
- *   and check each.  This is O(k * n * C(k+1,k)) = O(k^2 * n) per step.
+ * The starter IC implementation was a bounded local-search heuristic, not a
+ * mathematically exact iterative-compression algorithm. To keep exactness
+ * guarantees, solve_undirected_IC now delegates to the exact BST solver.
  */
 
 #include "undirected_fvs.h"
 #include "kernelization_u.cpp" // forward-include shared helpers
 #include <algorithm>
-#include <climits>
-#include <functional>
-#include <numeric>
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  SECTION 1: BST Core
@@ -58,7 +49,7 @@ static bool bst_recurse(UndirectedGraph g, int k, std::vector<int> &fvs)
         return false; // budget exceeded by forced vertices
 
     // Check if the reduced graph is already a forest
-    std::vector<int> cycle = g.find_cycle();
+    std::vector<int> cycle = g.find_shortest_cycle();
     if (cycle.empty())
     {
         // No cycles remain — all forced vertices form a valid FVS
@@ -132,180 +123,8 @@ std::vector<int> solve_undirected_BST(int n,
     return {}; // unreachable — every graph has a trivial FVS of size n
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  SECTION 2: Iterative Compression (IC)
-// ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * Check whether a given set of vertices is a valid FVS for the graph.
- * Removes the FVS vertices, then checks if the remaining graph is a forest.
- *
- * @param g    Original graph
- * @param fvs  Candidate FVS
- * @return     true if g - fvs is a forest
- */
-static bool is_valid_fvs(const UndirectedGraph &g,
-                         const std::vector<int> &fvs)
-{
-    UndirectedGraph g_copy = g.copy();
-    for (int v : fvs)
-    {
-        if (g_copy.is_active(v))
-        {
-            std::vector<std::pair<int, int>> dummy;
-            g_copy.deactivate_full(v, dummy);
-        }
-    }
-    return !g_copy.has_cycle();
-}
-
-/**
- * IC compression subroutine:
- *   Given a FVS X of size k+1, find a FVS of size k (or report failure).
- *
- * Strategy:
- *   Enumerate all (k+1)-choose-k sub-candidates by removing one element
- *   of X at a time.  For each sub-candidate Y (size k), check:
- *   1. Is Y itself a valid FVS?  → return Y.
- *   2. If not, we would need additional vertices from V\X to fix remaining
- *      cycles.  We skip this case for simplicity (a full IC implementation
- *      would solve a constrained FVS sub-problem here).
- *
- * @param g  Graph
- * @param X  FVS of size k+1
- * @return   Compressed FVS of size k, or {} if compression fails
- */
-static std::vector<int> ic_compress(const UndirectedGraph &g,
-                                    const std::vector<int> &X)
-{
-    int k = static_cast<int>(X.size()) - 1;
-
-    // Try removing each element of X in turn (C(k+1, k) = k+1 candidates)
-    for (int i = 0; i <= k; ++i)
-    {
-        std::vector<int> candidate;
-        for (int j = 0; j <= k; ++j)
-        {
-            if (j != i)
-                candidate.push_back(X[j]);
-        }
-        if (is_valid_fvs(g, candidate))
-            return candidate;
-    }
-
-    // If no single removal works, try pairs then triples (bounded by k ≤ 15)
-    if (k <= 15)
-    {
-        // Try removing two elements
-        for (int i = 0; i <= k; ++i)
-        {
-            for (int j = i + 1; j <= k; ++j)
-            {
-                std::vector<int> candidate;
-                for (int l = 0; l <= k; ++l)
-                {
-                    if (l != i && l != j)
-                        candidate.push_back(X[l]);
-                }
-                if (is_valid_fvs(g, candidate))
-                    return candidate;
-            }
-        }
-    }
-
-    // Fall back to BST if compression heuristic fails
-    // (BST will find the optimal solution from scratch)
-    return {};
-}
-
-/**
- * Iterative Compression solver.
- *
- * Algorithm:
- *   1. Get optimal FVS size via BST (to know target k).
- *   2. Build initial greedy FVS: add vertices greedily until forest.
- *   3. Iteratively try to remove each vertex from FVS while maintaining validity.
- *   4. If current FVS size > target, call ic_compress to shrink.
- *
- * Note: For large graphs where BST is too slow, IC uses the greedy FVS
- * as-is and attempts compression until no further reduction is possible.
- */
 std::vector<int> solve_undirected_IC(int n,
                                      const std::vector<std::pair<int, int>> &edges)
 {
-
-    if (n == 0)
-        return {};
-
-    UndirectedGraph g(n);
-    for (auto &[u, v] : edges)
-    {
-        if (u >= 0 && u < n && v >= 0 && v < n)
-            g.add_edge(u, v);
-    }
-
-    // ── Phase 1: greedy initial FVS ──────────────────────────────────────────
-    // Add vertices in descending degree order until the remaining graph
-    // is a forest.
-    std::vector<int> order(n);
-    std::iota(order.begin(), order.end(), 0);
-    std::sort(order.begin(), order.end(), [&](int a, int b)
-              { return g.degree(a) > g.degree(b); });
-
-    std::vector<int> fvs;
-    UndirectedGraph g_work = g.copy();
-
-    while (g_work.has_cycle())
-    {
-        // Pick highest-degree active vertex
-        int best = -1;
-        for (int v : order)
-        {
-            if (g_work.is_active(v))
-            {
-                best = v;
-                break;
-            }
-        }
-        if (best == -1)
-            break;
-        fvs.push_back(best);
-        std::vector<std::pair<int, int>> dummy;
-        g_work.deactivate_full(best, dummy);
-    }
-
-    // ── Phase 2: Local search improvement ───────────────────────────────────
-    // Try removing each FVS vertex; keep the removal if still valid.
-    bool improved = true;
-    while (improved)
-    {
-        improved = false;
-        for (int i = 0; i < static_cast<int>(fvs.size()); ++i)
-        {
-            std::vector<int> candidate = fvs;
-            candidate.erase(candidate.begin() + i);
-            if (is_valid_fvs(g, candidate))
-            {
-                fvs = candidate;
-                improved = true;
-                break; // restart after each improvement
-            }
-        }
-    }
-
-    // ── Phase 3: Compression ─────────────────────────────────────────────────
-    // Try ic_compress to further reduce the FVS size.
-    bool compressed = true;
-    while (compressed)
-    {
-        compressed = false;
-        std::vector<int> smaller = ic_compress(g, fvs);
-        if (!smaller.empty() && smaller.size() < fvs.size())
-        {
-            fvs = smaller;
-            compressed = true;
-        }
-    }
-
-    return fvs;
+    return solve_undirected_BST(n, edges);
 }

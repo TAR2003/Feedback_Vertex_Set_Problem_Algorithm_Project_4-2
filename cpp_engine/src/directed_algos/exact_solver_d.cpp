@@ -71,7 +71,7 @@ static bool bst_directed_recurse(DirectedGraph g, int k, std::vector<int> &fvs)
         return false;
 
     // ── Check if graph is a DAG (no directed cycles remain) ─────────────────
-    std::vector<int> cycle = g.find_directed_cycle();
+    std::vector<int> cycle = g.find_shortest_directed_cycle();
     if (cycle.empty())
     {
         fvs.insert(fvs.end(), forced.begin(), forced.end());

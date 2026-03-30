@@ -61,6 +61,13 @@ struct UndirectedGraph : public GraphBase
      */
     std::vector<int> find_cycle() const;
 
+    /**
+     * Find a shortest cycle (girth witness) in the active subgraph.
+     * Uses BFS from each active source vertex.
+     * @return vertices of a shortest cycle in order, or empty if acyclic
+     */
+    std::vector<int> find_shortest_cycle() const;
+
     /// @return a deep copy of this graph (respects `active[]`)
     UndirectedGraph copy() const;
 };

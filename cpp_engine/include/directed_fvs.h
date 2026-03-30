@@ -73,6 +73,13 @@ struct DirectedGraph : public GraphBase
     std::vector<int> find_directed_cycle() const;
 
     /**
+     * Find a shortest directed cycle in the active subgraph.
+     * Uses BFS from each active source vertex.
+     * @return vertices of a shortest directed cycle, or empty if the graph is a DAG
+     */
+    std::vector<int> find_shortest_directed_cycle() const;
+
+    /**
      * Tarjan's SCC algorithm. O(n + m).
      * @return list of SCCs; each SCC is a list of vertex indices.
      *         Only non-trivial SCCs (size > 1, or size 1 with self-loop)

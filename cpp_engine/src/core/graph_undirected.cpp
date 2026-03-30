@@ -19,6 +19,9 @@
 #include <unordered_map>
 #include <numeric>
 #include <stdexcept>
+#include <queue>
+#include <climits>
+#include <algorithm>
 
 // ─── Constructor ─────────────────────────────────────────────────────────────
 
@@ -222,4 +225,100 @@ UndirectedGraph UndirectedGraph::copy() const
     g.active = active;
     g.adj = adj;
     return g;
+}
+
+std::vector<int> UndirectedGraph::find_shortest_cycle() const
+{
+    int best_len = INT_MAX;
+    std::vector<int> best_cycle;
+
+    auto build_cycle = [&](int u, int v, const std::vector<int> &parent) -> std::vector<int>
+    {
+        std::vector<int> path_u;
+        std::vector<int> path_v;
+
+        std::vector<int> pos(n, -1);
+        int cur = u;
+        while (cur != -1)
+        {
+            pos[cur] = static_cast<int>(path_u.size());
+            path_u.push_back(cur);
+            cur = parent[cur];
+        }
+
+        cur = v;
+        int lca = -1;
+        while (cur != -1)
+        {
+            if (pos[cur] != -1)
+            {
+                lca = cur;
+                break;
+            }
+            path_v.push_back(cur);
+            cur = parent[cur];
+        }
+
+        if (lca == -1)
+            return {};
+
+        std::vector<int> cycle;
+        for (int x : path_u)
+        {
+            cycle.push_back(x);
+            if (x == lca)
+                break;
+        }
+        std::reverse(path_v.begin(), path_v.end());
+        cycle.insert(cycle.end(), path_v.begin(), path_v.end());
+        return cycle;
+    };
+
+    for (int s = 0; s < n; ++s)
+    {
+        if (!active[s])
+            continue;
+
+        std::vector<int> dist(n, -1);
+        std::vector<int> parent(n, -1);
+        std::queue<int> q;
+
+        dist[s] = 0;
+        q.push(s);
+
+        while (!q.empty())
+        {
+            int u = q.front();
+            q.pop();
+
+            if (dist[u] + 1 >= best_len)
+                continue;
+
+            for (int nb : adj[u])
+            {
+                if (!active[nb])
+                    continue;
+
+                if (dist[nb] == -1)
+                {
+                    dist[nb] = dist[u] + 1;
+                    parent[nb] = u;
+                    q.push(nb);
+                    continue;
+                }
+
+                if (parent[u] == nb || parent[nb] == u)
+                    continue;
+
+                std::vector<int> cycle = build_cycle(u, nb, parent);
+                if (!cycle.empty() && static_cast<int>(cycle.size()) < best_len)
+                {
+                    best_len = static_cast<int>(cycle.size());
+                    best_cycle = std::move(cycle);
+                }
+            }
+        }
+    }
+
+    return best_cycle;
 }
