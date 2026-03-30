@@ -50,6 +50,8 @@ import os
 import sys
 import time
 import csv
+import multiprocessing as mp
+import queue
 from pathlib import Path
 from typing import List, Tuple, Optional
 
@@ -291,6 +293,78 @@ ALGO_MAP_D = {
     "MA":  cpp_engine.solve_directed_MA,
 }
 
+
+def get_dynamic_timeout_seconds(n: int) -> int:
+    """
+    Dynamic timeout policy based on graph size.
+      n <= 50         -> 60s
+      50 < n <= 200   -> 300s
+      n > 200         -> 600s
+    """
+    if n <= 50:
+        return 60
+    if n <= 200:
+        return 300
+    return 600
+
+
+def _directed_worker_run(algo: str, n: int, edges: List[Tuple[int, int]],
+                         pop_size: int, max_gens: int, out_q: mp.Queue) -> None:
+    """Child-process worker that runs one algorithm and returns via queue."""
+    try:
+        start = time.perf_counter()
+        if algo == "MA":
+            fvs = cpp_engine.solve_directed_MA(n, edges, pop_size, max_gens)
+        elif algo == "HYBRID":
+            # HYBRID currently falls back to MA.
+            fvs = cpp_engine.solve_directed_MA(n, edges, pop_size, max_gens)
+        else:
+            fvs = ALGO_MAP_D[algo](n, edges)
+        elapsed_ms = (time.perf_counter() - start) * 1000.0
+        out_q.put(("OK", fvs, elapsed_ms))
+    except Exception as ex:
+        out_q.put(("ERROR", str(ex), None))
+
+
+def run_directed_algorithm_with_timeout(
+    algo: str,
+    n: int,
+    edges: List[Tuple[int, int]],
+    pop_size: int,
+    max_gens: int,
+    timeout_s: int,
+) -> Tuple[Optional[List[int]], Optional[float], Optional[str]]:
+    """
+    Run one directed algorithm in a child process with timeout.
+
+    Returns:
+      (fvs, elapsed_ms, error)
+      - on success: error is None
+      - on timeout: error == "TIMEOUT"
+      - on failure: error starts with "ERROR:"
+    """
+    out_q: mp.Queue = mp.Queue()
+    proc = mp.Process(
+        target=_directed_worker_run,
+        args=(algo, n, edges, pop_size, max_gens, out_q),
+    )
+    proc.start()
+    proc.join(timeout=timeout_s)
+
+    if proc.is_alive():
+        proc.terminate()
+        proc.join()
+        return None, None, "TIMEOUT"
+
+    try:
+        status, payload, elapsed = out_q.get_nowait()
+    except queue.Empty:
+        return None, None, "ERROR: worker returned no result"
+
+    if status == "OK":
+        return payload, elapsed, None
+    return None, None, f"ERROR: {payload}"
+
 def run_directed_algorithm(algo: str, n: int, edges: List[Tuple[int, int]],
                             pop_size: int = 50, max_gens: int = 200
                             ) -> Tuple[List[int], float]:
@@ -335,10 +409,30 @@ def run_on_file(filepath: str, algo: str, pop_size: int, max_gens: int,
     algos_to_run = ["BST", "IC", "MA", "HYBRID"] if algo == "ALL" else [algo]
 
     for alg in algos_to_run:
+        timeout_s = get_dynamic_timeout_seconds(n)
         if verbose:
-            print(f"  Running {alg:4s} ... ", end="", flush=True)
+            print(f"  Running {alg:4s} (timeout={timeout_s}s) ... ", end="", flush=True)
 
-        fvs, elapsed_ms = run_directed_algorithm(alg, n, edges, pop_size, max_gens)
+        fvs, elapsed_ms, error = run_directed_algorithm_with_timeout(
+            alg, n, edges, pop_size, max_gens, timeout_s
+        )
+
+        if error == "TIMEOUT":
+            if verbose:
+                print("TIMEOUT")
+            results[f"{alg}_size"] = "TIMEOUT"
+            results[f"{alg}_ms"] = "TIMEOUT"
+            results[f"{alg}_valid"] = "TIMEOUT"
+            continue
+
+        if error is not None:
+            if verbose:
+                print(error)
+            results[f"{alg}_size"] = "ERROR"
+            results[f"{alg}_ms"] = "ERROR"
+            results[f"{alg}_valid"] = False
+            continue
+
         valid = verify_dfvs(n, edges, fvs)
 
         if verbose:

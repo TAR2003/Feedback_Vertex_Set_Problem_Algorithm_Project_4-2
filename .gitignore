@@ -171,6 +171,7 @@ gnn_model/weights/*.pt
 data/synthetic/undirected/
 data/synthetic/directed/
 data/pace2022/*
+data/synthetic_benchmark/*
 # Keep the folder structure
 !data/synthetic/.gitkeep
 !data/synthetic/undirected/.gitkeep
