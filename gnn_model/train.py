@@ -52,7 +52,7 @@ from gnn_model.model_directed   import DirectedFVSNet, compute_class_weights_dir
 def load_pt_dataset(data_dir: Path) -> list:
     """Load all .pt graph Data objects from a directory."""
     files   = sorted(data_dir.glob("*.pt"))
-    dataset = [torch.load(f) for f in files]
+    dataset = [torch.load(f, weights_only=False) for f in files]
     print(f"  Loaded {len(dataset)} graphs from {data_dir}")
     return dataset
 
