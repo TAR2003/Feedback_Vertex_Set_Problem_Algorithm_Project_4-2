@@ -1,32 +1,149 @@
 #!/usr/bin/env python3
-"""
-Build script for the C++ engine using cmake
-"""
+"""Simple one-command builder for the C++ engine."""
+
+import argparse
+import shutil
 import subprocess
 import sys
-import os
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).parent
-CPP_ENGINE = PROJECT_ROOT / "cpp_engine"
-BUILD_DIR = CPP_ENGINE / "build"
 
-# Create build directory
-BUILD_DIR.mkdir(exist_ok=True)
+PROJECT_ROOT = Path(__file__).resolve().parent
+CPP_ENGINE_DIR = PROJECT_ROOT / "cpp_engine"
 
-# Change to build directory and run cmake
-os.chdir(BUILD_DIR)
 
-print("Running cmake...")
-result = subprocess.run([sys.executable, "-m", "cmake", ".."], check=False)
-if result.returncode != 0:
-    print("CMake configuration failed!")
-    sys.exit(1)
+def _default_build_dir() -> Path:
+    if sys.platform.startswith("win"):
+        return CPP_ENGINE_DIR / "build-win"
+    if sys.platform == "darwin":
+        return CPP_ENGINE_DIR / "build-macos"
+    return CPP_ENGINE_DIR / "build-linux"
 
-print("\nBuilding with cmake...")
-result = subprocess.run([sys.executable, "-m", "cmake", "--build", ".", "--config", "Release"], check=False)
-if result.returncode != 0:
-    print("Build failed!")
-    sys.exit(1)
 
-print("\n✓ Build complete!")
+def _find_cmake_command() -> list[str]:
+    """Use system cmake if available, otherwise fall back to python -m cmake."""
+    try:
+        probe = subprocess.run(["cmake", "--version"], capture_output=True, text=True, check=False)
+        if probe.returncode == 0:
+            return ["cmake"]
+    except OSError:
+        pass
+
+    probe = subprocess.run([sys.executable, "-m", "cmake", "--version"], capture_output=True, text=True, check=False)
+    if probe.returncode == 0:
+        return [sys.executable, "-m", "cmake"]
+
+    raise RuntimeError(
+        "CMake not found. Install CMake (system) or Python package cmake in this environment."
+    )
+
+
+def _run(cmd: list[str], cwd: Path | None = None, fail_hint: str | None = None) -> None:
+    print("$ " + " ".join(cmd))
+    result = subprocess.run(cmd, cwd=str(cwd) if cwd else None, check=False)
+    if result.returncode != 0:
+        if fail_hint:
+            print(fail_hint)
+        raise RuntimeError(f"Command failed with exit code {result.returncode}: {' '.join(cmd)}")
+
+
+def _print_artifacts(build_dir: Path) -> None:
+    build_artifacts = list(build_dir.glob("cpp_engine*.pyd")) + list(build_dir.glob("cpp_engine*.so"))
+    exp_artifacts = list((PROJECT_ROOT / "experiments").glob("cpp_engine*.pyd")) + list(
+        (PROJECT_ROOT / "experiments").glob("cpp_engine*.so")
+    )
+
+    print("\nBuild artifacts:")
+    if build_artifacts:
+        for f in build_artifacts:
+            print(f"  - {f}")
+    else:
+        print(f"  - No cpp_engine module found in {build_dir}")
+
+    if exp_artifacts:
+        print("\nInstalled artifacts (experiments):")
+        for f in exp_artifacts:
+            print(f"  - {f}")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Build the C++ engine with one command.")
+    parser.add_argument("--clean", action="store_true", help="Delete selected build directory before configuring")
+    parser.add_argument(
+        "--build-dir",
+        default=None,
+        help="Optional custom build directory (default is OS-specific: build-linux/build-win/build-macos)",
+    )
+    parser.add_argument(
+        "--build-type",
+        choices=["Release", "Debug", "RelWithDebInfo", "MinSizeRel"],
+        default="Release",
+        help="CMake build type (default: Release)",
+    )
+    parser.add_argument("--jobs", type=int, default=0, help="Parallel build jobs (0 = CMake default)")
+    parser.add_argument(
+        "--install",
+        action="store_true",
+        help="Run cmake --install (installs module to experiments/ as configured in CMakeLists)",
+    )
+    args = parser.parse_args()
+    build_dir = Path(args.build_dir).resolve() if args.build_dir else _default_build_dir()
+
+    if not CPP_ENGINE_DIR.exists():
+        print(f"ERROR: Missing directory: {CPP_ENGINE_DIR}")
+        return 1
+
+    windows_compiler_hint = ""
+    if sys.platform.startswith("win"):
+        has_msvc = shutil.which("cl") is not None
+        has_gxx = shutil.which("g++") is not None
+        if not (has_msvc or has_gxx):
+            windows_compiler_hint = (
+                "Hint: No C++ compiler detected in PATH. Install Visual Studio Build Tools "
+                "(Desktop development with C++) or MinGW, then restart your terminal."
+            )
+
+    try:
+        cmake = _find_cmake_command()
+
+        if args.clean and build_dir.exists():
+            print(f"Removing existing build directory: {build_dir}")
+            shutil.rmtree(build_dir)
+
+        build_dir.mkdir(parents=True, exist_ok=True)
+
+        print("\n[1/2] Configuring CMake")
+        configure_cmd = cmake + [
+            "-S",
+            str(CPP_ENGINE_DIR),
+            "-B",
+            str(build_dir),
+            "-DCMAKE_BUILD_TYPE=" + args.build_type,
+            "-DPython3_EXECUTABLE=" + sys.executable,
+        ]
+        _run(configure_cmd, fail_hint=windows_compiler_hint)
+
+        print("\n[2/2] Building module")
+        build_cmd = cmake + ["--build", str(build_dir), "--config", args.build_type]
+        if args.jobs > 0:
+            build_cmd += ["--parallel", str(args.jobs)]
+        _run(build_cmd)
+
+        if args.install:
+            print("\n[3/3] Installing module")
+            install_cmd = cmake + ["--install", str(build_dir), "--config", args.build_type]
+            _run(install_cmd)
+
+        print("\nBuild completed successfully.")
+        _print_artifacts(build_dir)
+        print("\nQuick import check:")
+        print("  python test_import.py")
+        return 0
+
+    except Exception as exc:
+        print(f"ERROR: {exc}")
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

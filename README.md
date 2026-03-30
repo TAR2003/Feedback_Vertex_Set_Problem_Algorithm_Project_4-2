@@ -176,11 +176,56 @@ pip install torch torch-geometric
 
 ### Step 2 — Compile the C++ engine
 
+Recommended (one command from project root):
+
+```bash
+python build_engine.py
+```
+
+Linux shortcut:
+
+```bash
+./build_cpp.sh
+```
+
+Linux note: run it as your normal user (do not use sudo), and install dependencies in that same environment:
+
+```bash
+python3 -m pip install pybind11
+```
+
+Windows PowerShell shortcut:
+
+```powershell
+.\build_cpp.ps1
+```
+
+Useful options:
+
+```bash
+# clean rebuild
+python build_engine.py --clean
+
+# parallel jobs + install module to experiments/
+python build_engine.py --jobs 8 --install
+```
+
+Manual CMake flow (if you need full control):
+
 ```bash
 cd cpp_engine
 mkdir -p build && cd build
 cmake ..
-make -j$(nproc)
+cmake --build . --config Release
+```
+
+Linux manual build alternative:
+
+```bash
+cd cpp_engine
+mkdir -p build && cd build
+cmake ..
+cmake --build . --parallel "$(nproc)"
 ```
 
 Expected output:

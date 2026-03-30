@@ -329,3 +329,12 @@ std::vector<int> solve_undirected_MA(int n,
     }
     return result;
 }
+
+std::vector<int> solve_undirected_KME(int n,
+                                      const std::vector<std::pair<int, int>> &edges,
+                                      int pop_size, int max_gens)
+{
+    // Keep KME symbol available for pybind/import stability.
+    // This currently delegates to the memetic solver.
+    return solve_undirected_MA(n, edges, pop_size, max_gens);
+}

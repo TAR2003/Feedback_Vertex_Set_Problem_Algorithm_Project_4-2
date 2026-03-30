@@ -9,7 +9,8 @@ from pathlib import Path
 SCRIPT_DIR   = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR
 sys.path.insert(0, str(PROJECT_ROOT / "experiments"))
-sys.path.insert(0, str(PROJECT_ROOT / "cpp_engine" / "build"))
+for candidate in ("build-linux", "build-macos", "build-win", "build"):
+    sys.path.insert(0, str(PROJECT_ROOT / "cpp_engine" / candidate))
 
 try:
     import cpp_engine

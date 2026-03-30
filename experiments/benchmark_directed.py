@@ -59,8 +59,9 @@ from typing import List, Tuple, Optional
 # ── Add cpp_engine to path ────────────────────────────────────────────────────
 SCRIPT_DIR   = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
-# Try cpp_engine/build first as fallback (insert last so it's second in path)
-sys.path.insert(0, str(PROJECT_ROOT / "cpp_engine" / "build"))
+# Try platform-specific build directories first, then legacy build/
+for candidate in ("build-linux", "build-macos", "build-win", "build"):
+    sys.path.insert(0, str(PROJECT_ROOT / "cpp_engine" / candidate))
 # Try experiments first (where the .so file is compiled) - insert last so it's first in path
 sys.path.insert(0, str(SCRIPT_DIR))
 
@@ -72,8 +73,10 @@ except ImportError as e:
     print(f"  Project root: {PROJECT_ROOT}")
     print(f"  sys.path[0]: {sys.path[0]}")
     print(f"  sys.path[1]: {sys.path[1]}")
-    print(f"       Did you compile it?  Run inside cpp_engine/:")
-    print(f"         mkdir -p build && cd build && cmake .. && make")
+    print("  Did you compile it? Use one of these from project root:")
+    print("    Linux/macOS:  python3 build_engine.py")
+    print("    Linux helper: ./build_cpp.sh")
+    print("    Windows:      python build_engine.py  or  .\\build_cpp.ps1")
     print(f"       (Original error: {e})")
     sys.exit(1)
 

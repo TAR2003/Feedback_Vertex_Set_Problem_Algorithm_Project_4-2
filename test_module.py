@@ -3,7 +3,8 @@ import sys
 import os
 
 os.chdir("/mnt/c/Users/TAWKIR/Documents/GitHub/Feedback_Vertex_Set_Problem_Algorithm_Project_4-2")
-sys.path.insert(0, "cpp_engine/build")
+for candidate in ("build-linux", "build-macos", "build-win", "build"):
+    sys.path.insert(0, f"cpp_engine/{candidate}")
 
 #!/usr/bin/env python3
 import sys

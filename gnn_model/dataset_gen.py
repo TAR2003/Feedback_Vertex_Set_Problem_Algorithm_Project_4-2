@@ -31,7 +31,8 @@ from typing import List, Optional, Tuple
 
 # ── Path setup ────────────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "cpp_engine" / "build"))
+for candidate in ("build-linux", "build-macos", "build-win", "build"):
+    sys.path.insert(0, str(PROJECT_ROOT / "cpp_engine" / candidate))
 
 try:
     import cpp_engine

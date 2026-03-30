@@ -34,8 +34,9 @@ from pathlib import Path
 # ── Path setup ────────────────────────────────────────────────────────────────
 SCRIPT_DIR   = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
-# Try cpp_engine/build first as fallback (insert last so it's second in path)
-sys.path.insert(0, str(PROJECT_ROOT / "cpp_engine" / "build"))
+# Try platform-specific build directories first, then legacy build/
+for candidate in ("build-linux", "build-macos", "build-win", "build"):
+    sys.path.insert(0, str(PROJECT_ROOT / "cpp_engine" / candidate))
 # Try experiments first (where the .so file is compiled) - insert last so it's first in path
 sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(PROJECT_ROOT))
