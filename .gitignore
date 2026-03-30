@@ -175,11 +175,11 @@ data/synthetic/directed/
 !data/synthetic/undirected/.gitkeep
 !data/synthetic/directed/.gitkeep
 
-# ─── Results / CSVs (generated during experiments) ────────────────────────────
-results/
-*.csv
-# Exception: keep any committed baseline results
-!results/.gitkeep
+# # ─── Results / CSVs (generated during experiments) ────────────────────────────
+# results/
+# *.csv
+# # Exception: keep any committed baseline results
+# !results/.gitkeep
 
 # ─── Raw Dataset Files (too large for git) ────────────────────────────────────
 # Add your downloaded SNAP / PACE datasets here.
