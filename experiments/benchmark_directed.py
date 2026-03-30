@@ -49,14 +49,21 @@ from typing import List, Tuple, Optional
 # ── Add cpp_engine to path ────────────────────────────────────────────────────
 SCRIPT_DIR   = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
+# Try cpp_engine/build first as fallback (insert last so it's second in path)
 sys.path.insert(0, str(PROJECT_ROOT / "cpp_engine" / "build"))
+# Try experiments first (where the .so file is compiled) - insert last so it's first in path
+sys.path.insert(0, str(SCRIPT_DIR))
 
 try:
     import cpp_engine
 except ImportError as e:
     print("ERROR: Cannot import cpp_engine.")
-    print("       Did you compile it?  Run inside cpp_engine/:")
-    print("         mkdir -p build && cd build && cmake .. && make")
+    print(f"  Script dir: {SCRIPT_DIR}")
+    print(f"  Project root: {PROJECT_ROOT}")
+    print(f"  sys.path[0]: {sys.path[0]}")
+    print(f"  sys.path[1]: {sys.path[1]}")
+    print(f"       Did you compile it?  Run inside cpp_engine/:")
+    print(f"         mkdir -p build && cd build && cmake .. && make")
     print(f"       (Original error: {e})")
     sys.exit(1)
 
@@ -65,24 +72,117 @@ except ImportError as e:
 #  File Parsing  (supports PACE .gr and generic edge-list formats)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def parse_metis_directed(filepath: str) -> Tuple[int, List[Tuple[int, int]]]:
+    """
+    Parse METIS format directed graph.
+    
+    Format:
+      Line 1: n m t  (n vertices, m edges, t weight type)
+      Lines 2..n+1: adjacency list for each vertex (1-indexed vertices)
+    
+    Returns:
+        (n, edges)  where edges are 0-indexed directed pairs (u, v).
+    """
+    edges: List[Tuple[int, int]] = []
+    n = None
+    
+    with open(filepath, 'r') as f:
+        for line_num, line in enumerate(f, 1):
+            line = line.strip()
+            if not line or line.startswith('%'):
+                continue
+            
+            parts = line.split()
+            if not parts:
+                continue
+            
+            # First non-comment line: n m t
+            if n is None:
+                try:
+                    n = int(parts[0])
+                    # m = int(parts[1])
+                    # t = int(parts[2])
+                    continue
+                except (ValueError, IndexError):
+                    raise ValueError(f"Invalid METIS header at line {line_num}: {line}")
+            
+            # Adjacency list for vertex (line_num - 1) in METIS (1-indexed)
+            # We need to map: line 2 -> vertex 1, line 3 -> vertex 2, etc.
+            # But skip non-numeric/comment lines, so we track actual vertex index
+            try:
+                neighbors = [int(x) for x in parts]
+                # This line corresponds to adjacency for vertex (current line in data)
+                # In METIS, vertices are 1-indexed, so we convert to 0-indexed
+                u = line_num - 2  # line_num=2 -> u=0 (first vertex), line_num=3 -> u=1, etc.
+                
+                for v in neighbors:
+                    # v is 1-indexed from file, convert to 0-indexed
+                    edges.append((u, v - 1))
+            except ValueError:
+                raise ValueError(f"Invalid vertex list at line {line_num}: {line}")
+    
+    if n is None:
+        raise ValueError(f"No valid METIS header found in {filepath}")
+    
+    return n, edges
+
+
 def parse_directed_graph_file(filepath: str) -> Tuple[int, List[Tuple[int, int]]]:
     """
     Parse a DIRECTED graph file.
 
     Supported formats:
-      PACE 2022 .gr:
+      1. METIS format (PACE 2022):
+        1024 2103 0           <- 1024 vertices, 2103 edges
+        346 649               <- adjacency list for vertex 1 (1-indexed)
+        371                   <- adjacency list for vertex 2
+        ...
+      
+      2. PACE .gr / Edge-list format:
         c comment
-        p dfvs 10 20       <- 10 vertices, 20 directed edges
-        1 2                <- directed edge 1 → 2 (1-indexed)
+        p dfvs 10 20          <- 10 vertices, 20 directed edges
+        1 2                   <- directed edge 1 → 2 (1-indexed)
 
-      Generic edge-list:
+      3. Generic edge-list:
         # comment
-        u v                <- directed edge u → v
-        u v w              <- edge with weight (weight ignored)
+        u v                   <- directed edge u → v
+        u v w                 <- edge with weight (weight ignored)
 
     Returns:
         (n, edges)  where edges are 0-indexed directed pairs (u, v).
     """
+    # First, try to detect format by reading first non-comment line
+    first_line = None
+    with open(filepath, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith(('c', '#', '%')):
+                first_line = line
+                break
+    
+    if not first_line:
+        raise ValueError(f"No data found in {filepath}")
+    
+    parts = first_line.split()
+    
+    # Try to detect METIS format: first line is "n m t" (3 integers)
+    is_metis = False
+    if len(parts) == 3:
+        try:
+            n_candidate = int(parts[0])
+            m_candidate = int(parts[1])
+            t_candidate = int(parts[2])
+            # METIS has n > 0, m > 0, t is usually 0
+            # If first line looks like METIS header, try METIS parsing
+            if n_candidate > 0 and m_candidate > 0 and 0 <= t_candidate <= 1:
+                is_metis = True
+        except ValueError:
+            pass
+    
+    if is_metis:
+        return parse_metis_directed(filepath)
+    
+    # Otherwise parse as edge-list
     edges: List[Tuple[int, int]] = []
     n_hint: Optional[int] = None
 
@@ -279,11 +379,21 @@ def main():
     if test_path.is_file():
         files = [str(test_path)]
     elif test_path.is_dir():
+        # Include files with these extensions
         extensions = (".gr", ".txt", ".edges", ".graph", ".dimacs", ".mtx")
-        files = sorted(
-            str(f) for f in test_path.iterdir()
-            if f.is_file() and f.suffix.lower() in extensions
-        )
+        files = []
+        
+        for f in sorted(test_path.iterdir()):
+            if not f.is_file():
+                continue
+            # Include files with known extensions
+            if f.suffix.lower() in extensions:
+                files.append(str(f))
+            # Also include files without extension (e.g., PACE h_001, h_002, ...)
+            # but only if they look like graph files (skip obvious non-graph files)
+            elif f.suffix == "" and not f.name.startswith('.'):
+                files.append(str(f))
+        
         if not files:
             print(f"No graph files found in {test_path}")
             sys.exit(1)

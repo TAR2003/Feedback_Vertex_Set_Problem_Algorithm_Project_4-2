@@ -35,7 +35,10 @@ from pathlib import Path
 # ── Path setup ────────────────────────────────────────────────────────────────
 SCRIPT_DIR   = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
+# Try cpp_engine/build first as fallback (insert last so it's second in path)
 sys.path.insert(0, str(PROJECT_ROOT / "cpp_engine" / "build"))
+# Try experiments first (where the .so file is compiled) - insert last so it's first in path
+sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(PROJECT_ROOT))
 
 try:
@@ -141,11 +144,64 @@ def make_edge_index(edges, n, bidirected=False):
     return ei
 
 
+def _extract_state_dict(ckpt_obj):
+    """Return a plain state_dict from common checkpoint formats."""
+    if isinstance(ckpt_obj, dict):
+        if "state_dict" in ckpt_obj and isinstance(ckpt_obj["state_dict"], dict):
+            return ckpt_obj["state_dict"]
+        if "model_state_dict" in ckpt_obj and isinstance(ckpt_obj["model_state_dict"], dict):
+            return ckpt_obj["model_state_dict"]
+    return ckpt_obj
+
+
+def _infer_hidden_dim(state_dict, directed=False):
+    """
+    Infer model hidden dimension from checkpoint tensor shapes.
+    Returns None if inference is not possible.
+    """
+    if not isinstance(state_dict, dict):
+        return None
+
+    # Directed checkpoints store a direct bias tensor on conv1.
+    if directed and "conv1.bias" in state_dict:
+        return int(state_dict["conv1.bias"].shape[0])
+
+    # Undirected SAGE checkpoints expose lin_l weights with leading hidden dim.
+    key = "conv1.lin_l.weight"
+    if key in state_dict:
+        return int(state_dict[key].shape[0])
+
+    # Fallback for any model that has bn1 parameters.
+    if "bn1.weight" in state_dict:
+        return int(state_dict["bn1.weight"].shape[0])
+
+    return None
+
+
+def _load_model_with_checkpoint(model_cls, weights_path, directed=False, hidden_dim_override=None):
+    """
+    Build model with compatible hidden_dim and load checkpoint.
+    """
+    ckpt = torch.load(weights_path, map_location="cpu")
+    state_dict = _extract_state_dict(ckpt)
+
+    inferred_hidden = _infer_hidden_dim(state_dict, directed=directed)
+    hidden_dim = hidden_dim_override if hidden_dim_override is not None else inferred_hidden
+
+    if hidden_dim is not None:
+        model = model_cls(hidden_dim=hidden_dim)
+    else:
+        model = model_cls()
+
+    model.load_state_dict(state_dict)
+    return model, hidden_dim
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  GNN Inference
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def run_gnn_undirected(n, edges, threshold=0.4):
+def run_gnn_undirected(n, edges, threshold=0.4, hidden_dim=None):
     """
     Run undirected GNN. Returns set of predicted FVS vertex indices.
     Returns None if GNN is unavailable.
@@ -162,17 +218,24 @@ def run_gnn_undirected(n, edges, threshold=0.4):
         return None
 
     try:
-        model = UndirectedFVSNet()
-        model.load_state_dict(torch.load(weights_path, map_location="cpu"))
+        model, used_hidden = _load_model_with_checkpoint(
+            UndirectedFVSNet,
+            weights_path,
+            directed=False,
+            hidden_dim_override=hidden_dim,
+        )
         model.eval()
 
         feats = get_undirected_features(n, edges)
-        x     = torch.tensor(feats, dtype=torch.float)
-        ei    = make_edge_index(edges, n, bidirected=True)
+        x = torch.tensor(feats, dtype=torch.float)
+        ei = make_edge_index(edges, n, bidirected=True)
 
         gnn_candidates = set(model.predict_fvs(x, ei, threshold=threshold))
-        print(f"  [GNN] Predicted {len(gnn_candidates)} / {n} vertices as FVS candidates "
-              f"(threshold={threshold})")
+        hidden_note = f", hidden={used_hidden}" if used_hidden is not None else ""
+        print(
+            f"  [GNN] Predicted {len(gnn_candidates)} / {n} vertices as FVS candidates "
+            f"(threshold={threshold}{hidden_note})"
+        )
         return gnn_candidates
 
     except Exception as ex:
@@ -180,7 +243,7 @@ def run_gnn_undirected(n, edges, threshold=0.4):
         return None
 
 
-def run_gnn_directed(n, edges, threshold=0.4):
+def run_gnn_directed(n, edges, threshold=0.4, hidden_dim=None):
     """
     Run directed GNN (DiGCN). Returns set of predicted DFVS vertex indices.
     Returns None if GNN is unavailable.
@@ -197,17 +260,24 @@ def run_gnn_directed(n, edges, threshold=0.4):
         return None
 
     try:
-        model = DirectedFVSNet()
-        model.load_state_dict(torch.load(weights_path, map_location="cpu"))
+        model, used_hidden = _load_model_with_checkpoint(
+            DirectedFVSNet,
+            weights_path,
+            directed=True,
+            hidden_dim_override=hidden_dim,
+        )
         model.eval()
 
         feats = get_directed_features(n, edges)
-        x     = torch.tensor(feats, dtype=torch.float)
-        ei    = make_edge_index(edges, n, bidirected=False)
+        x = torch.tensor(feats, dtype=torch.float)
+        ei = make_edge_index(edges, n, bidirected=False)
 
         gnn_candidates = set(model.predict_dfvs(x, ei, threshold=threshold))
-        print(f"  [GNN] Predicted {len(gnn_candidates)} / {n} vertices as DFVS candidates "
-              f"(threshold={threshold})")
+        hidden_note = f", hidden={used_hidden}" if used_hidden is not None else ""
+        print(
+            f"  [GNN] Predicted {len(gnn_candidates)} / {n} vertices as DFVS candidates "
+            f"(threshold={threshold}{hidden_note})"
+        )
         return gnn_candidates
 
     except Exception as ex:
@@ -219,7 +289,8 @@ def run_gnn_directed(n, edges, threshold=0.4):
 #  Hybrid Solver
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def hybrid_solve_undirected(n, edges, pop_size=60, max_gens=300, gnn_threshold=0.4):
+def hybrid_solve_undirected(n, edges, pop_size=60, max_gens=300,
+                            gnn_threshold=0.4, gnn_hidden_dim=None):
     """
     HYBRID: GNN prediction → MA refinement for undirected FVS.
 
@@ -227,7 +298,9 @@ def hybrid_solve_undirected(n, edges, pop_size=60, max_gens=300, gnn_threshold=0
     unavailable, falls back to pure MA.
     """
     # Step 1: GNN prediction
-    gnn_candidates = run_gnn_undirected(n, edges, threshold=gnn_threshold)
+    gnn_candidates = run_gnn_undirected(
+        n, edges, threshold=gnn_threshold, hidden_dim=gnn_hidden_dim
+    )
 
     if gnn_candidates is not None and len(gnn_candidates) > 0:
         print(f"  [MA]  Using GNN-seeded population (pop={pop_size}, gens={max_gens})")
@@ -242,11 +315,14 @@ def hybrid_solve_undirected(n, edges, pop_size=60, max_gens=300, gnn_threshold=0
     return fvs
 
 
-def hybrid_solve_directed(n, edges, pop_size=60, max_gens=300, gnn_threshold=0.4):
+def hybrid_solve_directed(n, edges, pop_size=60, max_gens=300,
+                          gnn_threshold=0.4, gnn_hidden_dim=None):
     """
     HYBRID: GNN prediction → MA refinement for directed FVS.
     """
-    gnn_candidates = run_gnn_directed(n, edges, threshold=gnn_threshold)
+    gnn_candidates = run_gnn_directed(
+        n, edges, threshold=gnn_threshold, hidden_dim=gnn_hidden_dim
+    )
 
     if gnn_candidates is not None and len(gnn_candidates) > 0:
         print(f"  [MA]  Using GNN-seeded population (pop={pop_size}, gens={max_gens})")
@@ -288,6 +364,10 @@ def main():
         help="GNN probability threshold for FVS candidate selection (default: 0.4)"
     )
     parser.add_argument(
+        "--gnn-hidden", type=int, default=None,
+        help="Optional hidden dimension override for loading GNN weights (default: auto-detect)"
+    )
+    parser.add_argument(
         "--compare", action="store_true",
         help="Also run pure MA for comparison (shows GNN benefit)"
     )
@@ -320,10 +400,14 @@ def main():
     start = time.perf_counter()
 
     if args.type == "undirected":
-        fvs   = hybrid_solve_undirected(n, edges, args.pop, args.gens, args.threshold)
+        fvs   = hybrid_solve_undirected(
+            n, edges, args.pop, args.gens, args.threshold, args.gnn_hidden
+        )
         valid = verify_fvs(n, edges, fvs)
     else:
-        fvs   = hybrid_solve_directed(n, edges, args.pop, args.gens, args.threshold)
+        fvs   = hybrid_solve_directed(
+            n, edges, args.pop, args.gens, args.threshold, args.gnn_hidden
+        )
         valid = verify_dfvs(n, edges, fvs)
 
     elapsed_ms = (time.perf_counter() - start) * 1000.0

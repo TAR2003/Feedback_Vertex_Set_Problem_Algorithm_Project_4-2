@@ -49,7 +49,10 @@ from typing import List, Tuple, Optional
 # ── Add cpp_engine to path ────────────────────────────────────────────────────
 SCRIPT_DIR  = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
+# Try cpp_engine/build first as fallback (insert last so it's second in path)
 sys.path.insert(0, str(PROJECT_ROOT / "cpp_engine" / "build"))
+# Try experiments first (where the .so file is compiled) - insert last so it's first in path
+sys.path.insert(0, str(SCRIPT_DIR))
 
 try:
     import cpp_engine
@@ -283,11 +286,21 @@ def main():
     if test_path.is_file():
         files = [str(test_path)]
     elif test_path.is_dir():
+        # Include files with these extensions
         extensions = (".txt", ".gr", ".edges", ".graph", ".dimacs", ".mtx")
-        files = sorted(
-            str(f) for f in test_path.iterdir()
-            if f.is_file() and f.suffix.lower() in extensions
-        )
+        files = []
+        
+        for f in sorted(test_path.iterdir()):
+            if not f.is_file():
+                continue
+            # Include files with known extensions
+            if f.suffix.lower() in extensions:
+                files.append(str(f))
+            # Also include files without extension (e.g., PACE h_001, h_002, ...)
+            # but only if they look like graph files (skip obvious non-graph files)
+            elif f.suffix == "" and not f.name.startswith('.'):
+                files.append(str(f))
+        
         if not files:
             print(f"No graph files found in {test_path}")
             print(f"Expected extensions: {extensions}")
