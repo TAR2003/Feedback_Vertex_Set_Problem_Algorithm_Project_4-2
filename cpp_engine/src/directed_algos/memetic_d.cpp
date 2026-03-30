@@ -265,7 +265,64 @@ std::vector<int> solve_directed_KME(int n,
                                     const std::vector<std::pair<int, int>> &edges,
                                     int pop_size, int max_gens)
 {
-    // Keep KME symbol available for pybind/import stability.
-    // This currently delegates to the memetic solver.
-    return solve_directed_MA(n, edges, pop_size, max_gens);
+    if (n == 0)
+        return {};
+
+    DirectedGraph g(n);
+    for (auto &[u, v] : edges)
+    {
+        if (u >= 0 && u < n && v >= 0 && v < n)
+            g.add_edge(u, v);
+    }
+
+    std::vector<int> forced;
+    int k = n;
+    kernelize_directed(g, forced, k);
+
+    std::vector<int> kernel_old_to_new(n, -1);
+    std::vector<int> kernel_new_to_old;
+    kernel_new_to_old.reserve(n);
+
+    for (int v = 0; v < n; ++v)
+    {
+        if (!g.is_active(v))
+            continue;
+        kernel_old_to_new[v] = static_cast<int>(kernel_new_to_old.size());
+        kernel_new_to_old.push_back(v);
+    }
+
+    std::vector<std::pair<int, int>> kernel_edges;
+    for (int u : kernel_new_to_old)
+    {
+        int nu = kernel_old_to_new[u];
+        for (int v : g.out_adj[u])
+        {
+            if (!g.is_active(v))
+                continue;
+            int nv = kernel_old_to_new[v];
+            kernel_edges.push_back({nu, nv});
+        }
+    }
+
+    std::vector<int> kernel_sol;
+    if (!kernel_new_to_old.empty())
+    {
+        kernel_sol = solve_directed_MA(
+            static_cast<int>(kernel_new_to_old.size()),
+            kernel_edges,
+            pop_size,
+            max_gens);
+    }
+
+    std::vector<int> result = forced;
+    result.reserve(forced.size() + kernel_sol.size());
+    for (int kv : kernel_sol)
+    {
+        if (kv >= 0 && kv < static_cast<int>(kernel_new_to_old.size()))
+            result.push_back(kernel_new_to_old[kv]);
+    }
+
+    std::sort(result.begin(), result.end());
+    result.erase(std::unique(result.begin(), result.end()), result.end());
+    return result;
 }

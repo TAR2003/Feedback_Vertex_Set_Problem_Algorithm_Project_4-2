@@ -166,7 +166,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--algo",
-        choices=["BST", "IC", "MA", "HYBRID", "ALL"],
+        choices=["BST", "IC", "MA", "KME", "HYBRID", "ALL"],
         default="ALL",
         help="Algorithm selection forwarded to benchmark scripts",
     )

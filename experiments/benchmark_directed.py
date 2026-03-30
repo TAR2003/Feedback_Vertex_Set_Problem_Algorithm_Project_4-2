@@ -24,7 +24,7 @@ python experiments/benchmark_directed.py --algo MA --test data/raw_directed/ --o
 # 6. Batch ALL algorithms on every file in a folder
 python experiments/benchmark_directed.py --algo ALL --test data/raw_directed/ --output directed_comparison.csv
 
-# 7. HYBRID (GNN-guided Memetic) on one file with custom parameters
+# 7. HYBRID (GNN-guided KME) on one file with custom parameters
 python experiments/benchmark_directed.py --algo HYBRID --test data/raw_directed/pace001.gr --pop 100 --gens 400
 
 # 8. HYBRID on a folder of graphs
@@ -36,7 +36,7 @@ Supported --algo values
   IC     — Directed Iterative Compression (exact, greedy + compression)
   MA     — Directed Memetic Algorithm (heuristic, scales to large graphs)
     KME    — Directed Kernelized Memetic Algorithm (kernelization + MA)
-  HYBRID — GNN-guided Memetic Algorithm (combines GNN inference + MA refinement)
+    HYBRID — GNN-guided KME (combines GNN inference + kernelized MA refinement)
     ALL    — Run BST, IC, MA, KME, and HYBRID; print comparison table
 
 Directed Graph File Format (PACE 2022 .gr)

@@ -17,6 +17,12 @@
 #include <vector>
 #include <utility>
 
+struct UndirectedGraph;
+
+bool kernelize_undirected(UndirectedGraph &g,
+                          std::vector<int> &forced,
+                          int &k);
+
 // ─── Graph class ─────────────────────────────────────────────────────────────
 
 struct UndirectedGraph : public GraphBase

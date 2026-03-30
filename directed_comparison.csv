@@ -1,2 +1,2 @@
 file,n,m,BST_size,BST_ms,BST_valid,IC_size,IC_ms,IC_valid,MA_size,MA_ms,MA_valid,KME_size,KME_ms,KME_valid,HYBRID_size,HYBRID_ms,HYBRID_valid
-dgraph_00008.txt,24,113,TIMEOUT,TIMEOUT,TIMEOUT,11,3220.33,True,11,161.76,True,11,157.26,True,11,530.35,True
+dgraph_00008.txt,24,113,TIMEOUT,TIMEOUT,TIMEOUT,11,3344.18,True,11,195.43,True,11,167.46,True,TIMEOUT,TIMEOUT,TIMEOUT

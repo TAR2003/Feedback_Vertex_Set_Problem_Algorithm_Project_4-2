@@ -23,6 +23,12 @@
 #include <vector>
 #include <utility>
 
+struct DirectedGraph;
+
+bool kernelize_directed(DirectedGraph &g,
+                        std::vector<int> &forced,
+                        int &k);
+
 // ─── Graph class ─────────────────────────────────────────────────────────────
 
 struct DirectedGraph : public GraphBase

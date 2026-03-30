@@ -24,7 +24,7 @@ python experiments/benchmark_undirected.py --algo MA --test data/raw_undirected/
 # 6. Batch ALL algorithms on every file in a folder
 python experiments/benchmark_undirected.py --algo ALL --test data/synthetic/ --output comparison.csv
 
-# 7. HYBRID (GNN-guided Memetic) on one file with custom parameters
+# 7. HYBRID (GNN-guided KME) on one file with custom parameters
 python experiments/benchmark_undirected.py --algo HYBRID --test data/raw_undirected/graph01.txt --pop 100 --gens 400
 
 # 8. HYBRID on a folder of graphs
@@ -36,7 +36,7 @@ Supported --algo values
   IC     — Iterative Compression (exact, faster in practice)
   MA     — Memetic Algorithm (heuristic, fast, scales to 10k+ vertices)
     KME    — Kernelized Memetic Algorithm (kernelization + MA)
-  HYBRID — GNN-guided Memetic Algorithm (combines GNN inference + MA refinement)
+    HYBRID — GNN-guided KME (combines GNN inference + kernelized MA refinement)
     ALL    — Run BST, IC, MA, KME, and HYBRID on the same graph; print comparison table
 
 File format (EdgeList)
