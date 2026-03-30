@@ -35,8 +35,9 @@ Supported --algo values
   BST    — Bounded Search Tree (exact, slow for large graphs)
   IC     — Iterative Compression (exact, faster in practice)
   MA     — Memetic Algorithm (heuristic, fast, scales to 10k+ vertices)
+    KME    — Kernelized Memetic Algorithm (kernelization + MA)
   HYBRID — GNN-guided Memetic Algorithm (combines GNN inference + MA refinement)
-  ALL    — Run BST, IC, MA, and HYBRID on the same graph; print comparison table
+    ALL    — Run BST, IC, MA, KME, and HYBRID on the same graph; print comparison table
 
 File format (EdgeList)
 ──────────────────────
@@ -197,6 +198,7 @@ ALGO_MAP = {
     "BST": cpp_engine.solve_undirected_BST,
     "IC":  cpp_engine.solve_undirected_IC,
     "MA":  cpp_engine.solve_undirected_MA,
+    "KME": getattr(cpp_engine, "solve_undirected_KME", cpp_engine.solve_undirected_MA),
 }
 
 
@@ -221,9 +223,14 @@ def _undirected_worker_run(algo: str, n: int, edges: List[Tuple[int, int]],
         start = time.perf_counter()
         if algo == "MA":
             fvs = cpp_engine.solve_undirected_MA(n, edges, pop_size, max_gens)
+        elif algo == "KME":
+            if hasattr(cpp_engine, "solve_undirected_KME"):
+                fvs = cpp_engine.solve_undirected_KME(n, edges, pop_size, max_gens)
+            else:
+                fvs = cpp_engine.solve_undirected_MA(n, edges, pop_size, max_gens)
         elif algo == "HYBRID":
-            # HYBRID currently falls back to MA.
-            fvs = cpp_engine.solve_undirected_MA(n, edges, pop_size, max_gens)
+            from run_hybrid import hybrid_solve_undirected
+            fvs = hybrid_solve_undirected(n, edges, pop_size, max_gens)
         else:
             fvs = ALGO_MAP[algo](n, edges)
         elapsed_ms = (time.perf_counter() - start) * 1000.0
@@ -280,11 +287,14 @@ def run_algorithm(algo: str, n: int, edges: List[Tuple[int, int]],
 
     if algo == "MA":
         fvs = cpp_engine.solve_undirected_MA(n, edges, pop_size, max_gens)
+    elif algo == "KME":
+        if hasattr(cpp_engine, "solve_undirected_KME"):
+            fvs = cpp_engine.solve_undirected_KME(n, edges, pop_size, max_gens)
+        else:
+            fvs = cpp_engine.solve_undirected_MA(n, edges, pop_size, max_gens)
     elif algo == "HYBRID":
-        # HYBRID = MA with optional GNN guidance
-        # For now, fall back to pure MA since GNN import is slow
-        # TODO: Implement fast GNN loading if needed
-        fvs = cpp_engine.solve_undirected_MA(n, edges, pop_size, max_gens)
+        from run_hybrid import hybrid_solve_undirected
+        fvs = hybrid_solve_undirected(n, edges, pop_size, max_gens)
     else:
         fn = ALGO_MAP[algo]
         fvs = fn(n, edges)
@@ -313,7 +323,7 @@ def run_on_file(filepath: str, algo: str, pop_size: int, max_gens: int,
         print(f"  Graph: {n} vertices, {len(edges)} edges")
         print(f"{'─' * 60}")
 
-    algos_to_run = ["BST", "IC", "MA", "HYBRID"] if algo == "ALL" else [algo]
+    algos_to_run = ["BST", "IC", "MA", "KME", "HYBRID"] if algo == "ALL" else [algo]
 
     for alg in algos_to_run:
         timeout_s = get_dynamic_timeout_seconds(n)
@@ -365,8 +375,8 @@ def main():
     )
     parser.add_argument(
         "--algo", required=True,
-        choices=["BST", "IC", "MA", "HYBRID", "ALL"],
-        help="Algorithm to run: BST (exact), IC (exact), MA (heuristic), HYBRID (GNN+MA), ALL (compare)"
+        choices=["BST", "IC", "MA", "KME", "HYBRID", "ALL"],
+        help="Algorithm to run: BST (exact), IC (exact), MA (heuristic), KME (kernelized MA), HYBRID (GNN+KME), ALL (compare)"
     )
     parser.add_argument(
         "--test", required=True,
@@ -436,7 +446,7 @@ def main():
         print(f"{'═' * 80}")
 
         if args.algo == "ALL":
-            algos_ran = ["BST", "IC", "MA", "HYBRID"]
+            algos_ran = ["BST", "IC", "MA", "KME", "HYBRID"]
         else:
             algos_ran = [args.algo]
         header = f"  {'File':<30} {'n':>6} {'m':>8}"

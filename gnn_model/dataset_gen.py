@@ -7,7 +7,7 @@ Stage A: Generate synthetic graph INPUTS as .txt files.
     - Writes to: data/ML_synthetic/(undirected|directed)
 
 Stage B: Convert prepared .txt inputs into PyG .pt training samples.
-    - Reads all .txt recursively from: data/forGNN
+    - Reads all .txt recursively from: data/ML_synthetic (default)
     - Writes .pt files to: data/synthetic/(undirected|directed)
 
 The converter supports mixed input text formats:
@@ -52,7 +52,6 @@ import networkx as nx
 
 
 ML_SYNTH_DIR   = PROJECT_ROOT / "data" / "ML_synthetic"
-FOR_GNN_DIR    = PROJECT_ROOT / "data" / "forGNN"
 SYNTHETIC_DIR  = PROJECT_ROOT / "data" / "synthetic"
 
 
@@ -250,16 +249,20 @@ def _detect_metis(lines: List[str]) -> bool:
     if not lines:
         return False
     first = lines[0].split()
-    if len(first) < 2 or not all(_is_int_token(x) for x in first[:2]):
+    if len(first) < 2 or len(first) > 4 or not all(_is_int_token(x) for x in first[:2]):
         return False
 
     # Typical METIS starts with: n m [t]
     n = int(first[0])
+    m = int(first[1])
     if n <= 0:
         return False
+    if m < 0:
+        return False
 
-    # There should be roughly n adjacency lines after header.
-    if len(lines) < n + 1:
+    # METIS has exactly n adjacency lines after header.
+    # Require strict shape to avoid misclassifying plain edge lists.
+    if len(lines) != n + 1:
         return False
 
     # Sample a few following lines; they should be integer token lists.
@@ -318,7 +321,7 @@ def parse_graph_txt(filepath: Path, default_type: str = "undirected") -> Tuple[s
             for tok in parts:
                 if _is_int_token(tok):
                     v = int(tok) - 1
-                    if v >= 0:
+                    if 0 <= v < n:
                         metis_edges.append((u, v))
         return graph_type, n, metis_edges
 
@@ -520,14 +523,15 @@ def main():
     parser.add_argument("--max_n",    type=int, default=50)
     parser.add_argument("--seed",     type=int, default=42)
     parser.add_argument("--txt_out_dir",   type=str, default=str(ML_SYNTH_DIR))
-    parser.add_argument("--txt_input_dir", type=str, default=str(FOR_GNN_DIR))
+    parser.add_argument("--txt_input_dir", type=str, default=None)
     parser.add_argument("--pt_out_dir",    type=str, default=str(SYNTHETIC_DIR))
     parser.add_argument("--fail_fast", action="store_true")
     args = parser.parse_args()
 
     random.seed(args.seed)
     txt_out_dir = Path(args.txt_out_dir)
-    txt_in_dir = Path(args.txt_input_dir)
+    # If not provided, read from the same folder where TXT files are generated.
+    txt_in_dir = Path(args.txt_input_dir) if args.txt_input_dir else txt_out_dir
     pt_out_dir = Path(args.pt_out_dir)
 
     if args.mode in ("generate_txt", "all"):

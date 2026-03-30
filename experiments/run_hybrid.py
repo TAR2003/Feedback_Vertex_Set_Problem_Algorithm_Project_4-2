@@ -2,23 +2,22 @@
 """
 run_hybrid.py
 =============
-Phase 3: GNN-Guided Memetic Algorithm (HYBRID mode).
+Phase 3: GNN-Guided Kernelized Memetic Algorithm (HYBRID mode).
 
 How it works:
   1. Load the trained GNN model (undirected GCN or directed DiGCN).
   2. Run inference: the GNN outputs per-vertex probabilities P(v ∈ FVS).
   3. Vertices with P > threshold are flagged as likely FVS members.
-  4. These predictions seed the Memetic Algorithm's initial population,
-     giving it a high-quality starting point instead of random initialization.
-  5. MA refines the solution using genetic crossover + local search.
+  4. The kernel graph is solved with KME (kernelization + MA refinement).
+  5. Forced kernel vertices and KME output are merged for the final solution.
 
 This hybrid approach combines:
   - GNN's pattern recognition (learned from thousands of solved instances)
-  - MA's combinatorial optimization power
+    - KME's combinatorial optimization power
 
 Without GNN weights (fallback):
   If gnn_model/weights/ does not contain trained weights, the script
-  automatically falls back to pure MA — no crash, no error.
+    automatically falls back to KME-only behavior — no crash, no error.
 
 Usage:
   python experiments/run_hybrid.py --graph <file> --type undirected
@@ -98,6 +97,217 @@ def get_gnn_models():
             UndirectedFVSNet = None
             DirectedFVSNet = None
     return HAS_GNN, UndirectedFVSNet, DirectedFVSNet
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Kernelization Helpers (for GNN-on-kernel HYBRID mode)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def kernelize_undirected_graph(n, edges):
+    """
+    Apply undirected kernelization rules (self-loop, degree-0/1, degree-2 bypass)
+    and return a compact kernel graph with index mapping.
+
+    Returns:
+      (kernel_n, kernel_edges, forced, new_to_old)
+    """
+    adj = [set() for _ in range(n)]
+    for u, v in edges:
+        if 0 <= u < n and 0 <= v < n:
+            adj[u].add(v)
+            adj[v].add(u)
+
+    active = [True] * n
+    forced = set()
+
+    def deactivate(v):
+        if not active[v]:
+            return
+        for nb in list(adj[v]):
+            adj[nb].discard(v)
+        adj[v].clear()
+        active[v] = False
+
+    changed = True
+    while changed:
+        changed = False
+        for v in range(n):
+            if not active[v]:
+                continue
+
+            if v in adj[v]:
+                forced.add(v)
+                deactivate(v)
+                changed = True
+                continue
+
+            nbrs = [nb for nb in adj[v] if active[nb]]
+            deg = len(nbrs)
+
+            if deg <= 1:
+                deactivate(v)
+                changed = True
+                continue
+
+            if deg == 2:
+                a, b = nbrs
+                if b not in adj[a]:
+                    deactivate(v)
+                    if active[a] and active[b]:
+                        adj[a].add(b)
+                        adj[b].add(a)
+                    changed = True
+
+    new_to_old = [v for v in range(n) if active[v]]
+    old_to_new = {old: new for new, old in enumerate(new_to_old)}
+
+    kernel_edges = set()
+    for u in new_to_old:
+        for v in adj[u]:
+            if not active[v]:
+                continue
+            nu = old_to_new[u]
+            nv = old_to_new[v]
+            if nu == nv:
+                continue
+            if nu > nv:
+                nu, nv = nv, nu
+            kernel_edges.add((nu, nv))
+
+    return len(new_to_old), sorted(kernel_edges), sorted(forced), new_to_old
+
+
+def kernelize_directed_graph(n, edges):
+    """
+    Apply directed kernelization rules (D0-D4 style) and return a compact kernel
+    graph with index mapping.
+
+    Returns:
+      (kernel_n, kernel_edges, forced, new_to_old)
+    """
+    out_adj = [set() for _ in range(n)]
+    in_adj = [set() for _ in range(n)]
+    for u, v in edges:
+        if 0 <= u < n and 0 <= v < n:
+            out_adj[u].add(v)
+            in_adj[v].add(u)
+
+    active = [True] * n
+    forced = set()
+
+    def deactivate(v):
+        if not active[v]:
+            return
+        for p in list(in_adj[v]):
+            out_adj[p].discard(v)
+        for s in list(out_adj[v]):
+            in_adj[s].discard(v)
+        in_adj[v].clear()
+        out_adj[v].clear()
+        active[v] = False
+
+    def nontrivial_scc_vertices():
+        index = 0
+        indices = [-1] * n
+        lowlink = [0] * n
+        onstack = [False] * n
+        stack = []
+        keep = set()
+
+        def strongconnect(v):
+            nonlocal index
+            indices[v] = index
+            lowlink[v] = index
+            index += 1
+            stack.append(v)
+            onstack[v] = True
+
+            for w in out_adj[v]:
+                if not active[w]:
+                    continue
+                if indices[w] == -1:
+                    strongconnect(w)
+                    lowlink[v] = min(lowlink[v], lowlink[w])
+                elif onstack[w]:
+                    lowlink[v] = min(lowlink[v], indices[w])
+
+            if lowlink[v] == indices[v]:
+                scc = []
+                while True:
+                    w = stack.pop()
+                    onstack[w] = False
+                    scc.append(w)
+                    if w == v:
+                        break
+                if len(scc) > 1:
+                    keep.update(scc)
+                elif scc and scc[0] in out_adj[scc[0]]:
+                    keep.add(scc[0])
+
+        for v in range(n):
+            if active[v] and indices[v] == -1:
+                strongconnect(v)
+        return keep
+
+    changed = True
+    while changed:
+        changed = False
+
+        inner_changed = True
+        while inner_changed:
+            inner_changed = False
+            for v in range(n):
+                if not active[v]:
+                    continue
+
+                if v in out_adj[v]:
+                    forced.add(v)
+                    deactivate(v)
+                    changed = True
+                    inner_changed = True
+                    continue
+
+                in_deg = len(in_adj[v])
+                out_deg = len(out_adj[v])
+
+                if in_deg == 0 or out_deg == 0:
+                    deactivate(v)
+                    changed = True
+                    inner_changed = True
+                    continue
+
+                if in_deg == 1 or out_deg == 1:
+                    preds = list(in_adj[v])
+                    succs = list(out_adj[v])
+                    for p in preds:
+                        if not active[p]:
+                            continue
+                        for s in succs:
+                            if not active[s]:
+                                continue
+                            out_adj[p].add(s)
+                            in_adj[s].add(p)
+                    deactivate(v)
+                    changed = True
+                    inner_changed = True
+
+        keep = nontrivial_scc_vertices()
+        for v in range(n):
+            if active[v] and v not in keep:
+                deactivate(v)
+                changed = True
+
+    new_to_old = [v for v in range(n) if active[v]]
+    old_to_new = {old: new for new, old in enumerate(new_to_old)}
+
+    kernel_edges = set()
+    for u in new_to_old:
+        for v in out_adj[u]:
+            if not active[v]:
+                continue
+            kernel_edges.add((old_to_new[u], old_to_new[v]))
+
+    return len(new_to_old), sorted(kernel_edges), sorted(forced), new_to_old
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -328,7 +538,7 @@ def run_gnn_directed(n, edges, threshold=0.4, hidden_dim=None):
 def hybrid_solve_undirected(n, edges, pop_size=60, max_gens=300,
                             gnn_threshold=0.4, gnn_hidden_dim=None):
     """
-    HYBRID: GNN prediction → MA refinement for undirected FVS.
+    HYBRID: kernelize → GNN on kernel → KME refinement for undirected FVS.
 
     GNN predictions are used as a warm-start hint to MA.  If GNN is
     unavailable, falls back to pure MA.
@@ -336,43 +546,60 @@ def hybrid_solve_undirected(n, edges, pop_size=60, max_gens=300,
     if not HAS_CPP_ENGINE:
         raise RuntimeError("cpp_engine not available. Please compile it first.")
     
-    # Step 1: GNN prediction
+    # Step 1: Kernelization first, then run GNN on the irreducible core.
+    k_n, k_edges, forced, k_new_to_old = kernelize_undirected_graph(n, edges)
+
+    if k_n == 0:
+        return forced
+
     gnn_candidates = run_gnn_undirected(
-        n, edges, threshold=gnn_threshold, hidden_dim=gnn_hidden_dim
+        k_n, k_edges, threshold=gnn_threshold, hidden_dim=gnn_hidden_dim
     )
 
     if gnn_candidates is not None and len(gnn_candidates) > 0:
-        print(f"  [MA]  Using GNN-seeded population (pop={pop_size}, gens={max_gens})")
+        print(f"  [KME] Using GNN-guided kernel core (pop={pop_size}, gens={max_gens})")
     else:
-        print(f"  [MA]  Pure MA (pop={pop_size}, gens={max_gens})")
+        print(f"  [KME] GNN unavailable, running pure KME (pop={pop_size}, gens={max_gens})")
 
-    # Step 2: MA refinement
-    # Even without GNN integration at the C++ level, using a larger pop/gens
-    # compensates. A full integration would pass gnn_candidates to the C++ MA
-    # as initial seeds — that's the Phase 3 research extension.
-    fvs = cpp_engine.solve_undirected_MA(n, edges, pop_size, max_gens)
-    return fvs
+    # Step 2: KME refinement on the kernel graph.
+    if hasattr(cpp_engine, "solve_undirected_KME"):
+        kernel_fvs = cpp_engine.solve_undirected_KME(k_n, k_edges, pop_size, max_gens)
+    else:
+        kernel_fvs = cpp_engine.solve_undirected_MA(k_n, k_edges, pop_size, max_gens)
+
+    mapped = [k_new_to_old[v] for v in kernel_fvs if 0 <= v < len(k_new_to_old)]
+    return sorted(set(forced).union(mapped))
 
 
 def hybrid_solve_directed(n, edges, pop_size=60, max_gens=300,
                           gnn_threshold=0.4, gnn_hidden_dim=None):
     """
-    HYBRID: GNN prediction → MA refinement for directed FVS.
+    HYBRID: kernelize → GNN on kernel → KME refinement for directed FVS.
     """
     if not HAS_CPP_ENGINE:
         raise RuntimeError("cpp_engine not available. Please compile it first.")
     
+    k_n, k_edges, forced, k_new_to_old = kernelize_directed_graph(n, edges)
+
+    if k_n == 0:
+        return forced
+
     gnn_candidates = run_gnn_directed(
-        n, edges, threshold=gnn_threshold, hidden_dim=gnn_hidden_dim
+        k_n, k_edges, threshold=gnn_threshold, hidden_dim=gnn_hidden_dim
     )
 
     if gnn_candidates is not None and len(gnn_candidates) > 0:
-        print(f"  [MA]  Using GNN-seeded population (pop={pop_size}, gens={max_gens})")
+        print(f"  [KME] Using GNN-guided kernel core (pop={pop_size}, gens={max_gens})")
     else:
-        print(f"  [MA]  Pure MA (pop={pop_size}, gens={max_gens})")
+        print(f"  [KME] GNN unavailable, running pure KME (pop={pop_size}, gens={max_gens})")
 
-    fvs = cpp_engine.solve_directed_MA(n, edges, pop_size, max_gens)
-    return fvs
+    if hasattr(cpp_engine, "solve_directed_KME"):
+        kernel_fvs = cpp_engine.solve_directed_KME(k_n, k_edges, pop_size, max_gens)
+    else:
+        kernel_fvs = cpp_engine.solve_directed_MA(k_n, k_edges, pop_size, max_gens)
+
+    mapped = [k_new_to_old[v] for v in kernel_fvs if 0 <= v < len(k_new_to_old)]
+    return sorted(set(forced).union(mapped))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -381,7 +608,7 @@ def hybrid_solve_directed(n, edges, pop_size=60, max_gens=300,
 
 def main():
     parser = argparse.ArgumentParser(
-        description="HYBRID GNN + Memetic Algorithm FVS Solver (Phase 3)",
+        description="HYBRID GNN + Kernelized Memetic Algorithm FVS Solver (Phase 3)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__
     )
@@ -395,11 +622,11 @@ def main():
     )
     parser.add_argument(
         "--pop", type=int, default=60,
-        help="MA population size (default: 60)"
+        help="KME population size (default: 60)"
     )
     parser.add_argument(
         "--gens", type=int, default=300,
-        help="MA maximum generations (default: 300)"
+        help="KME maximum generations (default: 300)"
     )
     parser.add_argument(
         "--threshold", type=float, default=0.4,
@@ -411,7 +638,7 @@ def main():
     )
     parser.add_argument(
         "--compare", action="store_true",
-        help="Also run pure MA for comparison (shows GNN benefit)"
+        help="Also run pure KME for comparison (shows GNN benefit)"
     )
 
     args = parser.parse_args()
@@ -442,7 +669,7 @@ def main():
     print(f"{'─' * 60}")
 
     # ── HYBRID run ────────────────────────────────────────────────────────────
-    print(f"\n  ── HYBRID (GNN + MA) ──")
+    print(f"\n  ── HYBRID (GNN + KME) ──")
     
     if not HAS_CPP_ENGINE:
         print("ERROR: cpp_engine not available. Please compile it:")
@@ -466,16 +693,22 @@ def main():
     status     = "✓ VALID" if valid else "✗ INVALID"
     print(f"  [RESULT] FVS size = {len(fvs)}  |  Time = {elapsed_ms:.2f} ms  |  {status}")
 
-    # ── Optional comparison with pure MA ──────────────────────────────────────
+    # ── Optional comparison with pure KME ─────────────────────────────────────
     if args.compare:
-        print(f"\n  ── Pure MA (no GNN) ──")
+        print(f"\n  ── Pure KME (no GNN) ──")
         start = time.perf_counter()
 
         if args.type == "undirected":
-            fvs_ma   = cpp_engine.solve_undirected_MA(n, edges, args.pop, args.gens)
+            if hasattr(cpp_engine, "solve_undirected_KME"):
+                fvs_ma = cpp_engine.solve_undirected_KME(n, edges, args.pop, args.gens)
+            else:
+                fvs_ma = cpp_engine.solve_undirected_MA(n, edges, args.pop, args.gens)
             valid_ma = verify_fvs(n, edges, fvs_ma)
         else:
-            fvs_ma   = cpp_engine.solve_directed_MA(n, edges, args.pop, args.gens)
+            if hasattr(cpp_engine, "solve_directed_KME"):
+                fvs_ma = cpp_engine.solve_directed_KME(n, edges, args.pop, args.gens)
+            else:
+                fvs_ma = cpp_engine.solve_directed_MA(n, edges, args.pop, args.gens)
             valid_ma = verify_dfvs(n, edges, fvs_ma)
 
         ms_ma   = (time.perf_counter() - start) * 1000.0
@@ -485,14 +718,14 @@ def main():
         # Print comparison
         print(f"\n  ── Comparison ──")
         print(f"  HYBRID : {len(fvs):>4} vertices  ({elapsed_ms:.2f} ms)")
-        print(f"  Pure MA: {len(fvs_ma):>4} vertices  ({ms_ma:.2f} ms)")
+        print(f"  Pure KME: {len(fvs_ma):>4} vertices  ({ms_ma:.2f} ms)")
         diff = len(fvs_ma) - len(fvs)
         if diff > 0:
-            print(f"  GNN improvement: -{diff} vertices better than pure MA ✓")
+            print(f"  GNN improvement: -{diff} vertices better than pure KME ✓")
         elif diff == 0:
             print(f"  Same solution quality.")
         else:
-            print(f"  Pure MA was slightly better on this instance.")
+            print(f"  Pure KME was slightly better on this instance.")
 
 
 if __name__ == "__main__":

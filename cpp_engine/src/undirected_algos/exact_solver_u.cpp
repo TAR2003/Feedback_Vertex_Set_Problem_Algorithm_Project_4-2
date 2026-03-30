@@ -26,6 +26,7 @@
 #include "undirected_fvs.h"
 #include "kernelization_u.cpp" // forward-include shared helpers
 #include <algorithm>
+#include <set>
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  SECTION 1: BST Core
@@ -132,4 +133,80 @@ std::vector<int> solve_undirected_IC(int n,
                                      const std::vector<std::pair<int, int>> &edges)
 {
     return solve_undirected_BST(n, edges);
+}
+
+std::vector<int> solve_undirected_KME(int n,
+                                      const std::vector<std::pair<int, int>> &edges,
+                                      int pop_size, int max_gens)
+{
+    if (n == 0)
+        return {};
+
+    UndirectedGraph g(n);
+    for (const auto &[u, v] : edges)
+    {
+        if (u >= 0 && u < n && v >= 0 && v < n)
+            g.add_edge(u, v);
+    }
+
+    std::vector<int> forced;
+    (void)full_kernelization_u(g, forced, n);
+
+    if (!g.has_cycle())
+    {
+        std::sort(forced.begin(), forced.end());
+        forced.erase(std::unique(forced.begin(), forced.end()), forced.end());
+        return forced;
+    }
+
+    std::vector<int> old_to_new(n, -1);
+    std::vector<int> new_to_old;
+    new_to_old.reserve(n);
+    for (int v = 0; v < n; ++v)
+    {
+        if (g.active[v])
+        {
+            old_to_new[v] = static_cast<int>(new_to_old.size());
+            new_to_old.push_back(v);
+        }
+    }
+
+    std::set<std::pair<int, int>> reduced_edge_set;
+    for (int u = 0; u < n; ++u)
+    {
+        if (!g.active[u])
+            continue;
+        for (int v : g.adj[u])
+        {
+            if (!g.active[v])
+                continue;
+            int nu = old_to_new[u];
+            int nv = old_to_new[v];
+            if (nu == nv)
+                continue;
+            if (nu > nv)
+                std::swap(nu, nv);
+            reduced_edge_set.insert({nu, nv});
+        }
+    }
+
+    std::vector<std::pair<int, int>> reduced_edges;
+    reduced_edges.reserve(reduced_edge_set.size());
+    for (const auto &e : reduced_edge_set)
+        reduced_edges.push_back(e);
+
+    std::vector<int> kernel_solution = solve_undirected_MA(
+        static_cast<int>(new_to_old.size()), reduced_edges, pop_size, max_gens);
+
+    std::vector<int> result = forced;
+    result.reserve(forced.size() + kernel_solution.size());
+    for (int kv : kernel_solution)
+    {
+        if (kv >= 0 && kv < static_cast<int>(new_to_old.size()))
+            result.push_back(new_to_old[kv]);
+    }
+
+    std::sort(result.begin(), result.end());
+    result.erase(std::unique(result.begin(), result.end()), result.end());
+    return result;
 }

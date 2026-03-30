@@ -118,3 +118,15 @@ std::vector<int> solve_undirected_IC(int n,
 std::vector<int> solve_undirected_MA(int n,
                                      const std::vector<std::pair<int, int>> &edges,
                                      int pop_size = 50, int max_gens = 200);
+
+/**
+ * Kernelized Memetic Algorithm (KME) for undirected FVS.
+ *
+ * Pipeline:
+ *   1. Apply kernelization rules to collect forced FVS vertices.
+ *   2. Solve the reduced kernel graph with MA.
+ *   3. Map kernel solution back and merge with forced vertices.
+ */
+std::vector<int> solve_undirected_KME(int n,
+                                      const std::vector<std::pair<int, int>> &edges,
+                                      int pop_size = 50, int max_gens = 200);

@@ -188,6 +188,7 @@ data/synthetic_benchmark/*
 # Keep sample files for quick testing.
 data/raw_undirected/*.txt
 data/raw_directed/*.txt
+data/ML_synthetic/*
 # Exception: keep the small sample files we committed
 !data/raw_undirected/triangle.txt
 !data/raw_undirected/sample_petersen.txt

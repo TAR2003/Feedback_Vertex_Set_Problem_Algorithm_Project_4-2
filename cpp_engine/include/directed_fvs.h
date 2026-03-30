@@ -114,3 +114,15 @@ std::vector<int> solve_directed_IC(int n,
 std::vector<int> solve_directed_MA(int n,
                                    const std::vector<std::pair<int, int>> &edges,
                                    int pop_size = 50, int max_gens = 200);
+
+/**
+ * Kernelized Memetic Algorithm (KME) for directed FVS.
+ *
+ * Pipeline:
+ *   1. Apply directed kernelization rules to collect forced DFVS vertices.
+ *   2. Solve the reduced kernel graph with MA.
+ *   3. Map kernel solution back and merge with forced vertices.
+ */
+std::vector<int> solve_directed_KME(int n,
+                                    const std::vector<std::pair<int, int>> &edges,
+                                    int pop_size = 50, int max_gens = 200);
