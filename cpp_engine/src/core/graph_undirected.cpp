@@ -231,10 +231,6 @@ std::vector<int> UndirectedGraph::find_shortest_cycle() const
 {
     int best_len = INT_MAX;
     std::vector<int> best_cycle;
-    std::vector<int> dist(n, 0);
-    std::vector<int> parent(n, -1);
-    std::vector<int> seen(n, 0);
-    int seen_tag = 0;
 
     auto build_cycle = [&](int u, int v, const std::vector<int> &parent) -> std::vector<int>
     {
@@ -283,18 +279,11 @@ std::vector<int> UndirectedGraph::find_shortest_cycle() const
         if (!active[s])
             continue;
 
-        ++seen_tag;
-        if (seen_tag == INT_MAX)
-        {
-            std::fill(seen.begin(), seen.end(), 0);
-            seen_tag = 1;
-        }
-
+        std::vector<int> dist(n, -1);
+        std::vector<int> parent(n, -1);
         std::queue<int> q;
 
-        seen[s] = seen_tag;
         dist[s] = 0;
-        parent[s] = -1;
         q.push(s);
 
         while (!q.empty())
@@ -310,9 +299,8 @@ std::vector<int> UndirectedGraph::find_shortest_cycle() const
                 if (!active[nb])
                     continue;
 
-                if (seen[nb] != seen_tag)
+                if (dist[nb] == -1)
                 {
-                    seen[nb] = seen_tag;
                     dist[nb] = dist[u] + 1;
                     parent[nb] = u;
                     q.push(nb);

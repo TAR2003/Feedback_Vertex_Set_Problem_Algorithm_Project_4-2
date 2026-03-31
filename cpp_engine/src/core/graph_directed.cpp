@@ -299,10 +299,6 @@ std::vector<int> DirectedGraph::find_shortest_directed_cycle() const
 {
     int best_len = INT_MAX;
     std::vector<int> best_cycle;
-    std::vector<int> dist(n, 0);
-    std::vector<int> parent(n, -1);
-    std::vector<int> seen(n, 0);
-    int seen_tag = 0;
 
     for (int s = 0; s < n; ++s)
     {
@@ -312,18 +308,11 @@ std::vector<int> DirectedGraph::find_shortest_directed_cycle() const
         if (out_adj[s].count(s))
             return {s};
 
-        ++seen_tag;
-        if (seen_tag == INT_MAX)
-        {
-            std::fill(seen.begin(), seen.end(), 0);
-            seen_tag = 1;
-        }
-
+        std::vector<int> dist(n, -1);
+        std::vector<int> parent(n, -1);
         std::queue<int> q;
 
-        seen[s] = seen_tag;
         dist[s] = 0;
-        parent[s] = -1;
         q.push(s);
 
         while (!q.empty())
@@ -339,72 +328,46 @@ std::vector<int> DirectedGraph::find_shortest_directed_cycle() const
                 if (!active[nb])
                     continue;
 
-                if (nb == s)
+                if (dist[nb] == -1)
                 {
-                    int len = dist[u] + 1;
-                    if (len < best_len)
-                    {
-                        std::vector<int> path_rev;
-                        int cur = u;
-                        while (cur != s && cur != -1)
-                        {
-                            path_rev.push_back(cur);
-                            cur = parent[cur];
-                        }
-                        if (cur == s)
-                        {
-                            std::reverse(path_rev.begin(), path_rev.end());
-                            std::vector<int> cycle;
-                            cycle.push_back(s);
-                            cycle.insert(cycle.end(), path_rev.begin(), path_rev.end());
-                            if (static_cast<int>(cycle.size()) == len)
-                            {
-                                best_len = len;
-                                best_cycle = std::move(cycle);
-                                if (best_len <= 2)
-                                    return best_cycle;
-                            }
-                        }
-                    }
-                }
-
-                if (in_adj[s].count(nb))
-                {
-                    int len = dist[u] + 2;
-                    if (len < best_len)
-                    {
-                        std::vector<int> path_rev;
-                        int cur = u;
-                        while (cur != s && cur != -1)
-                        {
-                            path_rev.push_back(cur);
-                            cur = parent[cur];
-                        }
-                        if (cur == s)
-                        {
-                            std::reverse(path_rev.begin(), path_rev.end());
-                            std::vector<int> cycle;
-                            cycle.push_back(s);
-                            cycle.insert(cycle.end(), path_rev.begin(), path_rev.end());
-                            cycle.push_back(nb);
-                            if (static_cast<int>(cycle.size()) == len)
-                            {
-                                best_len = len;
-                                best_cycle = std::move(cycle);
-                                if (best_len <= 2)
-                                    return best_cycle;
-                            }
-                        }
-                    }
-                }
-
-                if (seen[nb] != seen_tag)
-                {
-                    seen[nb] = seen_tag;
                     dist[nb] = dist[u] + 1;
                     parent[nb] = u;
                     q.push(nb);
                 }
+            }
+        }
+
+        // Close a cycle by taking one incoming edge p -> s.
+        for (int p : in_adj[s])
+        {
+            if (!active[p] || dist[p] == -1)
+                continue;
+
+            int len = dist[p] + 1;
+            if (len >= best_len)
+                continue;
+
+            std::vector<int> path_rev;
+            int cur = p;
+            while (cur != s && cur != -1)
+            {
+                path_rev.push_back(cur);
+                cur = parent[cur];
+            }
+            if (cur != s)
+                continue;
+
+            std::reverse(path_rev.begin(), path_rev.end());
+            std::vector<int> cycle;
+            cycle.push_back(s);
+            cycle.insert(cycle.end(), path_rev.begin(), path_rev.end());
+
+            if (static_cast<int>(cycle.size()) == len)
+            {
+                best_len = len;
+                best_cycle = std::move(cycle);
+                if (best_len <= 2)
+                    return best_cycle;
             }
         }
     }
