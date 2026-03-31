@@ -184,12 +184,12 @@ def main() -> None:
     )
     parser.add_argument(
         "--algo",
-        choices=["BST", "IC", "MA", "KME", "HYBRID", "ALL"],
+        choices=["BST", "IC", "MA", "KMA", "GNN-KME", "ALL"],
         default="ALL",
         help="Algorithm selection forwarded to benchmark scripts",
     )
-    parser.add_argument("--pop", type=int, default=50, help="Population size for MA/HYBRID")
-    parser.add_argument("--gens", type=int, default=200, help="Max generations for MA/HYBRID")
+    parser.add_argument("--pop", type=int, default=50, help="Population size for MA/GNN-KME")
+    parser.add_argument("--gens", type=int, default=200, help="Max generations for MA/GNN-KME")
     parser.add_argument(
         "--include-pace",
         action="store_true",

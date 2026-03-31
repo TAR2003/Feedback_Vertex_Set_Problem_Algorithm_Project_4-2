@@ -330,7 +330,7 @@ std::vector<int> solve_undirected_MA(int n,
     return result;
 }
 
-std::vector<int> solve_undirected_KME(int n,
+std::vector<int> solve_undirected_KMA(int n,
                                       const std::vector<std::pair<int, int>> &edges,
                                       int pop_size, int max_gens)
 {
@@ -395,4 +395,11 @@ std::vector<int> solve_undirected_KME(int n,
     std::sort(result.begin(), result.end());
     result.erase(std::unique(result.begin(), result.end()), result.end());
     return result;
+}
+
+std::vector<int> solve_undirected_KME(int n,
+                                      const std::vector<std::pair<int, int>> &edges,
+                                      int pop_size, int max_gens)
+{
+    return solve_undirected_KMA(n, edges, pop_size, max_gens);
 }

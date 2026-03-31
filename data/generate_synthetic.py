@@ -7,7 +7,7 @@ Layout:
 
 Tracks:
   - exact_track      (small graphs; all algorithms)
-  - heuristic_track  (large graphs; MA/KME/HYBRID)
+  - heuristic_track  (large graphs; MA/KMA/GNN-KME)
 """
 
 from __future__ import annotations

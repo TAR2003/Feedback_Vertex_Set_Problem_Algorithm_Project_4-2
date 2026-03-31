@@ -32,8 +32,8 @@ python experiments/run_benchmark_suite.py
 
 Default suite behavior (`--profile requested`):
 
-- Directed exact_track: `BST`, `IC`, `MA`, `KME`, `HYBRID`
-- Undirected heuristic_track: `MA`, `KME`, `HYBRID`
+- Directed exact_track: `BST`, `IC`, `MA`, `KMA`, `GNN-KME`
+- Undirected heuristic_track: `MA`, `KMA`, `GNN-KME`
 
 Run every family+track combination:
 
@@ -43,8 +43,8 @@ python experiments/run_benchmark_suite.py --profile full
 
 Full profile behavior:
 
-- Undirected + directed exact_track: `BST`, `IC`, `MA`, `KME`, `HYBRID`
-- Undirected + directed heuristic_track: `MA`, `KME`, `HYBRID`
+- Undirected + directed exact_track: `BST`, `IC`, `MA`, `KMA`, `GNN-KME`
+- Undirected + directed heuristic_track: `MA`, `KMA`, `GNN-KME`
 
 ## Resume And Skip Logic
 

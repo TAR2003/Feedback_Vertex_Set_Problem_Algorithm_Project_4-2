@@ -24,20 +24,20 @@ python experiments/benchmark_undirected.py --algo MA --test data/raw_undirected/
 # 6. Batch ALL algorithms on every file in a folder
 python experiments/benchmark_undirected.py --algo ALL --test data/synthetic/ --output comparison.csv
 
-# 7. HYBRID (GNN-guided KME) on one file with custom parameters
-python experiments/benchmark_undirected.py --algo HYBRID --test data/raw_undirected/graph01.txt --pop 100 --gens 400
+# 7. GNN-KME (GNN-guided KMA) on one file with custom parameters
+python experiments/benchmark_undirected.py --algo GNN-KME --test data/raw_undirected/graph01.txt --pop 100 --gens 400
 
-# 8. HYBRID on a folder of graphs
-python experiments/benchmark_undirected.py --algo HYBRID --test data/raw_undirected/ --output undirected_hybrid_results.csv
+# 8. GNN-KME on a folder of graphs
+python experiments/benchmark_undirected.py --algo GNN-KME --test data/raw_undirected/ --output undirected_GNN-KME_results.csv
 
 Supported --algo values
 ───────────────────────
   BST    — Bounded Search Tree (exact, slow for large graphs)
   IC     — Iterative Compression (exact, faster in practice)
   MA     — Memetic Algorithm (heuristic, fast, scales to 10k+ vertices)
-    KME    — Kernelized Memetic Algorithm (kernelization + MA)
-    HYBRID — GNN-guided KME (combines GNN inference + kernelized MA refinement)
-    ALL    — Run BST, IC, MA, KME, and HYBRID on the same graph; print comparison table
+    KMA    — Kernelized Memetic Algorithm (kernelization + MA)
+    GNN-KME — GNN-guided KMA (combines GNN inference + kernelized MA refinement)
+    ALL    — Run BST, IC, MA, KMA, and GNN-KME on the same graph; print comparison table
 
 File format (Universal TXT edge-list)
 ──────────────────────────────────────
@@ -85,9 +85,9 @@ except ImportError as e:
     print(f"       (Original error: {e})")
     sys.exit(1)
 
-# Try importing hybrid solver from run_hybrid.py (graceful fallback)
-# Note: Import is deferred until hybrid algorithm is actually requested to avoid slow startup
-HAS_HYBRID = True  # Assume available; will fail gracefully at runtime if not
+# Try importing GNN-KME solver from run_hybrid.py (graceful fallback)
+# Note: Import is deferred until GNN-KME algorithm is actually requested to avoid slow startup
+HAS_GNN_KME = True  # Assume available; will fail gracefully at runtime if not
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -224,7 +224,7 @@ ALGO_MAP = {
     "BST": cpp_engine.solve_undirected_BST,
     "IC":  cpp_engine.solve_undirected_IC,
     "MA":  cpp_engine.solve_undirected_MA,
-    "KME": getattr(cpp_engine, "solve_undirected_KME", cpp_engine.solve_undirected_MA),
+    "KMA": getattr(cpp_engine, "solve_undirected_KMA", getattr(cpp_engine, "solve_undirected_KME", cpp_engine.solve_undirected_MA)),
 }
 
 
@@ -249,14 +249,16 @@ def _undirected_worker_run(algo: str, n: int, edges: List[Tuple[int, int]],
         start = time.perf_counter()
         if algo == "MA":
             fvs = cpp_engine.solve_undirected_MA(n, edges, pop_size, max_gens)
-        elif algo == "KME":
-            if hasattr(cpp_engine, "solve_undirected_KME"):
+        elif algo == "KMA":
+            if hasattr(cpp_engine, "solve_undirected_KMA"):
+                fvs = cpp_engine.solve_undirected_KMA(n, edges, pop_size, max_gens)
+            elif hasattr(cpp_engine, "solve_undirected_KME"):
                 fvs = cpp_engine.solve_undirected_KME(n, edges, pop_size, max_gens)
             else:
                 fvs = cpp_engine.solve_undirected_MA(n, edges, pop_size, max_gens)
-        elif algo == "HYBRID":
-            from run_hybrid import hybrid_solve_undirected
-            fvs = hybrid_solve_undirected(n, edges, pop_size, max_gens)
+        elif algo == "GNN-KME":
+            from run_hybrid import gnn_kme_solve_undirected
+            fvs = gnn_kme_solve_undirected(n, edges, pop_size, max_gens)
         else:
             fvs = ALGO_MAP[algo](n, edges)
         elapsed_ms = (time.perf_counter() - start) * 1000.0
@@ -313,14 +315,16 @@ def run_algorithm(algo: str, n: int, edges: List[Tuple[int, int]],
 
     if algo == "MA":
         fvs = cpp_engine.solve_undirected_MA(n, edges, pop_size, max_gens)
-    elif algo == "KME":
-        if hasattr(cpp_engine, "solve_undirected_KME"):
+    elif algo == "KMA":
+        if hasattr(cpp_engine, "solve_undirected_KMA"):
+            fvs = cpp_engine.solve_undirected_KMA(n, edges, pop_size, max_gens)
+        elif hasattr(cpp_engine, "solve_undirected_KME"):
             fvs = cpp_engine.solve_undirected_KME(n, edges, pop_size, max_gens)
         else:
             fvs = cpp_engine.solve_undirected_MA(n, edges, pop_size, max_gens)
-    elif algo == "HYBRID":
-        from run_hybrid import hybrid_solve_undirected
-        fvs = hybrid_solve_undirected(n, edges, pop_size, max_gens)
+    elif algo == "GNN-KME":
+        from run_hybrid import gnn_kme_solve_undirected
+        fvs = gnn_kme_solve_undirected(n, edges, pop_size, max_gens)
     else:
         fn = ALGO_MAP[algo]
         fvs = fn(n, edges)
@@ -349,7 +353,7 @@ def run_on_file(filepath: str, algo: str, pop_size: int, max_gens: int,
         print(f"  Graph: {n} vertices, {len(edges)} edges")
         print(f"{'─' * 60}")
 
-    algos_to_run = ["BST", "IC", "MA", "KME", "HYBRID"] if algo == "ALL" else [algo]
+    algos_to_run = ["BST", "IC", "MA", "KMA", "GNN-KME"] if algo == "ALL" else [algo]
 
     for alg in algos_to_run:
         timeout_s = get_dynamic_timeout_seconds(n)
@@ -401,8 +405,8 @@ def main():
     )
     parser.add_argument(
         "--algo", required=True,
-        choices=["BST", "IC", "MA", "KME", "HYBRID", "ALL"],
-        help="Algorithm to run: BST (exact), IC (exact), MA (heuristic), KME (kernelized MA), HYBRID (GNN+KME), ALL (compare)"
+        choices=["BST", "IC", "MA", "KMA", "GNN-KME", "ALL"],
+        help="Algorithm to run: BST (exact), IC (exact), MA (heuristic), KMA (kernelized MA), GNN-KME (GNN+KMA), ALL (compare)"
     )
     parser.add_argument(
         "--test", required=True,
@@ -459,7 +463,7 @@ def main():
         print(f"{'═' * 80}")
 
         if args.algo == "ALL":
-            algos_ran = ["BST", "IC", "MA", "KME", "HYBRID"]
+            algos_ran = ["BST", "IC", "MA", "KMA", "GNN-KME"]
         else:
             algos_ran = [args.algo]
         header = f"  {'File':<30} {'n':>6} {'m':>8}"

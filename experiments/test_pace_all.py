@@ -20,7 +20,7 @@ DIRECTED GRAPHS - EXAMPLES:
   # Run bounded search tree on directed PACE instances
   python experiments/benchmark_directed.py --algo BST --test data/pace2022/ --output pace_bst_results.csv
 
-HYBRID MODE (GNN-Guided Memetic):
+GNN-KME MODE (GNN-Guided Memetic):
   python experiments/run_hybrid.py --graph data/pace2022/ --type directed --pop 150 --gens 500
 
 UNDIRECTED GRAPHS:
@@ -29,7 +29,7 @@ UNDIRECTED GRAPHS:
 ═══════════════════════════════════════════════════════════════════════════════
 
 This script provides a unified runner for all algorithms if you prefer a single command.
-It automatically runs IC, BST, MA, and HYBRID on all PACE instances.
+It automatically runs IC, BST, MA, and GNN-KME on all PACE instances.
 """
 
 import sys
@@ -62,7 +62,7 @@ def run_algorithm_on_instance(algo: str, graph_file: str, graph_type: str = "dir
     try:
         start = time.time()
 
-        if algo == "HYBRID":
+        if algo == "GNN-KME":
             cmd = [
                 sys.executable,
                 str(PROJECT_ROOT / "experiments" / "run_hybrid.py"),
@@ -124,9 +124,9 @@ def main():
     parser.add_argument("--type", choices=["directed", "undirected"], default="directed",
                        help="Graph type")
     parser.add_argument("--filter", default="", help="Filter instances by name pattern")
-    parser.add_argument("--pop", type=int, default=100, help="Population size for MA/HYBRID")
-    parser.add_argument("--gens", type=int, default=300, help="Generations for MA/HYBRID")
-    parser.add_argument("--algorithms", default="IC,BST,MA,HYBRID",
+    parser.add_argument("--pop", type=int, default=100, help="Population size for MA/GNN-KME")
+    parser.add_argument("--gens", type=int, default=300, help="Generations for MA/GNN-KME")
+    parser.add_argument("--algorithms", default="IC,BST,MA,GNN-KME",
                        help="Comma-separated algorithms to test")
     args = parser.parse_args()
 

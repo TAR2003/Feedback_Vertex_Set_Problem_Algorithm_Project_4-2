@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Quick test to verify HYBRID import works (from WSL where cpp_engine.so is available)
+Quick test to verify GNN-KME import works (from WSL where cpp_engine.so is available)
 """
 
 import sys
@@ -20,11 +20,11 @@ except ImportError as e:
     sys.exit(1)
 
 try:
-    from experiments.run_hybrid import hybrid_solve_directed, hybrid_solve_undirected
-    print("✓ hybrid_solve_directed imported successfully")
-    print("✓ hybrid_solve_undirected imported successfully")
+    from experiments.run_hybrid import gnn_kme_solve_directed, gnn_kme_solve_undirected
+    print("✓ gnn_kme_solve_directed imported successfully")
+    print("✓ gnn_kme_solve_undirected imported successfully")
 except ImportError as e:
-    print(f"✗ Failed to import hybrid solvers: {e}")
+    print(f"✗ Failed to import GNN-KME solvers: {e}")
     sys.exit(1)
 
-print("\n✓ All imports successful! HYBRID integration is working.")
+print("\n✓ All imports successful! GNN-KME integration is working.")

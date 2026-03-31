@@ -2,22 +2,22 @@
 """
 run_hybrid.py
 =============
-Phase 3: GNN-Guided Kernelized Memetic Algorithm (HYBRID mode).
+Phase 3: GNN-Guided Kernelized Memetic Algorithm (GNN-KME mode).
 
 How it works:
   1. Load the trained GNN model (undirected GCN or directed DiGCN).
   2. Run inference: the GNN outputs per-vertex probabilities P(v ∈ FVS).
   3. Vertices with P > threshold are flagged as likely FVS members.
-  4. The kernel graph is solved with KME (kernelization + MA refinement).
-  5. Forced kernel vertices and KME output are merged for the final solution.
+  4. The kernel graph is solved with KMA (kernelization + MA refinement).
+  5. Forced kernel vertices and KMA output are merged for the final solution.
 
-This hybrid approach combines:
+This GNN-KME approach combines:
   - GNN's pattern recognition (learned from thousands of solved instances)
-    - KME's combinatorial optimization power
+    - KMA's combinatorial optimization power
 
 Without GNN weights (fallback):
   If gnn_model/weights/ does not contain trained weights, the script
-    automatically falls back to KME-only behavior — no crash, no error.
+    automatically falls back to KMA-only behavior — no crash, no error.
 
 Usage:
   python experiments/run_hybrid.py --graph <file> --type undirected
@@ -101,7 +101,7 @@ def get_gnn_models():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  Kernelization Helpers (for GNN-on-kernel HYBRID mode)
+#  Kernelization Helpers (for GNN-on-kernel GNN-KME mode)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def kernelize_undirected_graph(n, edges):
@@ -533,13 +533,13 @@ def run_gnn_directed(n, edges, threshold=0.4, hidden_dim=None):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  Hybrid Solver
+#  GNN-KME Solver
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def hybrid_solve_undirected(n, edges, pop_size=60, max_gens=300,
+def gnn_kme_solve_undirected(n, edges, pop_size=60, max_gens=300,
                             gnn_threshold=0.4, gnn_hidden_dim=None):
     """
-    HYBRID: kernelize → GNN on kernel → KME refinement for undirected FVS.
+    GNN-KME: kernelize → GNN on kernel → KMA refinement for undirected FVS.
 
     GNN predictions are used as a warm-start hint to MA.  If GNN is
     unavailable, falls back to pure MA.
@@ -558,12 +558,14 @@ def hybrid_solve_undirected(n, edges, pop_size=60, max_gens=300,
     )
 
     if gnn_candidates is not None and len(gnn_candidates) > 0:
-        print(f"  [KME] Using GNN-guided kernel core (pop={pop_size}, gens={max_gens})")
+        print(f"  [KMA] Using GNN-guided kernel core (pop={pop_size}, gens={max_gens})")
     else:
-        print(f"  [KME] GNN unavailable, running pure KME (pop={pop_size}, gens={max_gens})")
+        print(f"  [KMA] GNN unavailable, running pure KMA (pop={pop_size}, gens={max_gens})")
 
-    # Step 2: KME refinement on the kernel graph.
-    if hasattr(cpp_engine, "solve_undirected_KME"):
+    # Step 2: KMA refinement on the kernel graph.
+    if hasattr(cpp_engine, "solve_undirected_KMA"):
+        kernel_fvs = cpp_engine.solve_undirected_KMA(k_n, k_edges, pop_size, max_gens)
+    elif hasattr(cpp_engine, "solve_undirected_KME"):
         kernel_fvs = cpp_engine.solve_undirected_KME(k_n, k_edges, pop_size, max_gens)
     else:
         kernel_fvs = cpp_engine.solve_undirected_MA(k_n, k_edges, pop_size, max_gens)
@@ -572,10 +574,10 @@ def hybrid_solve_undirected(n, edges, pop_size=60, max_gens=300,
     return sorted(set(forced).union(mapped))
 
 
-def hybrid_solve_directed(n, edges, pop_size=60, max_gens=300,
+def gnn_kme_solve_directed(n, edges, pop_size=60, max_gens=300,
                           gnn_threshold=0.4, gnn_hidden_dim=None):
     """
-    HYBRID: kernelize → GNN on kernel → KME refinement for directed FVS.
+    GNN-KME: kernelize → GNN on kernel → KMA refinement for directed FVS.
     """
     if not HAS_CPP_ENGINE:
         raise RuntimeError("cpp_engine not available. Please compile it first.")
@@ -590,11 +592,13 @@ def hybrid_solve_directed(n, edges, pop_size=60, max_gens=300,
     )
 
     if gnn_candidates is not None and len(gnn_candidates) > 0:
-        print(f"  [KME] Using GNN-guided kernel core (pop={pop_size}, gens={max_gens})")
+        print(f"  [KMA] Using GNN-guided kernel core (pop={pop_size}, gens={max_gens})")
     else:
-        print(f"  [KME] GNN unavailable, running pure KME (pop={pop_size}, gens={max_gens})")
+        print(f"  [KMA] GNN unavailable, running pure KMA (pop={pop_size}, gens={max_gens})")
 
-    if hasattr(cpp_engine, "solve_directed_KME"):
+    if hasattr(cpp_engine, "solve_directed_KMA"):
+        kernel_fvs = cpp_engine.solve_directed_KMA(k_n, k_edges, pop_size, max_gens)
+    elif hasattr(cpp_engine, "solve_directed_KME"):
         kernel_fvs = cpp_engine.solve_directed_KME(k_n, k_edges, pop_size, max_gens)
     else:
         kernel_fvs = cpp_engine.solve_directed_MA(k_n, k_edges, pop_size, max_gens)
@@ -609,7 +613,7 @@ def hybrid_solve_directed(n, edges, pop_size=60, max_gens=300,
 
 def main():
     parser = argparse.ArgumentParser(
-        description="HYBRID GNN + Kernelized Memetic Algorithm FVS Solver (Phase 3)",
+        description="GNN-KME GNN + Kernelized Memetic Algorithm FVS Solver (Phase 3)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__
     )
@@ -623,11 +627,11 @@ def main():
     )
     parser.add_argument(
         "--pop", type=int, default=60,
-        help="KME population size (default: 60)"
+        help="KMA population size (default: 60)"
     )
     parser.add_argument(
         "--gens", type=int, default=300,
-        help="KME maximum generations (default: 300)"
+        help="KMA maximum generations (default: 300)"
     )
     parser.add_argument(
         "--threshold", type=float, default=0.4,
@@ -639,7 +643,7 @@ def main():
     )
     parser.add_argument(
         "--compare", action="store_true",
-        help="Also run pure KME for comparison (shows GNN benefit)"
+        help="Also run pure KMA for comparison (shows GNN benefit)"
     )
 
     args = parser.parse_args()
@@ -669,8 +673,8 @@ def main():
     print(f"  Graph: {n} vertices, {len(edges)} edges")
     print(f"{'─' * 60}")
 
-    # ── HYBRID run ────────────────────────────────────────────────────────────
-    print(f"\n  ── HYBRID (GNN + KME) ──")
+    # ── GNN-KME run ────────────────────────────────────────────────────────────
+    print(f"\n  ── GNN-KME (GNN + KMA) ──")
     
     if not HAS_CPP_ENGINE:
         print("ERROR: cpp_engine not available. Please compile it:")
@@ -680,12 +684,12 @@ def main():
     start = time.perf_counter()
 
     if args.type == "undirected":
-        fvs   = hybrid_solve_undirected(
+        fvs   = gnn_kme_solve_undirected(
             n, edges, args.pop, args.gens, args.threshold, args.gnn_hidden
         )
         valid = verify_fvs(n, edges, fvs)
     else:
-        fvs   = hybrid_solve_directed(
+        fvs   = gnn_kme_solve_directed(
             n, edges, args.pop, args.gens, args.threshold, args.gnn_hidden
         )
         valid = verify_dfvs(n, edges, fvs)
@@ -694,19 +698,23 @@ def main():
     status     = "✓ VALID" if valid else "✗ INVALID"
     print(f"  [RESULT] FVS size = {len(fvs)}  |  Time = {elapsed_ms:.2f} ms  |  {status}")
 
-    # ── Optional comparison with pure KME ─────────────────────────────────────
+    # ── Optional comparison with pure KMA ─────────────────────────────────────
     if args.compare:
-        print(f"\n  ── Pure KME (no GNN) ──")
+        print(f"\n  ── Pure KMA (no GNN) ──")
         start = time.perf_counter()
 
         if args.type == "undirected":
-            if hasattr(cpp_engine, "solve_undirected_KME"):
+            if hasattr(cpp_engine, "solve_undirected_KMA"):
+                fvs_ma = cpp_engine.solve_undirected_KMA(n, edges, args.pop, args.gens)
+            elif hasattr(cpp_engine, "solve_undirected_KME"):
                 fvs_ma = cpp_engine.solve_undirected_KME(n, edges, args.pop, args.gens)
             else:
                 fvs_ma = cpp_engine.solve_undirected_MA(n, edges, args.pop, args.gens)
             valid_ma = verify_fvs(n, edges, fvs_ma)
         else:
-            if hasattr(cpp_engine, "solve_directed_KME"):
+            if hasattr(cpp_engine, "solve_directed_KMA"):
+                fvs_ma = cpp_engine.solve_directed_KMA(n, edges, args.pop, args.gens)
+            elif hasattr(cpp_engine, "solve_directed_KME"):
                 fvs_ma = cpp_engine.solve_directed_KME(n, edges, args.pop, args.gens)
             else:
                 fvs_ma = cpp_engine.solve_directed_MA(n, edges, args.pop, args.gens)
@@ -718,15 +726,15 @@ def main():
 
         # Print comparison
         print(f"\n  ── Comparison ──")
-        print(f"  HYBRID : {len(fvs):>4} vertices  ({elapsed_ms:.2f} ms)")
-        print(f"  Pure KME: {len(fvs_ma):>4} vertices  ({ms_ma:.2f} ms)")
+        print(f"  GNN-KME : {len(fvs):>4} vertices  ({elapsed_ms:.2f} ms)")
+        print(f"  Pure KMA: {len(fvs_ma):>4} vertices  ({ms_ma:.2f} ms)")
         diff = len(fvs_ma) - len(fvs)
         if diff > 0:
-            print(f"  GNN improvement: -{diff} vertices better than pure KME ✓")
+            print(f"  GNN improvement: -{diff} vertices better than pure KMA ✓")
         elif diff == 0:
             print(f"  Same solution quality.")
         else:
-            print(f"  Pure KME was slightly better on this instance.")
+            print(f"  Pure KMA was slightly better on this instance.")
 
 
 if __name__ == "__main__":

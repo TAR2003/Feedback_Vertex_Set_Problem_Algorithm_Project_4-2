@@ -6,11 +6,11 @@ This command only targets:
 - data/synthetic/undirected/heuristic_track/**
 - data/synthetic/directed/heuristic_track/**
 
-Default algorithms: MA, KME, HYBRID.
+Default algorithms: MA, KMA, GNN-KME.
 
 Examples:
   python experiments/run_heuristics_track.py
-  python experiments/run_heuristics_track.py --mode undirected --algos MA KME --pop 80 --gens 300
+  python experiments/run_heuristics_track.py --mode undirected --algos MA KMA --pop 80 --gens 300
 """
 
 from __future__ import annotations
@@ -105,7 +105,7 @@ def _run_directed(algos: Sequence[str], pop: int, gens: int, quiet: bool, stamp:
 
 
 def _validate_algos(algos: Sequence[str]) -> None:
-    allowed = {"MA", "KME", "HYBRID"}
+    allowed = {"MA", "KMA", "GNN-KME"}
     invalid = [a for a in algos if a not in allowed]
     if invalid:
         raise ValueError(
@@ -124,8 +124,8 @@ def main() -> None:
     parser.add_argument(
         "--algos",
         nargs="+",
-        default=["MA", "KME", "HYBRID"],
-        help="Heuristic algorithms to run (subset of: MA KME HYBRID)",
+        default=["MA", "KMA", "GNN-KME"],
+        help="Heuristic algorithms to run (subset of: MA KMA GNN-KME)",
     )
     parser.add_argument("--pop", type=int, default=50)
     parser.add_argument("--gens", type=int, default=200)
