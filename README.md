@@ -94,3 +94,45 @@ Suite CSV rows contain:
 `file, file_path, n, m, family, track, algorithm, fvs_size, runtime_ms, valid, status, executed_at`
 
 This guarantees each row has input file identity plus vertex/edge counts, runtime, and FVS size.
+
+## GNN Dataset And Training Pipeline
+
+Use this flow to generate `.pt` datasets with the same benchmark-style distribution and then train GNN weights.
+
+### 1) Generate GNN training data (`.pt`)
+
+```bash
+# Full-size example
+python gnn_model/dataset_gen.py --total-undirected 100000 --total-directed 100000
+
+# Quick smoke generation
+python gnn_model/dataset_gen.py --total-undirected 100 --total-directed 100
+```
+
+Distribution mirrors benchmark generators:
+
+- Undirected: `real_world` 20%, plus `scale_free/small_world/random_er/grids_trees` at 20% each.
+- Directed: `real_world_ego` 30%, `scale_free` 20%, `random_er` 20%, `directed_grids` 15%, `dags` 15%.
+- Each category is split by `--exact-ratio` (default `0.5`) into `exact_track` and `heuristic_track`.
+
+Generated files are saved under:
+
+- `gnn_model/datasets/pt/undirected/.../*.pt`
+- `gnn_model/datasets/pt/directed/.../*.pt`
+
+### 2) Train GNN models from generated `.pt`
+
+```bash
+# Train both models
+python gnn_model/train.py --type both --epochs 100 --lr 0.001
+
+# Train with custom validation split and model size
+python gnn_model/train.py --type both --epochs 300 --hidden 128 --dropout 0.2 --val-ratio 0.2
+```
+
+Training loads all `.pt` files recursively from `gnn_model/datasets/pt/<type>/`.
+
+Weights are saved to:
+
+- `gnn_model/weights/undirected_fvs_gcn.pt`
+- `gnn_model/weights/directed_fvs_gcn.pt`

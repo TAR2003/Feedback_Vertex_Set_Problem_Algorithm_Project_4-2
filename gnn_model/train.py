@@ -45,15 +45,19 @@ from gnn_model.model_undirected import UndirectedFVSNet, compute_class_weights
 from gnn_model.model_directed   import DirectedFVSNet, compute_class_weights_directed
 
 
+def _log(msg: str) -> None:
+    print(msg, flush=True)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Data Loading
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def load_pt_dataset(data_dir: Path) -> list:
-    """Load all .pt graph Data objects from a directory."""
-    files   = sorted(data_dir.glob("*.pt"))
+    """Load all .pt graph Data objects recursively from a directory."""
+    files   = sorted(data_dir.rglob("*.pt"))
     dataset = [torch.load(f, weights_only=False) for f in files]
-    print(f"  Loaded {len(dataset)} graphs from {data_dir}")
+    _log(f"  Loaded {len(dataset)} graphs from {data_dir}")
     return dataset
 
 
@@ -107,7 +111,7 @@ def compute_metrics(model, dataset, device, weight_fn):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def train_model(model, train_set, val_set, weight_fn,
-                epochs: int, lr: float, device, save_path: Path):
+                epochs: int, lr: float, device, save_path: Path, log_every: int):
     """
     Main training loop.
     - Adam optimizer + cosine LR decay
@@ -123,11 +127,13 @@ def train_model(model, train_set, val_set, weight_fn,
     patience_ctr  = 0
     save_path.parent.mkdir(parents=True, exist_ok=True)
 
-    print(f"\n  Training: {len(train_set)} graphs  |  Val: {len(val_set)} graphs")
-    print(f"  Device  : {device}")
-    print(f"  Epochs  : {epochs}  |  LR: {lr}")
-    print(f"  {'Epoch':>6}  {'TrainLoss':>10}  {'ValLoss':>10}  {'ValF1':>8}  {'ValAcc':>8}")
-    print("  " + "─" * 52)
+    _log(f"\n  Training: {len(train_set)} graphs  |  Val: {len(val_set)} graphs")
+    _log(f"  Device  : {device}")
+    _log(f"  Epochs  : {epochs}  |  LR: {lr}")
+    _log(f"  {'Epoch':>6}  {'TrainLoss':>10}  {'ValLoss':>10}  {'ValF1':>8}  {'ValAcc':>8}")
+    _log("  " + "─" * 52)
+
+    log_every = max(1, log_every)
 
     for epoch in range(1, epochs + 1):
         # ── Train ────────────────────────────────────────────────────────────
@@ -149,13 +155,20 @@ def train_model(model, train_set, val_set, weight_fn,
 
         scheduler.step()
 
+        # Heartbeat log so long runs always show live progress.
+        if epoch % log_every == 0 or epoch == epochs:
+            train_loss = total_train_loss / max(len(train_set), 1)
+            pct = 100.0 * epoch / max(epochs, 1)
+            cur_lr = scheduler.get_last_lr()[0]
+            _log(f"  [progress] epoch {epoch}/{epochs} ({pct:.1f}%) train_loss={train_loss:.4f} lr={cur_lr:.6f}")
+
         # ── Validate every 5 epochs ───────────────────────────────────────────
         if epoch % 5 == 0 or epoch == epochs:
             train_loss = total_train_loss / max(len(train_set), 1)
             val_m      = compute_metrics(model, val_set, device, weight_fn)
 
-            print(f"  {epoch:>6}  {train_loss:>10.4f}  {val_m['loss']:>10.4f}"
-                  f"  {val_m['f1']:>8.4f}  {val_m['acc']:>8.4f}")
+            _log(f"  {epoch:>6}  {train_loss:>10.4f}  {val_m['loss']:>10.4f}"
+                 f"  {val_m['f1']:>8.4f}  {val_m['acc']:>8.4f}")
 
             # ── Save best model ───────────────────────────────────────────────
             if val_m["f1"] > best_val_f1:
@@ -165,11 +178,11 @@ def train_model(model, train_set, val_set, weight_fn,
             else:
                 patience_ctr += 1
                 if patience_ctr >= patience:
-                    print(f"\n  Early stopping at epoch {epoch} (no improvement in {patience} checks)")
+                    _log(f"\n  Early stopping at epoch {epoch} (no improvement in {patience} checks)")
                     break
 
-    print(f"\n  Best Val F1: {best_val_f1:.4f}")
-    print(f"  Model saved: {save_path}")
+    _log(f"\n  Best Val F1: {best_val_f1:.4f}")
+    _log(f"  Model saved: {save_path}")
     return best_val_f1
 
 
@@ -184,42 +197,48 @@ def main():
     parser.add_argument("--lr",      type=float, default=0.001)
     parser.add_argument("--hidden",  type=int,   default=64)
     parser.add_argument("--dropout", type=float, default=0.3)
+    parser.add_argument("--val-ratio", type=float, default=0.2)
+    parser.add_argument("--log-every", type=int, default=1)
+    parser.add_argument("--data-root", type=str, default=str(PROJECT_ROOT / "gnn_model" / "datasets" / "pt"))
     args = parser.parse_args()
 
+    if not (0.0 < args.val_ratio < 1.0):
+        raise ValueError("--val-ratio must be in (0, 1)")
+
     device   = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_dir = PROJECT_ROOT / "data" / "synthetic"
+    data_dir = Path(args.data_root)
     wt_dir   = PROJECT_ROOT / "gnn_model" / "weights"
 
     if args.type in ("undirected", "both"):
-        print("\n" + "═" * 60)
-        print("  Training UNDIRECTED FVS GCN")
-        print("═" * 60)
+        _log("\n" + "═" * 60)
+        _log("  Training UNDIRECTED FVS GCN")
+        _log("═" * 60)
         dataset = load_pt_dataset(data_dir / "undirected")
         if not dataset:
-            print("  No data found. Run dataset_gen.py first.")
+            _log("  No data found. Run dataset_gen.py first.")
         else:
-            train_set, val_set = train_val_split(dataset)
+            train_set, val_set = train_val_split(dataset, val_ratio=args.val_ratio)
             model = UndirectedFVSNet(hidden_dim=args.hidden, dropout=args.dropout)
             train_model(
                 model, train_set, val_set, compute_class_weights,
                 epochs=args.epochs, lr=args.lr, device=device,
-                save_path=wt_dir / "undirected_fvs_gcn.pt"
+                save_path=wt_dir / "undirected_fvs_gcn.pt", log_every=args.log_every
             )
 
     if args.type in ("directed", "both"):
-        print("\n" + "═" * 60)
-        print("  Training DIRECTED FVS DiGCN")
-        print("═" * 60)
+        _log("\n" + "═" * 60)
+        _log("  Training DIRECTED FVS DiGCN")
+        _log("═" * 60)
         dataset = load_pt_dataset(data_dir / "directed")
         if not dataset:
-            print("  No data found. Run dataset_gen.py first.")
+            _log("  No data found. Run dataset_gen.py first.")
         else:
-            train_set, val_set = train_val_split(dataset)
+            train_set, val_set = train_val_split(dataset, val_ratio=args.val_ratio)
             model = DirectedFVSNet(hidden_dim=args.hidden, dropout=args.dropout)
             train_model(
                 model, train_set, val_set, compute_class_weights_directed,
                 epochs=args.epochs, lr=args.lr, device=device,
-                save_path=wt_dir / "directed_fvs_gcn.pt"
+                save_path=wt_dir / "directed_fvs_gcn.pt", log_every=args.log_every
             )
 
 

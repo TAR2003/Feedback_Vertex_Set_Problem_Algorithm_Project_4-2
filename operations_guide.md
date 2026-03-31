@@ -409,40 +409,43 @@ Just drop `.gr` files into `data/raw_directed/` and pass the folder.
 
 The GNN pipeline has three steps: generate data → train → use for inference.
 
-### Step 1 — Generate synthetic training data
+### Step 1 — Generate benchmark-style `.pt` training data
 
 ```bash
-# Quick test (100 graphs, small size)
+# Quick smoke generation
 python gnn_model/dataset_gen.py \
-    --type both \
-    --n_graphs 100 \
-    --max_n 30
+    --total-undirected 100 \
+    --total-directed 100
 
-# Medium dataset (recommended minimum for meaningful training)
+# Large generation (example)
 python gnn_model/dataset_gen.py \
-    --type both \
-    --n_graphs 1000 \
-    --max_n 50 \
-    --seed 42
-
-# Large dataset (for serious training)
-python gnn_model/dataset_gen.py \
-    --type both \
-    --n_graphs 5000 \
-    --max_n 100 \
-    --seed 42
+    --total-undirected 100000 \
+    --total-directed 100000 \
+    --seed 1337
 
 # Undirected only
-python gnn_model/dataset_gen.py --type undirected --n_graphs 2000 --max_n 80
+python gnn_model/dataset_gen.py \
+    --family undirected \
+    --total-undirected 50000
 
 # Directed only
-python gnn_model/dataset_gen.py --type directed   --n_graphs 2000 --max_n 80
+python gnn_model/dataset_gen.py \
+    --family directed \
+    --total-directed 50000
 ```
 
 **What this produces:**
 
-- `data/synthetic/undirected/graph_00000.pt` … `graph_NNNNN.pt`
-- `data/synthetic/directed/dgraph_00000.pt` … `dgraph_NNNNN.pt`
+- `gnn_model/datasets/pt/undirected/exact_track/<category>/*.pt`
+- `gnn_model/datasets/pt/undirected/heuristic_track/<category>/*.pt`
+- `gnn_model/datasets/pt/directed/exact_track/<category>/*.pt`
+- `gnn_model/datasets/pt/directed/heuristic_track/<category>/*.pt`
+
+Category distribution mirrors benchmark generators:
+
+- Undirected: 20% `real_world`, 20% each for `scale_free`, `small_world`, `random_er`, `grids_trees`
+- Directed: 30% `real_world_ego`, 20% `scale_free`, 20% `random_er`, 15% `directed_grids`, 15% `dags`
+- Track split controlled by `--exact-ratio` (default `0.5`)
 
 Each `.pt` file is a PyTorch Geometric `Data` object:
 
@@ -480,7 +483,19 @@ python gnn_model/train.py \
     --epochs 300 \
     --lr 0.001 \
     --hidden 128 \
-    --dropout 0.2
+    --dropout 0.2 \
+    --val-ratio 0.2
+```
+
+By default, training loads all `.pt` files recursively from:
+
+- `gnn_model/datasets/pt/undirected/`
+- `gnn_model/datasets/pt/directed/`
+
+Optional custom dataset root:
+
+```bash
+python gnn_model/train.py --type both --data-root gnn_model/datasets/pt
 ```
 
 **Training output:**
@@ -489,7 +504,7 @@ python gnn_model/train.py \
 ════════════════════════════════════════════════
   Training UNDIRECTED FVS GCN
 ════════════════════════════════════════════════
-  Loaded 800 graphs from data/synthetic/undirected
+    Loaded 800 graphs from gnn_model/datasets/pt/undirected
   Training: 640 graphs  |  Val: 160 graphs
   Device  : cpu
   Epochs  : 100  |  LR: 0.001
