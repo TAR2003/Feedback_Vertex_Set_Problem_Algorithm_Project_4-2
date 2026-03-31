@@ -8,17 +8,18 @@
 ## Table of Contents
 
 1. [First-Time Setup](#1-first-time-setup)
-2. [Running a Single Algorithm on a Single Dataset](#2-running-a-single-algorithm-on-a-single-dataset)
-3. [Running a Single Algorithm on Multiple Datasets](#3-running-a-single-algorithm-on-multiple-datasets)
-4. [Comparing All Algorithms on One Dataset](#4-comparing-all-algorithms-on-one-dataset)
-5. [Comparing All Algorithms on Multiple Datasets](#5-comparing-all-algorithms-on-multiple-datasets)
-6. [Directed Graph Commands (Mirror of Above)](#6-directed-graph-commands-mirror-of-above)
-7. [Training the GNN Model](#7-training-the-gnn-model)
-8. [Running the Combined Model WITHOUT GNN](#8-running-the-combined-model-without-gnn)
-9. [Running the Combined Model WITH GNN (Phase 3)](#9-running-the-combined-model-with-gnn-phase-3)
-10. [All Flags Reference](#10-all-flags-reference)
-11. [Output and CSV Reference](#11-output-and-csv-reference)
-12. [Quick Verification After Build](#12-quick-verification-after-build)
+2. [Dataset Build And Suite Runner](#2-dataset-build-and-suite-runner)
+3. [Running a Single Algorithm on a Single Dataset](#2-running-a-single-algorithm-on-a-single-dataset)
+4. [Running a Single Algorithm on Multiple Datasets](#3-running-a-single-algorithm-on-multiple-datasets)
+5. [Comparing All Algorithms on One Dataset](#4-comparing-all-algorithms-on-one-dataset)
+6. [Comparing All Algorithms on Multiple Datasets](#5-comparing-all-algorithms-on-multiple-datasets)
+7. [Directed Graph Commands (Mirror of Above)](#6-directed-graph-commands-mirror-of-above)
+8. [Training the GNN Model](#7-training-the-gnn-model)
+9. [Running the Combined Model WITHOUT GNN](#8-running-the-combined-model-without-gnn)
+10. [Running the Combined Model WITH GNN (Phase 3)](#9-running-the-combined-model-with-gnn-phase-3)
+11. [All Flags Reference](#10-all-flags-reference)
+12. [Output and CSV Reference](#11-output-and-csv-reference)
+13. [Quick Verification After Build](#12-quick-verification-after-build)
 
 ---
 
@@ -86,6 +87,77 @@ Triangle FVS: [2] ← should be size 1
 mkdir -p gnn_model/weights
 mkdir -p results
 ```
+
+---
+
+## 2. Dataset Build And Suite Runner
+
+Use this two-command flow for the new two-track benchmark dataset and one-go execution.
+
+### Command A — Build/download inputs (preserves `data/pace2022`)
+
+```bash
+python data/setup_benchmark_inputs.py --total-undirected 100000 --total-directed 100000
+```
+
+Smaller test build:
+
+```bash
+python data/setup_benchmark_inputs.py --total-undirected 100 --total-directed 100
+```
+
+### Command B — Run full suite in one go
+
+```bash
+python experiments/run_benchmark_suite.py
+```
+
+What this single command runs by default (`--profile requested`):
+
+- Directed exact track: `BST`, `IC`, `MA`, `KME`, `HYBRID`
+- Undirected heuristic track: `MA`, `KME`, `HYBRID`
+
+Run the full matrix instead:
+
+```bash
+python experiments/run_benchmark_suite.py --profile full
+```
+
+Full profile runs:
+
+- Exact track (`data/synthetic/*/exact_track`): `BST`, `IC`, `MA`, `KME`, `HYBRID`
+- Heuristic track (`data/synthetic/*/heuristic_track`): `MA`, `KME`, `HYBRID`
+- Families: both undirected and directed
+
+### Resume behavior (skip already-run files)
+
+- Output CSVs are written per `(family, track, algorithm)` in `results/suite/`.
+- Before running, the suite checks each CSV for `file_path`.
+- If a file is already present for that algorithm, it is skipped automatically.
+- Use `--rerun` to force recomputation.
+
+```bash
+python experiments/run_benchmark_suite.py --rerun
+```
+
+### Useful flags
+
+```bash
+# Only directed family
+python experiments/run_benchmark_suite.py --mode directed
+
+# Faster MA/KME/HYBRID test run
+python experiments/run_benchmark_suite.py --pop 20 --gens 50 --quiet
+
+# Tiny smoke run (1 file per suite task)
+python experiments/run_benchmark_suite.py --max-files 1 --quiet
+```
+
+### CSV schema (per row)
+
+Each CSV row contains:
+
+`file, file_path, n, m, family, track, algorithm, fvs_size, runtime_ms, valid, status, executed_at`
 
 ---
 

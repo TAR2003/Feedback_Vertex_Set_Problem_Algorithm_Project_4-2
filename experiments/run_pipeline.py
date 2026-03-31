@@ -37,7 +37,7 @@ GRAPH_EXTENSIONS = {".txt", ".gr", ".edges", ".graph", ".dimacs", ".mtx"}
 def has_graph_files(folder: Path) -> bool:
     if not folder.exists() or not folder.is_dir():
         return False
-    for item in folder.iterdir():
+    for item in folder.rglob("*"):
         if not item.is_file():
             continue
         if item.suffix.lower() in GRAPH_EXTENSIONS:
@@ -53,7 +53,15 @@ def run_command(cmd: Sequence[str]) -> int:
     return proc.returncode
 
 
-def prepare_datasets(mode: str, skip_real: bool, skip_synth: bool, force: bool) -> None:
+def prepare_datasets(
+    mode: str,
+    skip_real: bool,
+    skip_synth: bool,
+    force: bool,
+    total_undirected: int,
+    total_directed: int,
+    exact_ratio: float,
+) -> None:
     if not skip_real:
         cmd = [sys.executable, str(DOWNLOAD_REAL_SCRIPT)]
         if force:
@@ -63,10 +71,20 @@ def prepare_datasets(mode: str, skip_real: bool, skip_synth: bool, force: bool) 
             raise RuntimeError("Real-world dataset step failed")
 
     if not skip_synth:
-        cmd = [sys.executable, str(GENERATE_SYNTH_SCRIPT)]
-        # Generate directed synthetic graphs when directed mode is involved.
-        if mode in {"directed", "all"}:
-            cmd.append("--directed")
+        cmd = [
+            sys.executable,
+            str(GENERATE_SYNTH_SCRIPT),
+            "--total-undirected",
+            str(total_undirected),
+            "--total-directed",
+            str(total_directed),
+            "--exact-ratio",
+            str(exact_ratio),
+        ]
+        if mode == "undirected":
+            cmd.extend(["--family", "undirected"])
+        elif mode == "directed":
+            cmd.extend(["--family", "directed"])
         if force:
             cmd.append("--force")
         rc = run_command(cmd)
@@ -78,7 +96,7 @@ def run_undirected(algo: str, pop: int, gens: int, quiet: bool, stamp: str) -> L
     outputs: List[Path] = []
     test_dirs = [
         DATA_DIR / "raw_undirected",
-        DATA_DIR / "synthetic_benchmark" / "undirected",
+        DATA_DIR / "synthetic" / "undirected",
     ]
 
     for test_dir in test_dirs:
@@ -118,7 +136,7 @@ def run_directed(algo: str, pop: int, gens: int, quiet: bool, include_pace: bool
     outputs: List[Path] = []
     test_dirs = [
         DATA_DIR / "raw_directed",
-        DATA_DIR / "synthetic_benchmark" / "directed",
+        DATA_DIR / "synthetic" / "directed",
     ]
     if include_pace:
         test_dirs.append(DATA_DIR / "pace2022")
@@ -202,6 +220,24 @@ def main() -> None:
         action="store_true",
         help="Pass quiet mode to benchmark scripts",
     )
+    parser.add_argument(
+        "--total-undirected",
+        type=int,
+        default=100_000,
+        help="Synthetic undirected total count (percentage split stays fixed)",
+    )
+    parser.add_argument(
+        "--total-directed",
+        type=int,
+        default=100_000,
+        help="Synthetic directed total count (percentage split stays fixed)",
+    )
+    parser.add_argument(
+        "--exact-ratio",
+        type=float,
+        default=0.5,
+        help="Fraction of each synthetic category allocated to exact_track",
+    )
 
     args = parser.parse_args()
 
@@ -212,6 +248,9 @@ def main() -> None:
         skip_real=args.skip_real,
         skip_synth=args.skip_synthetic,
         force=args.force,
+        total_undirected=args.total_undirected,
+        total_directed=args.total_directed,
+        exact_ratio=args.exact_ratio,
     )
 
     if args.prepare_only:

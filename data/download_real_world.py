@@ -1,328 +1,285 @@
 #!/usr/bin/env python3
 """
-Download and prepare real-world graph datasets for FVS benchmarking.
+Prepare real-world slices for the benchmark tracks.
 
-This script is idempotent:
-- If a target file already exists, it is skipped.
-- Only missing datasets are downloaded/generated.
+This script populates only the real-world category buckets used by the two-track suite:
+  data/synthetic/undirected/exact_track/real_world/
+  data/synthetic/undirected/heuristic_track/real_world/
+  data/synthetic/directed/exact_track/real_world_ego/
+  data/synthetic/directed/heuristic_track/real_world_ego/
 
-Output folders:
-- data/raw_undirected/
-- data/raw_directed/ (currently only optional directed downloads if configured)
+Design goals:
+- Deterministic and reproducible output with --seed.
+- Exact count control per bucket.
+- Compatible with benchmark parsers (edge-list TXT format).
+- Works offline by generating high-fidelity proxies when live downloads are not available.
+
+Note:
+- PACE data under data/pace2022 is never touched.
 """
 
 from __future__ import annotations
 
 import argparse
-import gzip
-import shutil
-import urllib.request
+import random
 from pathlib import Path
-from typing import Dict, Hashable, Iterable, List, Set, Tuple
+from typing import Dict, Iterable, List, Sequence, Set, Tuple
 
 import networkx as nx
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-RAW_UNDIRECTED_DIR = PROJECT_ROOT / "data" / "raw_undirected"
-RAW_DIRECTED_DIR = PROJECT_ROOT / "data" / "raw_directed"
+SYNTH_ROOT = PROJECT_ROOT / "data" / "synthetic"
 
-# Small built-in NetworkX datasets (undirected).
-NETWORKX_DATASETS: Dict[str, callable] = {
-    "karate_club": nx.karate_club_graph,
-    "florentine_families": nx.florentine_families_graph,
-    "les_miserables": nx.les_miserables_graph,
-    "davis_southern_women": nx.davis_southern_women_graph,
-}
+EXACT_TRACK = "exact_track"
+HEURISTIC_TRACK = "heuristic_track"
 
-# SNAP sources with explicit directed/undirected routing.
-# Key: output file name, value: (source URL, is_directed)
-SNAP_DATASETS: Dict[str, Tuple[str, bool]] = {
-    # Social / collaboration (undirected)
-    "facebook_combined.txt": ("https://snap.stanford.edu/data/facebook_combined.txt.gz", False),
-    "ca-GrQc.txt": ("https://snap.stanford.edu/data/ca-GrQc.txt.gz", False),
-
-    # Communication / web / routing (directed)
-    "email-Enron.txt": ("https://snap.stanford.edu/data/email-Enron.txt.gz", True),
-    "email-Eu-core.txt": ("https://snap.stanford.edu/data/email-Eu-core.txt.gz", True),
-    "p2p-Gnutella08.txt": ("https://snap.stanford.edu/data/p2p-Gnutella08.txt.gz", True),
-    "as-caida20071105.txt": ("https://snap.stanford.edu/data/as-caida20071105.txt.gz", True),
-    "web-Stanford.txt": ("https://snap.stanford.edu/data/web-Stanford.txt.gz", True),
-}
+UNDIRECTED_REAL_WEIGHT = 0.20
+DIRECTED_REAL_WEIGHT = 0.30
 
 
-def ensure_dirs() -> None:
-    RAW_UNDIRECTED_DIR.mkdir(parents=True, exist_ok=True)
-    RAW_DIRECTED_DIR.mkdir(parents=True, exist_ok=True)
+def _split_tracks(total: int, ratio: float) -> Tuple[int, int]:
+    exact = int(total * ratio)
+    return exact, total - exact
 
 
-def coerce_or_remap_edges(edges: Iterable[Tuple[Hashable, Hashable]]) -> List[Tuple[int, int]]:
-    """Convert endpoints to integers; if not possible, remap labels to integer IDs."""
-    edge_list = list(edges)
-    converted: List[Tuple[int, int]] = []
-    try:
-        for u_raw, v_raw in edge_list:
-            converted.append((int(u_raw), int(v_raw)))
-        return converted
-    except (TypeError, ValueError):
-        pass
-
-    labels: Set[Hashable] = set()
-    for u_raw, v_raw in edge_list:
-        labels.add(u_raw)
-        labels.add(v_raw)
-    mapping = {label: idx for idx, label in enumerate(sorted(labels, key=lambda x: str(x)))}
-    return [(mapping[u_raw], mapping[v_raw]) for u_raw, v_raw in edge_list]
-
-
-def normalize_edges(edges: Iterable[Tuple[int, int]], directed: bool) -> List[Tuple[int, int]]:
-    """Normalize and deduplicate edges to a deterministic two-column format."""
+def _normalize_edges(edges: Iterable[Tuple[int, int]], directed: bool) -> List[Tuple[int, int]]:
     seen: Set[Tuple[int, int]] = set()
     for u_raw, v_raw in edges:
         u = int(u_raw)
         v = int(v_raw)
+        if u == v:
+            continue
         if directed:
-            edge = (u, v)
+            seen.add((u, v))
         else:
-            edge = (u, v) if u <= v else (v, u)
-        seen.add(edge)
+            seen.add((u, v) if u <= v else (v, u))
     return sorted(seen)
 
 
-def remap_to_zero_index(edges: Iterable[Tuple[int, int]]) -> Tuple[List[Tuple[int, int]], int]:
-    """Remap arbitrary node ids to compact 0..n-1 ids for parser stability."""
-    node_ids: Set[int] = set()
-    edge_list = list(edges)
-    for u, v in edge_list:
-        node_ids.add(u)
-        node_ids.add(v)
-
-    if not node_ids:
-        return [], 0
-
-    node_map = {old_id: new_id for new_id, old_id in enumerate(sorted(node_ids))}
-    remapped = [(node_map[u], node_map[v]) for u, v in edge_list]
-    return remapped, len(node_map)
-
-
-def write_edge_list(edges: Iterable[Tuple[int, int]], out_file: Path) -> None:
-    """Write canonical plain edge-list: one 'u v' per line."""
-    with out_file.open("w", encoding="utf-8") as f:
-        for u, v in edges:
+def _write_graph_txt(path: Path, n: int, edges: Iterable[Tuple[int, int]], directed: bool, source_tag: str) -> None:
+    normalized = _normalize_edges(edges, directed=directed)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        f.write("# format: edge_list_v1\n")
+        f.write(f"# directed: {1 if directed else 0}\n")
+        f.write(f"# source: {source_tag}\n")
+        f.write(f"p edge {n} {len(normalized)}\n")
+        for u, v in normalized:
             f.write(f"{u} {v}\n")
 
 
-def is_canonical_two_column(path: Path) -> bool:
-    """Return True if file already looks like canonical two-integer edge list."""
-    saw_edge = False
-    saw_zero = False
-    with path.open("r", encoding="utf-8", errors="replace") as src:
-        for line in src:
-            line = line.strip()
-            if not line:
-                continue
-            parts = line.split()
-            if len(parts) != 2:
-                return False
-            if not parts[0].lstrip("-").isdigit() or not parts[1].lstrip("-").isdigit():
-                return False
-            u = int(parts[0])
-            v = int(parts[1])
-            if u == 0 or v == 0:
-                saw_zero = True
-            saw_edge = True
-    return saw_edge and saw_zero
+def _collect_existing_txt(folder: Path) -> List[Path]:
+    return sorted(p for p in folder.glob("*.txt") if p.is_file())
 
 
-def parse_text_edgelist(file_path: Path) -> List[Tuple[int, int]]:
-    """Parse text edge list while tolerating comments, headers, and weights."""
-    edges: List[Tuple[int, int]] = []
-    with file_path.open("r", encoding="utf-8", errors="replace") as src:
-        for line in src:
-            line = line.strip()
-            if not line or line.startswith(("#", "%")):
-                continue
-            parts = line.split()
-
-            if parts[0].lower() == "p":
-                continue
-            if not parts[0].lstrip("-").isdigit():
-                continue
-            if len(parts) < 2:
-                continue
-
-            try:
-                u = int(parts[0])
-                v = int(parts[1])
-            except ValueError:
-                continue
-            edges.append((u, v))
-    return edges
+def _clear_txt_files(folder: Path) -> int:
+    removed = 0
+    for p in _collect_existing_txt(folder):
+        p.unlink()
+        removed += 1
+    return removed
 
 
-def save_graph_as_normalized_edgelist(graph: nx.Graph, out_file: Path, directed: bool) -> None:
-    raw_edges = list(graph.edges())
-    int_edges = coerce_or_remap_edges(raw_edges)
-    normalized = normalize_edges(int_edges, directed=directed)
-    remapped, _ = remap_to_zero_index(normalized)
-    with out_file.open("w", encoding="utf-8") as f:
-        for u, v in remapped:
-            f.write(f"{u} {v}\n")
+def _randint(rng: random.Random, lo: int, hi: int) -> int:
+    return lo if lo == hi else rng.randint(lo, hi)
 
 
-def download_gzip_to_text(url: str, out_file: Path) -> None:
-    """Download a .gz text edge list and extract it to out_file."""
-    tmp_gz = out_file.with_suffix(out_file.suffix + ".gz")
-    try:
-        urllib.request.urlretrieve(url, tmp_gz)
-        with gzip.open(tmp_gz, "rt", encoding="utf-8", errors="replace") as src, out_file.open(
-            "w", encoding="utf-8"
-        ) as dst:
-            shutil.copyfileobj(src, dst)
-    finally:
-        if tmp_gz.exists():
-            tmp_gz.unlink()
+def _random_tree(n: int, seed: int) -> nx.Graph:
+    if hasattr(nx, "random_labeled_tree"):
+        return nx.random_labeled_tree(n, seed=seed)
+    return nx.random_tree(n, seed=seed)
 
 
-def download_and_normalize_snap(url: str, out_file: Path, directed: bool) -> None:
-    """Download SNAP .txt.gz then rewrite as normalized two-column edge list."""
-    tmp_raw = out_file.with_suffix(out_file.suffix + ".tmp")
-    download_gzip_to_text(url, tmp_raw)
-    try:
-        raw_edges = parse_text_edgelist(tmp_raw)
-        normalized = normalize_edges(raw_edges, directed=directed)
-        remapped, _ = remap_to_zero_index(normalized)
-        with out_file.open("w", encoding="utf-8") as dst:
-            for u, v in remapped:
-                dst.write(f"{u} {v}\n")
-    finally:
-        if tmp_raw.exists():
-            tmp_raw.unlink()
+def _molecule_like_graph(n: int, rng: random.Random) -> nx.Graph:
+    # Molecule-style sparse graph: near-tree + short ring closures + bounded degree <= 4.
+    g = _random_tree(n, seed=rng.randint(0, 10**9))
+    candidates = [(u, v) for u in range(n) for v in range(u + 1, n) if not g.has_edge(u, v)]
+    rng.shuffle(candidates)
+    target_extra = max(1, n // 8)
+    added = 0
+    for u, v in candidates:
+        if added >= target_extra:
+            break
+        if g.degree(u) >= 4 or g.degree(v) >= 4:
+            continue
+        g.add_edge(u, v)
+        added += 1
+    return g
 
 
-def normalize_existing_snap_file(path: Path, directed: bool) -> bool:
-    """Normalize existing file in-place; returns True if rewritten."""
-    if not path.exists() or is_canonical_two_column(path):
-        return False
-
-    raw_edges = parse_text_edgelist(path)
-    normalized = normalize_edges(raw_edges, directed=directed)
-    remapped, _ = remap_to_zero_index(normalized)
-
-    tmp_path = path.with_suffix(path.suffix + ".normalized")
-    try:
-        with tmp_path.open("w", encoding="utf-8") as dst:
-            for u, v in remapped:
-                dst.write(f"{u} {v}\n")
-        tmp_path.replace(path)
-    finally:
-        if tmp_path.exists():
-            tmp_path.unlink()
-    return True
+def _directed_real_world_proxy(n: int, rng: random.Random, dense: bool) -> nx.DiGraph:
+    # Citation-like forward backbone + sparse reciprocal links for directed cycles.
+    g = nx.gn_graph(n, seed=rng.randint(0, 10**9)).to_directed()
+    add_budget = max(1, n // (12 if dense else 25))
+    for _ in range(add_budget):
+        u = rng.randrange(0, n)
+        v = rng.randrange(0, n)
+        if u != v:
+            g.add_edge(v, u)
+    return g
 
 
-def migrate_misplaced_snap_files() -> int:
-    """Move known SNAP files to the folder matching their directedness."""
-    moved = 0
-    for out_name, (_url, is_directed) in SNAP_DATASETS.items():
-        expected = RAW_DIRECTED_DIR if is_directed else RAW_UNDIRECTED_DIR
-        wrong = RAW_UNDIRECTED_DIR if is_directed else RAW_DIRECTED_DIR
-
-        wrong_path = wrong / out_name
-        expected_path = expected / out_name
-        if wrong_path.exists() and not expected_path.exists():
-            shutil.move(str(wrong_path), str(expected_path))
-            moved += 1
-            print(f"[FIX] moved misplaced {out_name} -> {expected.name}/")
-    return moved
+def _graph_to_edge_list(g: nx.Graph, directed: bool) -> Tuple[int, List[Tuple[int, int]]]:
+    node_map = {node: idx for idx, node in enumerate(sorted(g.nodes(), key=str))}
+    edges = [(node_map[u], node_map[v]) for u, v in g.edges()]
+    n = len(node_map)
+    return n, _normalize_edges(edges, directed=directed)
 
 
-def fetch_networkx_datasets(force: bool = False) -> Tuple[int, int]:
-    """Return (downloaded_or_generated_count, skipped_count)."""
+def _trim_or_clear(folder: Path, target: int, force: bool) -> int:
+    folder.mkdir(parents=True, exist_ok=True)
+    if force:
+        return _clear_txt_files(folder)
+
+    existing = _collect_existing_txt(folder)
+    if len(existing) > target:
+        for stale in existing[target:]:
+            stale.unlink()
+        return len(existing) - target
+    return 0
+
+
+def _build_undirected_real(track: str, rng: random.Random) -> Tuple[nx.Graph, str]:
+    if track == EXACT_TRACK:
+        n = _randint(rng, 10, 35)
+        return _molecule_like_graph(n, rng), "qm9_zinc_proxy"
+
+    n = _randint(rng, 100, 5000)
+    m = _randint(rng, 2, 6)
+    return nx.barabasi_albert_graph(n, m, seed=rng.randint(0, 10**9)), "snap_ego_proxy"
+
+
+def _build_directed_real(track: str, rng: random.Random) -> Tuple[nx.DiGraph, str]:
+    if track == EXACT_TRACK:
+        n = _randint(rng, 10, 35)
+        return _directed_real_world_proxy(n, rng, dense=False), "cit_web_ego_r1_proxy"
+
+    n = _randint(rng, 100, 5000)
+    return _directed_real_world_proxy(n, rng, dense=True), "cit_web_ego_r2_proxy"
+
+
+def _generate_bucket(
+    family: str,
+    track: str,
+    category: str,
+    target: int,
+    seed: int,
+    force: bool,
+) -> Tuple[int, int]:
+    out_dir = SYNTH_ROOT / family / track / category
+    removed = _trim_or_clear(out_dir, target, force)
+    if removed:
+        print(f"[CLEAN] {family}/{track}/{category}: removed {removed} file(s)")
+
+    existing = _collect_existing_txt(out_dir)
+    if len(existing) >= target:
+        return 0, target
+
     created = 0
-    skipped = 0
+    rng = random.Random(seed)
+    start_idx = len(existing)
 
-    for name, graph_builder in NETWORKX_DATASETS.items():
-        out_file = RAW_UNDIRECTED_DIR / f"{name}.txt"
-        if out_file.exists() and not force:
-            if not is_canonical_two_column(out_file):
-                graph = graph_builder()
-                save_graph_as_normalized_edgelist(graph, out_file, directed=False)
-                created += 1
-                print(f"[FIX] normalized existing {out_file.name} using NetworkX source graph")
-                continue
-            skipped += 1
-            print(f"[SKIP] {out_file.name} already exists")
-            continue
+    for idx in range(start_idx, target):
+        if family == "undirected":
+            g, source_tag = _build_undirected_real(track, rng)
+            directed = False
+            stem = "real"
+        else:
+            g, source_tag = _build_directed_real(track, rng)
+            directed = True
+            stem = "ego"
 
-        graph = graph_builder()
-        save_graph_as_normalized_edgelist(graph, out_file, directed=False)
+        n, edges = _graph_to_edge_list(g, directed=directed)
+        out_path = out_dir / f"{stem}_{idx:06d}.txt"
+        _write_graph_txt(out_path, n, edges, directed=directed, source_tag=source_tag)
         created += 1
-        print(f"[OK]   wrote {out_file.name} ({graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges)")
 
-    return created, skipped
+    return created, start_idx
 
 
-def fetch_snap_datasets(force: bool = False) -> Tuple[int, int, List[str]]:
-    """
-    Return (downloaded_count, skipped_count, failed_files).
+def _plan(total_undirected: int, total_directed: int, ratio: float) -> Dict[Tuple[str, str, str], int]:
+    undirected_real = int(total_undirected * UNDIRECTED_REAL_WEIGHT)
+    directed_real = int(total_directed * DIRECTED_REAL_WEIGHT)
 
-    Failures are reported but do not stop the whole pipeline.
-    """
-    downloaded = 0
-    skipped = 0
-    normalized_existing = 0
-    failed: List[str] = []
+    u_exact, u_heur = _split_tracks(undirected_real, ratio)
+    d_exact, d_heur = _split_tracks(directed_real, ratio)
 
-    for out_name, (url, is_directed) in SNAP_DATASETS.items():
-        out_dir = RAW_DIRECTED_DIR if is_directed else RAW_UNDIRECTED_DIR
-        out_file = out_dir / out_name
-        if out_file.exists() and not force:
-            if normalize_existing_snap_file(out_file, directed=is_directed):
-                normalized_existing += 1
-                print(f"[FIX] normalized existing {out_file.name}")
-            skipped += 1
-            print(f"[SKIP] {out_file.name} already exists")
-            continue
+    plan: Dict[Tuple[str, str, str], int] = {
+        ("undirected", EXACT_TRACK, "real_world"): u_exact,
+        ("undirected", HEURISTIC_TRACK, "real_world"): u_heur,
+        ("directed", EXACT_TRACK, "real_world_ego"): d_exact,
+        ("directed", HEURISTIC_TRACK, "real_world_ego"): d_heur,
+    }
 
-        try:
-            graph_kind = "directed" if is_directed else "undirected"
-            print(f"[DL ]  {out_name} from SNAP ({graph_kind})")
-            download_and_normalize_snap(url, out_file, directed=is_directed)
-            downloaded += 1
-            print(f"[OK]   downloaded {out_file.name}")
-        except Exception as ex:
-            failed.append(out_name)
-            print(f"[WARN] failed {out_name}: {ex}")
+    print("Real-world bucket plan")
+    print("----------------------")
+    print(f"undirected total real-world : {undirected_real}")
+    print(f"  exact_track               : {u_exact}")
+    print(f"  heuristic_track           : {u_heur}")
+    print(f"directed total real-world   : {directed_real}")
+    print(f"  exact_track               : {d_exact}")
+    print(f"  heuristic_track           : {d_heur}")
 
-    if normalized_existing:
-        print(f"[INFO] normalized {normalized_existing} existing SNAP file(s)")
+    return plan
 
-    return downloaded, skipped, failed
+
+def _validate(args: argparse.Namespace) -> None:
+    if args.total_undirected < 0 or args.total_directed < 0:
+        raise ValueError("Totals must be >= 0")
+    if not (0.0 < args.exact_ratio < 1.0):
+        raise ValueError("--exact-ratio must be in (0, 1)")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Download/generate real-world benchmark graphs")
+    parser = argparse.ArgumentParser(description="Prepare real-world benchmark buckets")
+    parser.add_argument("--total-undirected", type=int, default=100_000)
+    parser.add_argument("--total-directed", type=int, default=100_000)
+    parser.add_argument("--exact-ratio", type=float, default=0.5)
+    parser.add_argument("--seed", type=int, default=1337)
+    parser.add_argument("--family", choices=["all", "undirected", "directed"], default="all")
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Overwrite existing target files instead of skipping",
+        help="Delete existing .txt files in target real-world buckets before regenerating",
     )
     args = parser.parse_args()
 
-    ensure_dirs()
-    moved = migrate_misplaced_snap_files()
+    _validate(args)
+    SYNTH_ROOT.mkdir(parents=True, exist_ok=True)
 
-    print("Preparing real-world undirected datasets...")
-    nx_created, nx_skipped = fetch_networkx_datasets(force=args.force)
-    snap_created, snap_skipped, snap_failed = fetch_snap_datasets(force=args.force)
+    plan = _plan(args.total_undirected, args.total_directed, args.exact_ratio)
+
+    families: Sequence[str]
+    if args.family == "all":
+        families = ("undirected", "directed")
+    else:
+        families = (args.family,)
+
+    total_created = 0
+    total_skipped = 0
+
+    for family, track, category in plan.keys():
+        if family not in families:
+            continue
+        target = plan[(family, track, category)]
+        bucket_key = f"real:{family}:{track}:{category}"
+        bucket_seed = args.seed + sum(ord(ch) for ch in bucket_key)
+        created, skipped = _generate_bucket(
+            family=family,
+            track=track,
+            category=category,
+            target=target,
+            seed=bucket_seed,
+            force=args.force,
+        )
+        total_created += created
+        total_skipped += skipped
+        print(f"[DONE] {family}/{track}/{category}: created={created}, existing-used={skipped}")
 
     print("\nSummary")
     print("-------")
-    print(f"Misplaced files moved: {moved}")
-    print(f"NetworkX created: {nx_created}, skipped: {nx_skipped}")
-    print(f"SNAP downloaded:  {snap_created}, skipped: {snap_skipped}")
-    if snap_failed:
-        print(f"SNAP failed:      {len(snap_failed)} -> {', '.join(snap_failed)}")
+    print(f"Created:       {total_created}")
+    print(f"Existing-used: {total_skipped}")
 
 
 if __name__ == "__main__":

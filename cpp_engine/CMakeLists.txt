@@ -53,14 +53,14 @@ message(STATUS "pybind11 version: ${pybind11_VERSION}")
 
 # ── Source files ──────────────────────────────────────────────────────────────
 # List every .cpp that needs to be compiled into the shared library.
-# Note: kernelization_*.cpp are #included directly by exact_solver_*.cpp,
-# so they should NOT appear here as independent translation units.
 set(CPP_ENGINE_SOURCES
     src/core/graph_undirected.cpp
     src/core/graph_directed.cpp
-    src/undirected_algos/exact_solver_u.cpp # also includes kernelization_u.cpp
+    src/undirected_algos/kernelization_u.cpp
+    src/undirected_algos/exact_solver_u.cpp
     src/undirected_algos/memetic_u.cpp
-    src/directed_algos/exact_solver_d.cpp # also includes kernelization_d.cpp
+    src/directed_algos/kernelization_d.cpp
+    src/directed_algos/exact_solver_d.cpp
     src/directed_algos/memetic_d.cpp
     bindings/pybind_wrapper.cpp
 )

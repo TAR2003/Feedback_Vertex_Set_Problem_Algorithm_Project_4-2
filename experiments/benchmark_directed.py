@@ -39,11 +39,14 @@ Supported --algo values
     HYBRID — GNN-guided KME (combines GNN inference + kernelized MA refinement)
     ALL    — Run BST, IC, MA, KME, and HYBRID; print comparison table
 
-Directed Graph File Format (PACE 2022 .gr)
-──────────────────────────────────────────
-Lines starting with 'c' or '#': comments
-'p dfvs N M' or 'p fvs N M': header (N vertices, M edges)
-Each edge line: "u v" (directed edge u → v, 1-indexed in PACE format)
+Directed Graph File Format
+──────────────────────────
+Supports both PACE .gr and universal TXT edge-list:
+    # format: edge_list_v1
+    p edge N M
+    u v
+PACE data remains supported as-is:
+    p dfvs N M + 1-indexed edge lines.
 """
 
 import argparse
@@ -59,8 +62,15 @@ from typing import List, Tuple, Optional
 # ── Add cpp_engine to path ────────────────────────────────────────────────────
 SCRIPT_DIR   = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
-# Try platform-specific build directories first, then legacy build/
-for candidate in ("build-linux", "build-macos", "build-win", "build"):
+# On Windows with MinGW-built extension modules, ensure runtime DLLs are discoverable.
+if os.name == "nt":
+    mingw_bin = Path("C:/msys64/mingw64/bin")
+    if mingw_bin.exists():
+        os.environ["PATH"] = str(mingw_bin) + os.pathsep + os.environ.get("PATH", "")
+        if hasattr(os, "add_dll_directory"):
+            os.add_dll_directory(str(mingw_bin))
+# Insert in reverse-priority order because each entry is inserted at sys.path[0].
+for candidate in ("build", "build-linux", "build-macos", "build-win"):
     sys.path.insert(0, str(PROJECT_ROOT / "cpp_engine" / candidate))
 # Try experiments first (where the .so file is compiled) - insert last so it's first in path
 sys.path.insert(0, str(SCRIPT_DIR))
@@ -253,6 +263,20 @@ def parse_directed_graph_file(filepath: str) -> Tuple[int, List[Tuple[int, int]]
     n = n_hint if n_hint is not None else max_v + 1
     n = max(n, max_v + 1)
     return n, edges
+
+
+def collect_graph_files(root: Path) -> List[str]:
+    """Recursively collect graph files from nested dataset folders."""
+    extensions = {".txt", ".gr", ".edges", ".graph", ".dimacs", ".mtx"}
+    files: List[str] = []
+    for f in sorted(root.rglob("*")):
+        if not f.is_file():
+            continue
+        if f.suffix.lower() in extensions:
+            files.append(str(f))
+        elif f.suffix == "" and not f.name.startswith('.'):
+            files.append(str(f))
+    return files
 
 
 def verify_dfvs(n: int, edges: List[Tuple[int, int]], fvs: List[int]) -> bool:
@@ -502,25 +526,12 @@ def main():
     if test_path.is_file():
         files = [str(test_path)]
     elif test_path.is_dir():
-        # Include files with these extensions
-        extensions = (".gr", ".txt", ".edges", ".graph", ".dimacs", ".mtx")
-        files = []
-        
-        for f in sorted(test_path.iterdir()):
-            if not f.is_file():
-                continue
-            # Include files with known extensions
-            if f.suffix.lower() in extensions:
-                files.append(str(f))
-            # Also include files without extension (e.g., PACE h_001, h_002, ...)
-            # but only if they look like graph files (skip obvious non-graph files)
-            elif f.suffix == "" and not f.name.startswith('.'):
-                files.append(str(f))
-        
+        files = collect_graph_files(test_path)
+
         if not files:
             print(f"No graph files found in {test_path}")
             sys.exit(1)
-        print(f"Found {len(files)} graph file(s) in {test_path}")
+        print(f"Found {len(files)} graph file(s) in {test_path} (recursive)")
     else:
         print(f"ERROR: --test path does not exist: {args.test}")
         sys.exit(1)
