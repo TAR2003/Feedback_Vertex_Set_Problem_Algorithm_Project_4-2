@@ -20,8 +20,6 @@
  *   If edge {a,b} EXISTS: v is on triangle a–v–b–a; skip, leave for branching.
  *   Action: remove v, add edge {a,b}.
  */
-
-#pragma once
 #include "undirected_fvs.h"
 #include <vector>
 #include <utility>

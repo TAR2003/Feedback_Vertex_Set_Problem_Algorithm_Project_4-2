@@ -36,8 +36,6 @@
  * expensive.  Instead, we integrate SCC decomposition once before the
  * BST/IC solvers start (see the solvers below).
  */
-
-#pragma once
 #include "directed_fvs.h"
 #include <vector>
 #include <utility>

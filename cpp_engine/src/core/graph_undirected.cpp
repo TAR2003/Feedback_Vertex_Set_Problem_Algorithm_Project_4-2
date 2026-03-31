@@ -274,13 +274,16 @@ std::vector<int> UndirectedGraph::find_shortest_cycle() const
         return cycle;
     };
 
+    std::vector<int> dist(n, -1);
+    std::vector<int> parent(n, -1);
+
     for (int s = 0; s < n; ++s)
     {
         if (!active[s])
             continue;
 
-        std::vector<int> dist(n, -1);
-        std::vector<int> parent(n, -1);
+        std::fill(dist.begin(), dist.end(), -1);
+        std::fill(parent.begin(), parent.end(), -1);
         std::queue<int> q;
 
         dist[s] = 0;

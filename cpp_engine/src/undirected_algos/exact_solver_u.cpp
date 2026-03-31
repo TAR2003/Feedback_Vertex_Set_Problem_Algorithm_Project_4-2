@@ -77,7 +77,6 @@
  */
 
 #include "undirected_fvs.h"
-#include "kernelization_u.cpp" // provides kernelize_undirected()
 #include <algorithm>
 #include <functional>
 #include <numeric>
@@ -484,11 +483,9 @@ std::vector<int> solve_undirected_IC(int n,
         // ── Try to compress X from size |X| down to |X|–1 ─────────────────
         int target_k = (int)X.size() - 1;
 
-        // compress() only makes sense when |X| > 0 and the graph is non-trivial
-        if (target_k >= 0 && (int)X.size() <= 20)
+        // For exact IC we must always attempt compression when target_k is valid.
+        if (target_k >= 0)
         {
-            // Limit: 2^|X| enumeration is only feasible for small |X|.
-            // For |X| > 20 we skip compression (FVS will be slightly larger).
             std::vector<int> compressed = compress(G_curr, X, target_k);
             if (!compressed.empty())
             {

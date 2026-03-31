@@ -43,7 +43,6 @@
  */
 
 #include "directed_fvs.h"
-#include "kernelization_d.cpp" // provides kernelize_directed()
 #include <algorithm>
 #include <functional>
 #include <numeric>
@@ -406,7 +405,7 @@ std::vector<int> solve_directed_IC(int n,
 
         // Try to compress X from size |X| to |X|–1
         int target_k = (int)X.size() - 1;
-        if (target_k >= 0 && (int)X.size() <= 20)
+        if (target_k >= 0)
         {
             std::vector<int> compressed = compress_directed(G_curr, X, target_k);
             if (!compressed.empty())

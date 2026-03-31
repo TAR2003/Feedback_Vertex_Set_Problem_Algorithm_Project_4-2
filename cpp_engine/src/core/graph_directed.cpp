@@ -300,6 +300,9 @@ std::vector<int> DirectedGraph::find_shortest_directed_cycle() const
     int best_len = INT_MAX;
     std::vector<int> best_cycle;
 
+    std::vector<int> dist(n, -1);
+    std::vector<int> parent(n, -1);
+
     for (int s = 0; s < n; ++s)
     {
         if (!active[s])
@@ -308,8 +311,8 @@ std::vector<int> DirectedGraph::find_shortest_directed_cycle() const
         if (out_adj[s].count(s))
             return {s};
 
-        std::vector<int> dist(n, -1);
-        std::vector<int> parent(n, -1);
+        std::fill(dist.begin(), dist.end(), -1);
+        std::fill(parent.begin(), parent.end(), -1);
         std::queue<int> q;
 
         dist[s] = 0;
