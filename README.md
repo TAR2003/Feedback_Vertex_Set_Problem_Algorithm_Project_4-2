@@ -107,6 +107,11 @@ python gnn_model/dataset_gen.py --total-undirected 100000 --total-directed 10000
 
 # Quick smoke generation
 python gnn_model/dataset_gen.py --total-undirected 100 --total-directed 100
+
+# Live-progress mode (recommended for long runs)
+python -u gnn_model/dataset_gen.py \
+	--total-undirected 100000 --total-directed 100000 \
+	--progress-every 5 --max-nodes 300 --solver-mode ma
 ```
 
 Distribution mirrors benchmark generators:
@@ -119,6 +124,12 @@ Generated files are saved under:
 
 - `gnn_model/datasets/pt/undirected/.../*.pt`
 - `gnn_model/datasets/pt/directed/.../*.pt`
+
+Notes:
+
+- `--progress-every` prints frequent progress updates per bucket.
+- `--solver-mode ma` avoids long exact-label bottlenecks during large runs.
+- `--max-nodes` caps graph size during generation to keep runtime predictable.
 
 ### 2) Train GNN models from generated `.pt`
 

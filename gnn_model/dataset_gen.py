@@ -21,6 +21,7 @@ import math
 import random
 import shutil
 import sys
+import time
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence, Set, Tuple
 
@@ -336,9 +337,15 @@ def compute_node_features_directed(n: int, edges: List[Tuple[int, int]]) -> List
     return feats
 
 
-def solve_undirected(n: int, edges: List[Tuple[int, int]]) -> List[int]:
+def solve_undirected(n: int, edges: List[Tuple[int, int]], solver_mode: str = "auto") -> List[int]:
     if HAS_ENGINE:
-        return cpp_engine.solve_undirected_IC(n, edges)
+        if solver_mode == "ma":
+            return cpp_engine.solve_undirected_MA(n, edges, 30, 80)
+        if solver_mode == "ic":
+            return cpp_engine.solve_undirected_IC(n, edges)
+        if n <= 120:
+            return cpp_engine.solve_undirected_IC(n, edges)
+        return cpp_engine.solve_undirected_MA(n, edges, 30, 80)
 
     adj = {v: set() for v in range(n)}
     for u, v in edges:
@@ -376,9 +383,15 @@ def solve_undirected(n: int, edges: List[Tuple[int, int]]) -> List[int]:
     return fvs
 
 
-def solve_directed(n: int, edges: List[Tuple[int, int]]) -> List[int]:
+def solve_directed(n: int, edges: List[Tuple[int, int]], solver_mode: str = "auto") -> List[int]:
     if HAS_ENGINE:
-        return cpp_engine.solve_directed_IC(n, edges)
+        if solver_mode == "ma":
+            return cpp_engine.solve_directed_MA(n, edges, 30, 80)
+        if solver_mode == "ic":
+            return cpp_engine.solve_directed_IC(n, edges)
+        if n <= 120:
+            return cpp_engine.solve_directed_IC(n, edges)
+        return cpp_engine.solve_directed_MA(n, edges, 30, 80)
 
     out_adj = {v: set() for v in range(n)}
     for u, v in edges:
@@ -415,16 +428,21 @@ def solve_directed(n: int, edges: List[Tuple[int, int]]) -> List[int]:
     return fvs
 
 
-def _build_pt_sample(graph_type: str, n: int, edges: List[Tuple[int, int]]) -> Data:
+def _build_pt_sample(
+    graph_type: str,
+    n: int,
+    edges: List[Tuple[int, int]],
+    solver_mode: str,
+) -> Data:
     if not HAS_TORCH:
         raise RuntimeError("torch and torch_geometric are required for PT generation")
 
     if graph_type == "undirected":
         feats = compute_node_features_undirected(n, edges)
-        fvs = solve_undirected(n, edges)
+        fvs = solve_undirected(n, edges, solver_mode=solver_mode)
     else:
         feats = compute_node_features_directed(n, edges)
-        fvs = solve_directed(n, edges)
+        fvs = solve_directed(n, edges, solver_mode=solver_mode)
 
     x = torch.tensor(feats, dtype=torch.float)
     y = torch.zeros(n, dtype=torch.long)
@@ -468,6 +486,7 @@ def _generate_bucket(
     force: bool,
     progress_every: int,
     max_nodes: int,
+    solver_mode: str,
 ) -> Tuple[int, int]:
     out_dir = OUTPUT_ROOT / family / track / category
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -490,6 +509,7 @@ def _generate_bucket(
     created = 0
     rng = random.Random(seed)
     start_idx = len(existing)
+    bucket_total = max(target - start_idx, 1)
 
     for idx in range(start_idx, target):
         if family == "undirected":
@@ -503,8 +523,17 @@ def _generate_bucket(
             graph_type = "directed"
             stem = category.replace("_", "")
 
+        progress_idx = created + 1
         n, edges = _graph_to_edge_list(g, directed=(graph_type == "directed"))
-        data = _build_pt_sample(graph_type, n, edges)
+        pct_before = 100.0 * progress_idx / bucket_total
+        _log(
+            f"  [{family}/{track}/{category}] graph {progress_idx}/{bucket_total} "
+            f"({pct_before:.1f}%) start | n={n} m={len(edges)} solver={solver_mode}"
+        )
+
+        t0 = time.perf_counter()
+        data = _build_pt_sample(graph_type, n, edges, solver_mode=solver_mode)
+        dt = time.perf_counter() - t0
         data.family = family
         data.track = track
         data.category = category
@@ -513,8 +542,11 @@ def _generate_bucket(
         torch.save(data, out_path)
         created += 1
 
+        _log(
+            f"    done in {dt:.2f}s | fvs_size={int(data.fvs_size)} | saved={out_path.name}"
+        )
+
         if (created % progress_every) == 0 or created == (target - start_idx):
-            bucket_total = max(target - start_idx, 1)
             pct = 100.0 * created / bucket_total
             _log(
                 f"  [{family}/{track}/{category}] created {created} / {bucket_total} "
@@ -547,6 +579,7 @@ def _run_family(
     seed: int,
     progress_every: int,
     max_nodes: int,
+    solver_mode: str,
 ) -> Tuple[int, int]:
     weights = UNDIRECTED_WEIGHTS if family == "undirected" else DIRECTED_WEIGHTS
     plan = _print_plan(family, total, ratio, weights)
@@ -565,6 +598,7 @@ def _run_family(
             force,
             progress_every,
             max_nodes,
+            solver_mode,
         )
         created += c
         skipped += s
@@ -608,6 +642,12 @@ def main() -> None:
         default=300,
         help="Maximum nodes per generated graph before downsampling (default: 300)",
     )
+    parser.add_argument(
+        "--solver-mode",
+        choices=["auto", "ic", "ma"],
+        default="auto",
+        help="Label solver mode: auto (default), ic (exact-ish), ma (faster heuristic)",
+    )
     args = parser.parse_args()
 
     if not HAS_TORCH:
@@ -638,6 +678,7 @@ def main() -> None:
             args.seed,
             progress_every,
             max_nodes,
+            args.solver_mode,
         )
         total_created += c
         total_existing_used += s

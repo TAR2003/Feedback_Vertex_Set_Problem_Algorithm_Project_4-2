@@ -417,6 +417,15 @@ python gnn_model/dataset_gen.py \
     --total-undirected 100 \
     --total-directed 100
 
+# Long-run with live progress (recommended)
+python -u gnn_model/dataset_gen.py \
+    --clean-root \
+    --total-undirected 100000 \
+    --total-directed 100000 \
+    --progress-every 5 \
+    --max-nodes 300 \
+    --solver-mode ma
+
 # Large generation (example)
 python gnn_model/dataset_gen.py \
     --total-undirected 100000 \
@@ -446,6 +455,9 @@ Category distribution mirrors benchmark generators:
 - Undirected: 20% `real_world`, 20% each for `scale_free`, `small_world`, `random_er`, `grids_trees`
 - Directed: 30% `real_world_ego`, 20% `scale_free`, 20% `random_er`, 15% `directed_grids`, 15% `dags`
 - Track split controlled by `--exact-ratio` (default `0.5`)
+- `--progress-every` prints frequent progress updates
+- `--max-nodes` caps graph size for stable generation runtime
+- `--solver-mode ma` uses faster labeling (recommended for large runs)
 
 Each `.pt` file is a PyTorch Geometric `Data` object:
 
@@ -485,6 +497,9 @@ python gnn_model/train.py \
     --hidden 128 \
     --dropout 0.2 \
     --val-ratio 0.2
+
+# Live training progress every epoch
+python -u gnn_model/train.py --type both --epochs 300 --log-every 1
 ```
 
 By default, training loads all `.pt` files recursively from:
