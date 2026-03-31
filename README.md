@@ -5,7 +5,7 @@ This repository supports two-track benchmarking for Feedback Vertex Set (undirec
 - exact_track: small graphs, run all algorithms
 - heuristic_track: large graphs, run heuristic algorithms only
 
-## Quick Start
+## Quick Start for
 
 ### 1) Build/download all benchmark inputs
 
