@@ -1,0 +1,13 @@
+file,n,m,GNN-KME_size,GNN-KME_ms,GNN-KME_valid
+grid_000000.txt,20,31,5,6447.23,True
+grid_000002.txt,20,31,5,6297.03,True
+grid_000004.txt,15,22,3,6275.47,True
+grid_000006.txt,12,17,3,7028.13,True
+grid_000008.txt,20,31,5,6559.05,True
+tree_000001.txt,34,33,0,371.07,True
+tree_000003.txt,20,19,0,326.32,True
+tree_000005.txt,26,25,0,339.61,True
+tree_000007.txt,20,19,0,338.71,True
+tree_000009.txt,32,31,0,334.71,True
+er_000000.txt,13,13,2,6120.89,True
+er_000001.txt,27,48,6,6249.34,True

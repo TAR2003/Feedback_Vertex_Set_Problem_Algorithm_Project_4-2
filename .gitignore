@@ -7,7 +7,9 @@
 # Synthetic graphs (generated via data/generator.py)
 /data/synthetic/
 /data/synthetic/*
+/data/synthetic_selected/*
 !data/synthetic/.gitkeep
+
 
 # Real-world graphs (downloaded via data/downloader.py)
 /data/real_world/
@@ -20,7 +22,7 @@
 
 # Experiment results, logs, and intermediate data
 # /results/
-/results/*
+# /results/*
 !results/.gitkeep
 !results/report.csv
 

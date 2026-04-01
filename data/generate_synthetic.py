@@ -284,11 +284,6 @@ def _generate_bucket(family: str, track: str, category: str, target: int, seed: 
             print(f"[CLEAN] {family}/{track}/{category}: removed {removed} old file(s)")
 
     existing = _collect_existing_txt(out_dir)
-    if len(existing) > target:
-        for stale in existing[target:]:
-            stale.unlink()
-        print(f"[TRIM] {family}/{track}/{category}: removed {len(existing) - target} excess file(s)")
-        existing = existing[:target]
 
     if len(existing) >= target:
         return 0, target

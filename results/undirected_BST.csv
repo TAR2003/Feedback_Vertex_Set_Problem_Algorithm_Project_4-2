@@ -1,0 +1,13 @@
+file,n,m,BST_size,BST_ms,BST_valid
+grid_000000.txt,20,31,5,4.95,True
+grid_000002.txt,20,31,5,5.12,True
+grid_000004.txt,15,22,3,0.57,True
+grid_000006.txt,12,17,3,0.54,True
+grid_000008.txt,20,31,5,5.59,True
+tree_000001.txt,34,33,0,0.3,True
+tree_000003.txt,20,19,0,0.17,True
+tree_000005.txt,26,25,0,0.28,True
+tree_000007.txt,20,19,0,0.25,True
+tree_000009.txt,32,31,0,0.44,True
+er_000000.txt,13,13,2,0.26,True
+er_000001.txt,27,48,6,58.49,True

@@ -1,0 +1,13 @@
+file,n,m,MA_size,MA_ms,MA_valid
+grid_000000.txt,20,31,5,29.6,True
+grid_000002.txt,20,31,5,28.33,True
+grid_000004.txt,15,22,3,12.19,True
+grid_000006.txt,12,17,3,10.75,True
+grid_000008.txt,20,31,5,37.31,True
+tree_000001.txt,34,33,0,0.33,True
+tree_000003.txt,20,19,0,0.16,True
+tree_000005.txt,26,25,0,0.26,True
+tree_000007.txt,20,19,0,0.16,True
+tree_000009.txt,32,31,0,0.34,True
+er_000000.txt,13,13,2,6.81,True
+er_000001.txt,27,48,6,102.23,True

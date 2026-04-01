@@ -130,12 +130,7 @@ def _trim_or_clear(folder: Path, target: int, force: bool) -> int:
     folder.mkdir(parents=True, exist_ok=True)
     if force:
         return _clear_txt_files(folder)
-
-    existing = _collect_existing_txt(folder)
-    if len(existing) > target:
-        for stale in existing[target:]:
-            stale.unlink()
-        return len(existing) - target
+    # In non-force mode, keep excess files and only fill missing files.
     return 0
 
 

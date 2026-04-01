@@ -312,6 +312,76 @@ def verify_dfvs(n: int, edges: List[Tuple[int, int]], fvs: List[int]) -> bool:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  CSV Result Tracking
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def get_results_csv_path(results_dir: str, algo: str, is_directed: bool = False) -> Path:
+    """
+    Get the CSV file path for a specific algorithm.
+    E.g., results/undirected_BST.csv or results/directed_BST.csv
+    """
+    prefix = "directed" if is_directed else "undirected"
+    csv_name = f"{prefix}_{algo}.csv"
+    return Path(results_dir) / csv_name
+
+
+def load_existing_results(csv_path: Path) -> dict:
+    """
+    Load existing CSV results into a dict keyed by filename.
+    Returns empty dict if file doesn't exist.
+    """
+    results_by_file = {}
+    if not csv_path.exists():
+        return results_by_file
+    
+    try:
+        with open(csv_path, "r", newline="") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if "file" in row:
+                    results_by_file[row["file"]] = row
+    except Exception:
+        pass
+    
+    return results_by_file
+
+
+def is_result_already_recorded(csv_path: Path, filename: str) -> bool:
+    """
+    Check if a filename is already in the CSV file.
+    """
+    if not csv_path.exists():
+        return False
+    
+    try:
+        with open(csv_path, "r", newline="") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row.get("file") == filename:
+                    return True
+    except Exception:
+        pass
+    
+    return False
+
+
+def append_result_to_csv(csv_path: Path, result_dict: dict) -> None:
+    """
+    Append a single result row to a CSV file.
+    Creates file and header if it doesn't exist.
+    """
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    file_exists = csv_path.exists()
+    
+    with open(csv_path, "a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=result_dict.keys())
+        if not file_exists:
+            writer.writeheader()
+        writer.writerow(result_dict)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  Algorithm Runners
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -326,14 +396,14 @@ ALGO_MAP_D = {
 def get_dynamic_timeout_seconds(n: int) -> int:
     """
     Dynamic timeout policy based on graph size.
-      n <= 50         -> 60s
-      50 < n <= 200   -> 300s
+      n <= 50         -> 100s
+      50 < n <= 200   -> 500s
       n > 200         -> 600s
     """
     if n <= 50:
-        return 60
+        return 100
     if n <= 200:
-        return 300
+        return 500
     return 600
 
 
@@ -427,10 +497,11 @@ def run_directed_algorithm(algo: str, n: int, edges: List[Tuple[int, int]],
 
 
 def run_on_file(filepath: str, algo: str, pop_size: int, max_gens: int,
-                verbose: bool = True) -> dict:
+                results_dir: str = "results", verbose: bool = True) -> dict:
     """
     Parse a directed graph file, run the specified algorithm(s), print and
     return a results dictionary.
+    If results_dir is provided, saves individual algorithm results to CSV files.
     """
     try:
         n, edges = parse_directed_graph_file(filepath)
@@ -450,6 +521,17 @@ def run_on_file(filepath: str, algo: str, pop_size: int, max_gens: int,
     algos_to_run = ["BST", "IC", "MA", "KMA", "GNN-KME"] if algo == "ALL" else [algo]
 
     for alg in algos_to_run:
+        # Check if this algorithm already processed this file
+        csv_path = get_results_csv_path(results_dir, alg, is_directed=True)
+        if is_result_already_recorded(csv_path, filename):
+            if verbose:
+                print(f"  {alg:4s} — [SKIPPED] Already completed")
+            # Load the existing result from CSV
+            existing = load_existing_results(csv_path).get(filename, {})
+            for key, value in existing.items():
+                results[key] = value
+            continue
+        
         timeout_s = get_dynamic_timeout_seconds(n)
         if verbose:
             print(f"  Running {alg:4s} (timeout={timeout_s}s) ... ", end="", flush=True)
@@ -458,31 +540,43 @@ def run_on_file(filepath: str, algo: str, pop_size: int, max_gens: int,
             alg, n, edges, pop_size, max_gens, timeout_s
         )
 
+        # Build single-algorithm result row
+        algo_result = {"file": filename, "n": n, "m": len(edges)}
+        
         if error == "TIMEOUT":
             if verbose:
                 print("TIMEOUT")
+            algo_result[f"{alg}_size"] = "TIMEOUT"
+            algo_result[f"{alg}_ms"] = "TIMEOUT"
+            algo_result[f"{alg}_valid"] = "TIMEOUT"
             results[f"{alg}_size"] = "TIMEOUT"
             results[f"{alg}_ms"] = "TIMEOUT"
             results[f"{alg}_valid"] = "TIMEOUT"
-            continue
-
-        if error is not None:
+        elif error is not None:
             if verbose:
                 print(error)
+            algo_result[f"{alg}_size"] = "ERROR"
+            algo_result[f"{alg}_ms"] = "ERROR"
+            algo_result[f"{alg}_valid"] = False
             results[f"{alg}_size"] = "ERROR"
             results[f"{alg}_ms"] = "ERROR"
             results[f"{alg}_valid"] = False
-            continue
-
-        valid = verify_dfvs(n, edges, fvs)
-
-        if verbose:
-            status = "✓ VALID" if valid else "✗ INVALID"
-            print(f"DFVS size = {len(fvs):4d}  |  Time = {elapsed_ms:8.2f} ms  |  {status}")
-
-        results[f"{alg}_size"]  = len(fvs)
-        results[f"{alg}_ms"]    = round(elapsed_ms, 2)
-        results[f"{alg}_valid"] = valid
+        else:
+            valid = verify_dfvs(n, edges, fvs)
+            if verbose:
+                status = "✓ VALID" if valid else "✗ INVALID"
+                print(f"DFVS size = {len(fvs):4d}  |  Time = {elapsed_ms:8.2f} ms  |  {status}")
+            
+            algo_result[f"{alg}_size"]  = len(fvs)
+            algo_result[f"{alg}_ms"]    = round(elapsed_ms, 2)
+            algo_result[f"{alg}_valid"] = valid
+            
+            results[f"{alg}_size"]  = len(fvs)
+            results[f"{alg}_ms"]    = round(elapsed_ms, 2)
+            results[f"{alg}_valid"] = valid
+        
+        # Immediately save this algorithm's result to its CSV
+        append_result_to_csv(csv_path, algo_result)
 
     return results
 
@@ -507,8 +601,12 @@ def main():
         help="Path to a single .gr/.txt file OR a directory of graph files"
     )
     parser.add_argument(
+        "--results-dir", default="results",
+        help="Directory where per-algorithm CSV result files will be stored (default: results)"
+    )
+    parser.add_argument(
         "--output", default=None,
-        help="Optional: save results to this CSV file path"
+        help="Optional: also save combined summary to this CSV file"
     )
     parser.add_argument(
         "--pop", type=int, default=50,
@@ -544,6 +642,7 @@ def main():
     all_results = []
     for filepath in files:
         result = run_on_file(filepath, args.algo, args.pop, args.gens,
+                             results_dir=args.results_dir,
                              verbose=not args.quiet)
         if result:
             all_results.append(result)

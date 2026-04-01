@@ -1,0 +1,13 @@
+file,n,m,KMA_size,KMA_ms,KMA_valid
+grid_000000.txt,20,31,5,24.04,True
+grid_000002.txt,20,31,5,26.83,True
+grid_000004.txt,15,22,3,12.51,True
+grid_000006.txt,12,17,3,7.79,True
+grid_000008.txt,20,31,5,33.61,True
+tree_000001.txt,34,33,0,0.27,True
+tree_000003.txt,20,19,0,0.18,True
+tree_000005.txt,26,25,0,0.32,True
+tree_000007.txt,20,19,0,0.19,True
+tree_000009.txt,32,31,0,0.26,True
+er_000000.txt,13,13,2,2.79,True
+er_000001.txt,27,48,6,51.96,True
