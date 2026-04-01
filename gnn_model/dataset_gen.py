@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Generate benchmark-style PT datasets for GNN training.
+Generate exact-track PT datasets for GNN training.
 
-This script mirrors the benchmark distribution logic used in data/generate_synthetic.py:
-- Undirected categories: real_world 20%, scale_free 20%, small_world 20%, random_er 20%, grids_trees 20%
-- Directed categories: real_world_ego 30%, scale_free 20%, random_er 20%, directed_grids 15%, dags 15%
-- Track split per category: exact_track / heuristic_track via --exact-ratio
+Exact-track behavior:
+- Reuse all existing graph files from data/synthetic/<family>/exact_track/<category>/*.txt
+- Label them with the IC solver and save as .pt
+- Do this for both undirected and directed families
 
 Output layout:
-  gnn_model/datasets/pt/<family>/<track>/<category>/*.pt
+    gnn_model/datasets/pt/<family>/exact_track/<category>/*.pt
 
 Each .pt file is a torch_geometric Data object with:
   data.x, data.edge_index, data.y, data.fvs_size
@@ -54,10 +54,9 @@ def _log(msg: str) -> None:
 
 
 OUTPUT_ROOT = PROJECT_ROOT / "gnn_model" / "datasets" / "pt"
+SYNTHETIC_ROOT = PROJECT_ROOT / "data" / "synthetic"
 
 EXACT_TRACK = "exact_track"
-HEURISTIC_TRACK = "heuristic_track"
-
 UNDIRECTED_WEIGHTS: Dict[str, float] = {
     "real_world": 0.20,
     "scale_free": 0.20,
@@ -73,31 +72,6 @@ DIRECTED_WEIGHTS: Dict[str, float] = {
     "directed_grids": 0.15,
     "dags": 0.15,
 }
-
-
-def _allocate_counts(total: int, weights: Dict[str, float]) -> Dict[str, int]:
-    if total < 0:
-        raise ValueError("total must be >= 0")
-    if not weights:
-        return {}
-
-    base = {k: int(total * w) for k, w in weights.items()}
-    used = sum(base.values())
-    rem = total - used
-
-    order = sorted(weights.keys(), key=lambda k: ((total * weights[k]) - base[k]), reverse=True)
-    i = 0
-    while rem > 0:
-        k = order[i % len(order)]
-        base[k] += 1
-        rem -= 1
-        i += 1
-    return base
-
-
-def _split_tracks(total: int, exact_ratio: float) -> Tuple[int, int]:
-    exact = int(total * exact_ratio)
-    return exact, total - exact
 
 
 def _normalize_edges(edges: Iterable[Tuple[int, int]], directed: bool) -> List[Tuple[int, int]]:
@@ -116,6 +90,55 @@ def _normalize_edges(edges: Iterable[Tuple[int, int]], directed: bool) -> List[T
 
 def _randint(rng: random.Random, lo: int, hi: int) -> int:
     return lo if lo == hi else rng.randint(lo, hi)
+
+
+def _list_existing_txt(folder: Path) -> List[Path]:
+    if not folder.exists():
+        return []
+    return sorted(p for p in folder.glob("*.txt") if p.is_file())
+
+
+def _parse_edge_list_txt(path: Path) -> Tuple[int, List[Tuple[int, int]]]:
+    edges: List[Tuple[int, int]] = []
+    n_hint: int | None = None
+
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            s = line.strip()
+            if not s or s.startswith(("#", "%", "c ")):
+                continue
+
+            parts = s.split()
+            if not parts:
+                continue
+
+            if parts[0].lower() == "p" and len(parts) >= 4:
+                try:
+                    n_hint = int(parts[2])
+                except ValueError:
+                    pass
+                continue
+
+            if len(parts) < 2 or not parts[0].lstrip("-").isdigit() or not parts[1].lstrip("-").isdigit():
+                continue
+
+            edges.append((int(parts[0]), int(parts[1])))
+
+    if not edges:
+        raise ValueError(f"No edges found in {path}")
+
+    verts = {v for e in edges for v in e}
+    min_v = min(verts)
+    max_v = max(verts)
+
+    # Existing corpora may be 1-based. Normalize to 0-based for engine/model inputs.
+    if min_v == 1:
+        edges = [(u - 1, v - 1) for u, v in edges]
+        max_v -= 1
+
+    n = (n_hint if n_hint is not None else (max_v + 1))
+    n = max(n, max_v + 1)
+    return n, edges
 
 
 def _random_tree(n: int, seed: int) -> nx.Graph:
@@ -337,15 +360,9 @@ def compute_node_features_directed(n: int, edges: List[Tuple[int, int]]) -> List
     return feats
 
 
-def solve_undirected(n: int, edges: List[Tuple[int, int]], solver_mode: str = "auto") -> List[int]:
+def solve_undirected(n: int, edges: List[Tuple[int, int]]) -> List[int]:
     if HAS_ENGINE:
-        if solver_mode == "ma":
-            return cpp_engine.solve_undirected_MA(n, edges, 30, 80)
-        if solver_mode == "ic":
-            return cpp_engine.solve_undirected_IC(n, edges)
-        if n <= 120:
-            return cpp_engine.solve_undirected_IC(n, edges)
-        return cpp_engine.solve_undirected_MA(n, edges, 30, 80)
+        return cpp_engine.solve_undirected_IC(n, edges)
 
     adj = {v: set() for v in range(n)}
     for u, v in edges:
@@ -383,15 +400,9 @@ def solve_undirected(n: int, edges: List[Tuple[int, int]], solver_mode: str = "a
     return fvs
 
 
-def solve_directed(n: int, edges: List[Tuple[int, int]], solver_mode: str = "auto") -> List[int]:
+def solve_directed(n: int, edges: List[Tuple[int, int]]) -> List[int]:
     if HAS_ENGINE:
-        if solver_mode == "ma":
-            return cpp_engine.solve_directed_MA(n, edges, 30, 80)
-        if solver_mode == "ic":
-            return cpp_engine.solve_directed_IC(n, edges)
-        if n <= 120:
-            return cpp_engine.solve_directed_IC(n, edges)
-        return cpp_engine.solve_directed_MA(n, edges, 30, 80)
+        return cpp_engine.solve_directed_IC(n, edges)
 
     out_adj = {v: set() for v in range(n)}
     for u, v in edges:
@@ -432,17 +443,16 @@ def _build_pt_sample(
     graph_type: str,
     n: int,
     edges: List[Tuple[int, int]],
-    solver_mode: str,
 ) -> Data:
     if not HAS_TORCH:
         raise RuntimeError("torch and torch_geometric are required for PT generation")
 
     if graph_type == "undirected":
         feats = compute_node_features_undirected(n, edges)
-        fvs = solve_undirected(n, edges, solver_mode=solver_mode)
+        fvs = solve_undirected(n, edges)
     else:
         feats = compute_node_features_directed(n, edges)
-        fvs = solve_directed(n, edges, solver_mode=solver_mode)
+        fvs = solve_directed(n, edges)
 
     x = torch.tensor(feats, dtype=torch.float)
     y = torch.zeros(n, dtype=torch.long)
@@ -468,27 +478,28 @@ def _list_existing_pt(folder: Path) -> List[Path]:
     return sorted(p for p in folder.glob("*.pt") if p.is_file())
 
 
-def _trim_excess(folder: Path, target: int) -> int:
-    existing = _list_existing_pt(folder)
-    if len(existing) <= target:
-        return 0
-    for stale in existing[target:]:
-        stale.unlink()
-    return len(existing) - target
+def _trim_non_source_pt(folder: Path, source_stems: Set[str]) -> int:
+    removed = 0
+    for p in _list_existing_pt(folder):
+        if p.stem not in source_stems:
+            p.unlink()
+            removed += 1
+    return removed
 
 
-def _generate_bucket(
+def _generate_exact_bucket_from_sources(
     family: str,
-    track: str,
     category: str,
-    target: int,
-    seed: int,
     force: bool,
     progress_every: int,
-    max_nodes: int,
-    solver_mode: str,
 ) -> Tuple[int, int]:
-    out_dir = OUTPUT_ROOT / family / track / category
+    src_dir = SYNTHETIC_ROOT / family / EXACT_TRACK / category
+    src_files = _list_existing_txt(src_dir)
+    if not src_files:
+        _log(f"[WARN] No exact source graphs found in {src_dir}")
+        return 0, 0
+
+    out_dir = OUTPUT_ROOT / family / EXACT_TRACK / category
     out_dir.mkdir(parents=True, exist_ok=True)
 
     if force:
@@ -496,134 +507,98 @@ def _generate_bucket(
         for p in removed:
             p.unlink()
         if removed:
-            _log(f"[CLEAN] {family}/{track}/{category}: removed {len(removed)} old .pt files")
+            _log(f"[CLEAN] {family}/{EXACT_TRACK}/{category}: removed {len(removed)} old .pt files")
 
-    trimmed = _trim_excess(out_dir, target)
+    source_stems = {p.stem for p in src_files}
+    trimmed = _trim_non_source_pt(out_dir, source_stems)
     if trimmed:
-        _log(f"[TRIM] {family}/{track}/{category}: removed {trimmed} excess .pt files")
-
-    existing = _list_existing_pt(out_dir)
-    if len(existing) >= target:
-        return 0, target
+        _log(f"[TRIM] {family}/{EXACT_TRACK}/{category}: removed {trimmed} non-source .pt files")
 
     created = 0
-    rng = random.Random(seed)
-    start_idx = len(existing)
-    bucket_total = max(target - start_idx, 1)
+    existing_used = 0
+    total = len(src_files)
+    graph_type = "directed" if family == "directed" else "undirected"
 
-    for idx in range(start_idx, target):
-        if family == "undirected":
-            g = _build_undirected(category, track, rng, idx)
-            g = _cap_graph_size(g, max_nodes=max_nodes, seed=seed + idx)
-            graph_type = "undirected"
-            stem = category.replace("_", "")
-        else:
-            g = _build_directed(category, track, rng)
-            g = _cap_graph_size(g, max_nodes=max_nodes, seed=seed + idx)
-            graph_type = "directed"
-            stem = category.replace("_", "")
+    for idx, src_path in enumerate(src_files, start=1):
+        out_path = out_dir / f"{src_path.stem}.pt"
+        if out_path.exists():
+            existing_used += 1
+            continue
 
-        progress_idx = created + 1
-        n, edges = _graph_to_edge_list(g, directed=(graph_type == "directed"))
-        pct_before = 100.0 * progress_idx / bucket_total
+        n, edges = _parse_edge_list_txt(src_path)
+        edges = _normalize_edges(edges, directed=(graph_type == "directed"))
+
         _log(
-            f"  [{family}/{track}/{category}] graph {progress_idx}/{bucket_total} "
-            f"({pct_before:.1f}%) start | n={n} m={len(edges)} solver={solver_mode}"
+            f"  [{family}/{EXACT_TRACK}/{category}] graph {idx}/{total} "
+            f"start | n={n} m={len(edges)} solver=ic source={src_path.name}"
         )
-
         t0 = time.perf_counter()
-        data = _build_pt_sample(graph_type, n, edges, solver_mode=solver_mode)
+        data = _build_pt_sample(graph_type, n, edges)
         dt = time.perf_counter() - t0
         data.family = family
-        data.track = track
+        data.track = EXACT_TRACK
         data.category = category
-
-        out_path = out_dir / f"{stem}_{idx:06d}.pt"
+        data.source_file = src_path.name
         torch.save(data, out_path)
         created += 1
 
-        _log(
-            f"    done in {dt:.2f}s | fvs_size={int(data.fvs_size)} | saved={out_path.name}"
-        )
+        _log(f"    done in {dt:.2f}s | fvs_size={int(data.fvs_size)} | saved={out_path.name}")
+        if (created % progress_every) == 0 or (created + existing_used) == total:
+            done = created + existing_used
+            pct = 100.0 * done / max(total, 1)
+            _log(f"  [{family}/{EXACT_TRACK}/{category}] ready {done}/{total} ({pct:.1f}%)")
 
-        if (created % progress_every) == 0 or created == (target - start_idx):
-            pct = 100.0 * created / bucket_total
-            _log(
-                f"  [{family}/{track}/{category}] created {created} / {bucket_total} "
-                f"({pct:.1f}%)"
-            )
-
-    return created, start_idx
-
-
-def _print_plan(family: str, total: int, ratio: float, weights: Dict[str, float]) -> Dict[Tuple[str, str], int]:
-    per_category = _allocate_counts(total, weights)
-    plan: Dict[Tuple[str, str], int] = {}
-
-    _log(f"\n{family.upper()} PT plan (total={total}, exact_ratio={ratio:.2f})")
-    _log("-" * 76)
-    for category, cat_total in per_category.items():
-        exact, heuristic = _split_tracks(cat_total, ratio)
-        plan[(EXACT_TRACK, category)] = exact
-        plan[(HEURISTIC_TRACK, category)] = heuristic
-        _log(f"{category:<18} total={cat_total:>8} exact={exact:>8} heuristic={heuristic:>8}")
-
-    return plan
+    return created, existing_used
 
 
 def _run_family(
     family: str,
-    total: int,
-    ratio: float,
     force: bool,
-    seed: int,
     progress_every: int,
-    max_nodes: int,
-    solver_mode: str,
 ) -> Tuple[int, int]:
     weights = UNDIRECTED_WEIGHTS if family == "undirected" else DIRECTED_WEIGHTS
-    plan = _print_plan(family, total, ratio, weights)
+    categories = list(weights.keys())
+
+    _log(f"\n{family.upper()} PT plan (exact-only)")
+    _log("-" * 76)
+    for category in categories:
+        src_dir = SYNTHETIC_ROOT / family / EXACT_TRACK / category
+        count = len(_list_existing_txt(src_dir))
+        _log(f"{category:<18} source-exact-files={count:>8}")
 
     created = 0
     skipped = 0
-    for track, category in plan.keys():
-        target = plan[(track, category)]
-        bucket_seed = seed + sum(ord(ch) for ch in f"{family}:{track}:{category}")
-        c, s = _generate_bucket(
-            family,
-            track,
-            category,
-            target,
-            bucket_seed,
-            force,
-            progress_every,
-            max_nodes,
-            solver_mode,
+    for category in categories:
+        c, s = _generate_exact_bucket_from_sources(
+            family=family,
+            category=category,
+            force=force,
+            progress_every=progress_every,
         )
         created += c
         skipped += s
-        _log(f"[DONE] {family}/{track}/{category}: created={c}, existing-used={s}")
+        _log(f"[DONE] {family}/{EXACT_TRACK}/{category}: created={c}, existing-used={s}")
     return created, skipped
 
 
-def _validate(args: argparse.Namespace) -> None:
-    if args.total_undirected < 0 or args.total_directed < 0:
-        raise ValueError("Totals must be >= 0")
-    if not (0.0 < args.exact_ratio < 1.0):
-        raise ValueError("--exact-ratio must be in (0, 1)")
+def _remove_heuristic_outputs(families: Sequence[str]) -> int:
+    removed = 0
+    for family in families:
+        path = OUTPUT_ROOT / family / "heuristic_track"
+        if path.exists():
+            shutil.rmtree(path)
+            removed += 1
+            _log(f"[CLEAN] removed stale heuristic outputs at {path}")
+    return removed
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate benchmark-style PT datasets for GNN training")
-    parser.add_argument("--total-undirected", type=int, default=100_000)
-    parser.add_argument("--total-directed", type=int, default=100_000)
-    parser.add_argument("--exact-ratio", type=float, default=0.5)
-    parser.add_argument("--seed", type=int, default=1337)
+    parser = argparse.ArgumentParser(description="Generate exact-track PT datasets for GNN training")
     parser.add_argument("--family", choices=["all", "undirected", "directed"], default="all")
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Regenerate buckets by deleting existing PT files before generation",
+        help="Regenerate exact-track buckets by deleting existing PT files before generation",
     )
     parser.add_argument(
         "--clean-root",
@@ -636,18 +611,6 @@ def main() -> None:
         default=10,
         help="Print progress every N created files per bucket (default: 10)",
     )
-    parser.add_argument(
-        "--max-nodes",
-        type=int,
-        default=300,
-        help="Maximum nodes per generated graph before downsampling (default: 300)",
-    )
-    parser.add_argument(
-        "--solver-mode",
-        choices=["auto", "ic", "ma"],
-        default="auto",
-        help="Label solver mode: auto (default), ic (exact-ish), ma (faster heuristic)",
-    )
     args = parser.parse_args()
 
     if not HAS_TORCH:
@@ -655,30 +618,22 @@ def main() -> None:
         _log("Install with: pip install torch torch-geometric")
         sys.exit(1)
 
-    _validate(args)
-
     if args.clean_root and OUTPUT_ROOT.exists():
         shutil.rmtree(OUTPUT_ROOT)
     OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
 
     progress_every = max(1, args.progress_every)
-    max_nodes = max(0, args.max_nodes)
 
     families: Sequence[str] = ("undirected", "directed") if args.family == "all" else (args.family,)
+    _remove_heuristic_outputs(families)
 
     total_created = 0
     total_existing_used = 0
     for family in families:
-        total = args.total_undirected if family == "undirected" else args.total_directed
         c, s = _run_family(
             family,
-            total,
-            args.exact_ratio,
             args.force,
-            args.seed,
             progress_every,
-            max_nodes,
-            args.solver_mode,
         )
         total_created += c
         total_existing_used += s
