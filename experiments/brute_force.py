@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Pure brute-force FVS runner for synthetic_selected exact-track datasets.
+Pure brute-force FVS runner for synthetic exact-track datasets.
 
 Behavior:
 - Runs all exact-track testcases for undirected and directed.
@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_INPUT_ROOT = PROJECT_ROOT / "data" / "synthetic_selected"
+DEFAULT_INPUT_ROOT = PROJECT_ROOT / "data" / "synthetic"
 DEFAULT_RESULTS_DIR = PROJECT_ROOT / "results"
 GRAPH_EXTENSIONS = {".txt", ".gr", ".edges", ".graph", ".dimacs", ".mtx"}
 
