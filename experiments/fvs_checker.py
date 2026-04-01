@@ -1,368 +1,136 @@
 #!/usr/bin/env python3
 """
-Brute-force FVS checker on synthetic_selected exact-track datasets.
+Compare brute-force FVS results against IC and BST results.
 
-Runs both:
-- undirected exact-track instances
-- directed exact-track instances
+Inputs per family:
+- results/<family>_brute_force.csv
+- results/<family>_IC.csv
+- results/<family>_BST.csv
 
-Outputs:
-- results/undirected_BRUTE_FORCE.csv
-- results/directed_BRUTE_FORCE.csv
+Outputs per family:
+- results/<family>_fvs_check.csv
 
-CSV schema (uniform):
-file,n,m,FVS_size,runtime,validity,IC result,BST result,IC match?,BST match?
-
-Behavior:
-- A testcase is processed only if it already exists in at least one of:
-    - results/<family>_IC.csv
-    - results/<family>_BST.csv
+The checker does not run algorithms; it only compares existing CSV results.
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
-import itertools
-import time
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Set, Tuple
+from typing import Dict, List, Optional
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_INPUT_ROOT = PROJECT_ROOT / "data" / "synthetic_selected"
 DEFAULT_RESULTS_DIR = PROJECT_ROOT / "results"
-GRAPH_EXTENSIONS = {".txt", ".gr", ".edges", ".graph", ".dimacs", ".mtx"}
 
 
-def collect_graph_files(root: Path) -> List[Path]:
-    files: List[Path] = []
-    for p in sorted(root.rglob("*")):
-        if not p.is_file():
-            continue
-        if p.suffix.lower() in GRAPH_EXTENSIONS:
-            files.append(p)
-        elif p.suffix == "" and not p.name.startswith("."):
-            files.append(p)
-    return files
+def read_csv_map(csv_path: Path) -> Dict[str, dict]:
+    if not csv_path.exists():
+        return {}
+
+    rows: Dict[str, dict] = {}
+    with csv_path.open("r", newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            key = str(row.get("file", "")).strip()
+            if key:
+                rows[key] = row
+    return rows
 
 
-def parse_metis_directed(filepath: Path) -> Tuple[int, List[Tuple[int, int]]]:
-    edges: List[Tuple[int, int]] = []
-    n: Optional[int] = None
-    vertex_idx = 0
-
-    with filepath.open("r", encoding="utf-8") as f:
-        for line_num, line in enumerate(f, 1):
-            s = line.strip()
-            if not s or s.startswith("%"):
-                continue
-
-            parts = s.split()
-            if n is None:
-                if len(parts) < 3:
-                    raise ValueError(f"Invalid METIS header at line {line_num}: {s}")
-                n = int(parts[0])
-                continue
-
-            u = vertex_idx
-            vertex_idx += 1
-            for tok in parts:
-                v = int(tok) - 1
-                edges.append((u, v))
-
-    if n is None:
-        raise ValueError(f"No METIS header in {filepath}")
-
-    return n, edges
+def int_or_none(value: Optional[str]) -> Optional[int]:
+    if value is None:
+        return None
+    s = str(value).strip()
+    if s.lstrip("-").isdigit():
+        return int(s)
+    return None
 
 
-def _parse_edge_list(filepath: Path) -> Tuple[int, List[Tuple[int, int]]]:
-    edges: List[Tuple[int, int]] = []
-    n_hint: Optional[int] = None
-
-    with filepath.open("r", encoding="utf-8") as f:
-        for line in f:
-            s = line.strip()
-            if not s:
-                continue
-            if s.startswith(("#", "%", "c ")):
-                continue
-
-            parts = s.split()
-            if not parts:
-                continue
-
-            if parts[0].lower() == "p" and len(parts) >= 4:
-                try:
-                    n_hint = int(parts[2])
-                except ValueError:
-                    pass
-                continue
-
-            if not parts[0].lstrip("-").isdigit():
-                continue
-
-            if len(parts) < 2:
-                continue
-
-            u = int(parts[0])
-            v = int(parts[1])
-            edges.append((u, v))
-
-    if not edges:
-        raise ValueError(f"No edges found in {filepath}")
-
-    vertices = set()
-    for u, v in edges:
-        vertices.add(u)
-        vertices.add(v)
-
-    min_v = min(vertices)
-    max_v = max(vertices)
-
-    if min_v == 1:
-        edges = [(u - 1, v - 1) for u, v in edges]
-        max_v -= 1
-
-    n = n_hint if n_hint is not None else max_v + 1
-    n = max(n, max_v + 1)
-    return n, edges
+def compare_to_bruteforce(brute_val: Optional[int], ref_val: Optional[int]) -> str:
+    if brute_val is None or ref_val is None:
+        return "N/A"
+    return "True" if brute_val == ref_val else "False"
 
 
-def parse_graph(filepath: Path, directed: bool) -> Tuple[int, List[Tuple[int, int]]]:
-    if directed:
-        first_data_line = None
-        with filepath.open("r", encoding="utf-8") as f:
-            for line in f:
-                s = line.strip()
-                if s and not s.startswith(("#", "%", "c ")):
-                    first_data_line = s
-                    break
+def build_rows_for_family(results_dir: Path, family: str) -> List[dict]:
+    brute_map = read_csv_map(results_dir / f"{family}_brute_force.csv")
+    ic_map = read_csv_map(results_dir / f"{family}_IC.csv")
+    bst_map = read_csv_map(results_dir / f"{family}_BST.csv")
 
-        if first_data_line:
-            parts = first_data_line.split()
-            if len(parts) == 3 and all(p.lstrip("-").isdigit() for p in parts):
-                return parse_metis_directed(filepath)
+    rows: List[dict] = []
+    if not brute_map:
+        return rows
 
-    return _parse_edge_list(filepath)
+    for file_name in sorted(brute_map.keys()):
+        brute_row = brute_map[file_name]
+        ic_row = ic_map.get(file_name)
+        bst_row = bst_map.get(file_name)
 
+        brute_size_raw = brute_row.get("FVS_size", "N/A")
+        ic_size_raw = ic_row.get("FVS_size", "N/A") if ic_row else "N/A"
+        bst_size_raw = bst_row.get("FVS_size", "N/A") if bst_row else "N/A"
 
-def is_acyclic_directed(n: int, edges: Sequence[Tuple[int, int]], removed: Set[int]) -> bool:
-    remaining = [v for v in range(n) if v not in removed]
-    indeg = {v: 0 for v in remaining}
-    out = {v: [] for v in remaining}
+        brute_size = int_or_none(brute_size_raw)
+        ic_size = int_or_none(ic_size_raw)
+        bst_size = int_or_none(bst_size_raw)
 
-    for u, v in edges:
-        if u in removed or v in removed:
-            continue
-        out[u].append(v)
-        indeg[v] += 1
+        rows.append(
+            {
+                "file": file_name,
+                "n": brute_row.get("n", ""),
+                "m": brute_row.get("m", ""),
+                "brute_force_result": brute_size_raw,
+                "IC_result": ic_size_raw,
+                "BST_result": bst_size_raw,
+                "IC_match?": compare_to_bruteforce(brute_size, ic_size),
+                "BST_match?": compare_to_bruteforce(brute_size, bst_size),
+                "brute_validity": brute_row.get("validity", ""),
+                "brute_runtime": brute_row.get("runtime", ""),
+            }
+        )
 
-    queue = [v for v in remaining if indeg[v] == 0]
-    seen = 0
-    head = 0
-    while head < len(queue):
-        u = queue[head]
-        head += 1
-        seen += 1
-        for w in out[u]:
-            indeg[w] -= 1
-            if indeg[w] == 0:
-                queue.append(w)
-
-    return seen == len(remaining)
+    return rows
 
 
-def is_acyclic_undirected(n: int, edges: Sequence[Tuple[int, int]], removed: Set[int]) -> bool:
-    adj = {v: set() for v in range(n) if v not in removed}
-    for u, v in edges:
-        if u in removed or v in removed:
-            continue
-        adj[u].add(v)
-        adj[v].add(u)
-
-    visited: Set[int] = set()
-    for start in adj:
-        if start in visited:
-            continue
-
-        stack = [(start, -1)]
-        while stack:
-            u, parent = stack.pop()
-            if u in visited:
-                continue
-            visited.add(u)
-            for w in adj[u]:
-                if w == parent:
-                    continue
-                if w in visited:
-                    return False
-                stack.append((w, u))
-
-    return True
-
-
-def brute_force_fvs(
-    n: int,
-    edges: Sequence[Tuple[int, int]],
-    directed: bool,
-    timeout_seconds: float,
-) -> Tuple[str, float, str]:
-    start = time.perf_counter()
-
-    candidate_vertices = sorted({v for e in edges for v in e})
-    if not candidate_vertices:
-        return "0", 0.0, "True"
-
-    check_fn = is_acyclic_directed if directed else is_acyclic_undirected
-    checks = 0
-
-    for k in range(len(candidate_vertices) + 1):
-        for subset in itertools.combinations(candidate_vertices, k):
-            checks += 1
-            if checks % 2048 == 0 and (time.perf_counter() - start) > timeout_seconds:
-                return "TIMEOUT", time.perf_counter() - start, "TIMEOUT"
-
-            removed = set(subset)
-            if check_fn(n, edges, removed):
-                return str(len(subset)), time.perf_counter() - start, "True"
-
-            if (time.perf_counter() - start) > timeout_seconds:
-                return "TIMEOUT", time.perf_counter() - start, "TIMEOUT"
-
-    return "ERROR", time.perf_counter() - start, "False"
-
-
-def write_results(csv_path: Path, rows: List[dict]) -> None:
-    csv_path.parent.mkdir(parents=True, exist_ok=True)
-    with csv_path.open("w", newline="", encoding="utf-8") as f:
+def write_check_csv(output_path: Path, rows: List[dict]) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(
             f,
             fieldnames=[
                 "file",
                 "n",
                 "m",
-                "FVS_size",
-                "runtime",
-                "validity",
-                "IC result",
-                "BST result",
-                "IC match?",
-                "BST match?",
+                "brute_force_result",
+                "IC_result",
+                "BST_result",
+                "IC_match?",
+                "BST_match?",
+                "brute_validity",
+                "brute_runtime",
             ],
         )
         writer.writeheader()
         writer.writerows(rows)
 
 
-def load_algo_results_map(csv_path: Path) -> Dict[str, dict]:
-    if not csv_path.exists():
-        return {}
-
-    out: Dict[str, dict] = {}
-    with csv_path.open("r", newline="", encoding="utf-8") as f:
-        for row in csv.DictReader(f):
-            key = row.get("file", "").strip()
-            if key:
-                out[key] = row
-    return out
-
-
-def normalize_fvs_value(row: Optional[dict]) -> str:
-    if not row:
-        return "N/A"
-    value = row.get("FVS_size", "N/A")
-    return str(value)
-
-
-def is_int_like(value: str) -> bool:
-    return value.lstrip("-").isdigit()
-
-
-def compare_values(brute_value: str, ref_value: str) -> str:
-    if not is_int_like(brute_value) or not is_int_like(ref_value):
-        return "N/A"
-    return "True" if int(brute_value) == int(ref_value) else "False"
-
-
-def run_family(input_root: Path, results_dir: Path, directed: bool, timeout_seconds: float) -> Path:
-    family = "directed" if directed else "undirected"
-    exact_root = input_root / family / "exact_track"
-    files = collect_graph_files(exact_root) if exact_root.exists() else []
-
-    ic_map = load_algo_results_map(results_dir / f"{family}_IC.csv")
-    bst_map = load_algo_results_map(results_dir / f"{family}_BST.csv")
-
-    if not files:
-        print(f"[WARN] No files found in {exact_root}; writing empty report")
-        out_csv = results_dir / f"{family}_BRUTE_FORCE.csv"
-        write_results(out_csv, [])
-        return out_csv
-
-    rows: List[dict] = []
-    print(f"[INFO] Running brute-force for {family}: {len(files)} file(s) discovered")
-
-    for fp in files:
-        rel_name = fp.relative_to(exact_root).as_posix()
-        base_name = fp.name
-
-        ic_row = ic_map.get(base_name)
-        bst_row = bst_map.get(base_name)
-
-        if ic_row is None and bst_row is None:
-            print(f"  {family[:3].upper()} | {rel_name} | skipped (not found in IC/BST CSV)")
-            continue
-
-        ic_result = normalize_fvs_value(ic_row)
-        bst_result = normalize_fvs_value(bst_row)
-
-        try:
-            n, edges = parse_graph(fp, directed=directed)
-            fvs_size, runtime_s, validity = brute_force_fvs(n, edges, directed, timeout_seconds)
-        except Exception as ex:
-            n, edges = 0, []
-            fvs_size = "ERROR"
-            runtime_s = 0.0
-            validity = f"ERROR:{ex}"
-
-        ic_match = compare_values(fvs_size, ic_result)
-        bst_match = compare_values(fvs_size, bst_result)
-
-        row = {
-            "file": base_name,
-            "n": n,
-            "m": len(edges),
-            "FVS_size": fvs_size,
-            "runtime": round(runtime_s, 6),
-            "validity": validity,
-            "IC result": ic_result,
-            "BST result": bst_result,
-            "IC match?": ic_match,
-            "BST match?": bst_match,
-        }
-        rows.append(row)
-        print(
-            f"  {family[:3].upper()} | {rel_name} | FVS={fvs_size} | "
-            f"IC={ic_result} ({ic_match}) | BST={bst_result} ({bst_match}) | "
-            f"t={runtime_s:.3f}s | validity={validity}"
-        )
-
-    out_csv = results_dir / f"{family}_BRUTE_FORCE.csv"
-    write_results(out_csv, rows)
+def run_family(results_dir: Path, family: str) -> Path:
+    rows = build_rows_for_family(results_dir, family)
+    out_csv = results_dir / f"{family}_fvs_check.csv"
+    write_check_csv(out_csv, rows)
+    print(f"[OK] {family}: wrote {len(rows)} row(s) to {out_csv}")
     return out_csv
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Brute-force FVS checker for synthetic_selected exact-track datasets")
-    parser.add_argument("--input-root", type=Path, default=DEFAULT_INPUT_ROOT, help="Root dataset folder (default: data/synthetic_selected)")
-    parser.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR, help="Results folder (default: results)")
-    parser.add_argument("--timeout", type=float, default=60.0, help="Per-instance timeout in seconds (default: 60)")
+    parser = argparse.ArgumentParser(description="Compare brute-force results with IC and BST result CSVs")
+    parser.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR)
     args = parser.parse_args()
 
-    out_und = run_family(args.input_root, args.results_dir, directed=False, timeout_seconds=args.timeout)
-    out_dir = run_family(args.input_root, args.results_dir, directed=True, timeout_seconds=args.timeout)
+    out_und = run_family(args.results_dir, "undirected")
+    out_dir = run_family(args.results_dir, "directed")
 
-    print("\n[OK] Brute-force checking complete")
+    print("\n[DONE] FVS comparison complete")
     print(f"  - {out_und}")
     print(f"  - {out_dir}")
 
