@@ -27,7 +27,7 @@ from typing import Dict, List, Sequence, Tuple
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 RESULTS_DIR = PROJECT_ROOT / "results"
-SYNTHETIC_SELECTED_DIR = DATA_DIR / "synthetic_selected"
+synthetic_DIR = DATA_DIR / "synthetic"
 
 DOWNLOAD_REAL_SCRIPT = PROJECT_ROOT / "data" / "download_real_world.py"
 GENERATE_SYNTH_SCRIPT = PROJECT_ROOT / "data" / "generate_synthetic.py"
@@ -120,7 +120,7 @@ def select_synthetic_subset(family: str, total: int, exact_ratio: float) -> Path
     """Build a synthetic subset folder that contains exactly the requested count."""
     weights = UNDIRECTED_WEIGHTS if family == "undirected" else DIRECTED_WEIGHTS
     src_root = DATA_DIR / "synthetic" / family
-    dst_root = SYNTHETIC_SELECTED_DIR / family
+    dst_root = synthetic_DIR / family
     plan = plan_per_bucket(total, exact_ratio, weights)
 
     if dst_root.exists():
