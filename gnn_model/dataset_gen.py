@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import argparse
 import math
+import multiprocessing as mp
+import queue
 import random
 import shutil
 import sys
@@ -72,6 +74,60 @@ DIRECTED_WEIGHTS: Dict[str, float] = {
     "directed_grids": 0.15,
     "dags": 0.15,
 }
+
+SOLVER_TIMEOUT_SECONDS = 60
+
+
+class SolverTimeoutError(RuntimeError):
+    """Raised when a single graph solve exceeds the configured timeout."""
+
+
+def _solver_worker(
+    graph_type: str,
+    n: int,
+    edges: List[Tuple[int, int]],
+    out_q: mp.Queue,
+) -> None:
+    try:
+        if graph_type == "undirected":
+            fvs = solve_undirected(n, edges)
+        else:
+            fvs = solve_directed(n, edges)
+        out_q.put(("ok", fvs))
+    except Exception as exc:  # pragma: no cover - defensive worker path
+        out_q.put(("err", f"{type(exc).__name__}: {exc}"))
+
+
+def _solve_with_timeout(
+    graph_type: str,
+    n: int,
+    edges: List[Tuple[int, int]],
+    timeout_seconds: int,
+) -> List[int]:
+    # Use a subprocess so hung/native solver calls can be forcefully terminated.
+    ctx = mp.get_context("fork")
+    out_q: mp.Queue = ctx.Queue(maxsize=1)
+    proc = ctx.Process(
+        target=_solver_worker,
+        args=(graph_type, n, edges, out_q),
+        daemon=True,
+    )
+    proc.start()
+    proc.join(timeout_seconds)
+
+    if proc.is_alive():
+        proc.terminate()
+        proc.join()
+        raise SolverTimeoutError(f"solver exceeded {timeout_seconds}s")
+
+    try:
+        status, payload = out_q.get_nowait()
+    except queue.Empty as exc:
+        raise RuntimeError("solver process ended without returning a result") from exc
+
+    if status == "ok":
+        return payload
+    raise RuntimeError(f"solver process failed: {payload}")
 
 
 def _normalize_edges(edges: Iterable[Tuple[int, int]], directed: bool) -> List[Tuple[int, int]]:
@@ -443,16 +499,17 @@ def _build_pt_sample(
     graph_type: str,
     n: int,
     edges: List[Tuple[int, int]],
+    solver_timeout_seconds: int = SOLVER_TIMEOUT_SECONDS,
 ) -> Data:
     if not HAS_TORCH:
         raise RuntimeError("torch and torch_geometric are required for PT generation")
 
     if graph_type == "undirected":
         feats = compute_node_features_undirected(n, edges)
-        fvs = solve_undirected(n, edges)
     else:
         feats = compute_node_features_directed(n, edges)
-        fvs = solve_directed(n, edges)
+
+    fvs = _solve_with_timeout(graph_type, n, edges, solver_timeout_seconds)
 
     x = torch.tensor(feats, dtype=torch.float)
     y = torch.zeros(n, dtype=torch.long)
@@ -533,7 +590,15 @@ def _generate_exact_bucket_from_sources(
             f"start | n={n} m={len(edges)} solver=ic source={src_path.name}"
         )
         t0 = time.perf_counter()
-        data = _build_pt_sample(graph_type, n, edges)
+        try:
+            data = _build_pt_sample(graph_type, n, edges)
+        except SolverTimeoutError:
+            dt = time.perf_counter() - t0
+            _log(
+                f"    [SKIP] timeout after {dt:.2f}s "
+                f"(limit={SOLVER_TIMEOUT_SECONDS}s) | source={src_path.name}"
+            )
+            continue
         dt = time.perf_counter() - t0
         data.family = family
         data.track = EXACT_TRACK
