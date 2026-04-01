@@ -286,6 +286,13 @@ def append_result_to_csv(csv_path: Path, result_dict: dict) -> None:
         writer.writerow(result_dict)
 
 
+def _to_float_or_none(value) -> Optional[float]:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Algorithm Runners
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -432,10 +439,16 @@ def run_on_file(filepath: str, algo: str, pop_size: int, max_gens: int,
         if is_result_already_recorded(csv_path, filename):
             if verbose:
                 print(f"  {alg:4s} — [SKIPPED] Already completed")
-            # Load the existing result from CSV
+            # Load the existing result from CSV and map to summary keys.
             existing = load_existing_results(csv_path).get(filename, {})
-            for key, value in existing.items():
-                results[key] = value
+            if existing:
+                results[f"{alg}_size"] = existing.get("FVS_size", existing.get(f"{alg}_size", "N/A"))
+                runtime_s = _to_float_or_none(existing.get("runtime"))
+                if runtime_s is not None:
+                    results[f"{alg}_ms"] = round(runtime_s * 1000.0, 2)
+                else:
+                    results[f"{alg}_ms"] = existing.get(f"{alg}_ms", existing.get("runtime", "N/A"))
+                results[f"{alg}_valid"] = existing.get("validity", existing.get(f"{alg}_valid", "N/A"))
             continue
         
         timeout_s = get_dynamic_timeout_seconds(n)
@@ -446,24 +459,24 @@ def run_on_file(filepath: str, algo: str, pop_size: int, max_gens: int,
             alg, n, edges, pop_size, max_gens, timeout_s
         )
 
-        # Build single-algorithm result row
+        # Build single-algorithm result row with unified schema.
         algo_result = {"file": filename, "n": n, "m": len(edges)}
         
         if error == "TIMEOUT":
             if verbose:
                 print("TIMEOUT")
-            algo_result[f"{alg}_size"] = "TIMEOUT"
-            algo_result[f"{alg}_ms"] = "TIMEOUT"
-            algo_result[f"{alg}_valid"] = "TIMEOUT"
+            algo_result["FVS_size"] = "TIMEOUT"
+            algo_result["runtime"] = timeout_s
+            algo_result["validity"] = "TIMEOUT"
             results[f"{alg}_size"] = "TIMEOUT"
             results[f"{alg}_ms"] = "TIMEOUT"
             results[f"{alg}_valid"] = "TIMEOUT"
         elif error is not None:
             if verbose:
                 print(error)
-            algo_result[f"{alg}_size"] = "ERROR"
-            algo_result[f"{alg}_ms"] = "ERROR"
-            algo_result[f"{alg}_valid"] = False
+            algo_result["FVS_size"] = "ERROR"
+            algo_result["runtime"] = "ERROR"
+            algo_result["validity"] = False
             results[f"{alg}_size"] = "ERROR"
             results[f"{alg}_ms"] = "ERROR"
             results[f"{alg}_valid"] = False
@@ -473,9 +486,9 @@ def run_on_file(filepath: str, algo: str, pop_size: int, max_gens: int,
                 status = "✓ VALID" if valid else "✗ INVALID"
                 print(f"FVS size = {len(fvs):4d}  |  Time = {elapsed_ms:8.2f} ms  |  {status}")
             
-            algo_result[f"{alg}_size"]  = len(fvs)
-            algo_result[f"{alg}_ms"]    = round(elapsed_ms, 2)
-            algo_result[f"{alg}_valid"] = valid
+            algo_result["FVS_size"] = len(fvs)
+            algo_result["runtime"] = round(elapsed_ms / 1000.0, 6)
+            algo_result["validity"] = valid
             
             results[f"{alg}_size"]  = len(fvs)
             results[f"{alg}_ms"]    = round(elapsed_ms, 2)
