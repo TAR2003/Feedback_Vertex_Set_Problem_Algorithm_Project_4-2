@@ -49,3 +49,4 @@ scale_free_000007.txt,34,50,1,0.000576,True
 scale_free_000008.txt,18,23,1,0.000407,True
 scale_free_000009.txt,26,45,1,0.000495,True
 dag_000007.txt,1766,1765,0,0.010531,True
+dgrid_000007.txt,462,918,TIMEOUT,600,TIMEOUT
