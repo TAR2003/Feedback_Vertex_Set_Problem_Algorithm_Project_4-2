@@ -92,7 +92,7 @@ def build_rows_for_family(results_dir: Path, family: str) -> List[dict]:
     return rows
 
 
-def write_check_csv(output_path: Path, rows: List[dict]) -> None:
+def init_check_csv(output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(
@@ -111,13 +111,37 @@ def write_check_csv(output_path: Path, rows: List[dict]) -> None:
             ],
         )
         writer.writeheader()
-        writer.writerows(rows)
+
+
+def append_check_row(output_path: Path, row: dict) -> None:
+    with output_path.open("a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "file",
+                "n",
+                "m",
+                "brute_force_result",
+                "IC_result",
+                "BST_result",
+                "IC_match?",
+                "BST_match?",
+                "brute_validity",
+                "brute_runtime",
+            ],
+        )
+        writer.writerow(row)
 
 
 def run_family(results_dir: Path, family: str) -> Path:
-    rows = build_rows_for_family(results_dir, family)
     out_csv = results_dir / f"{family}_fvs_check.csv"
-    write_check_csv(out_csv, rows)
+    # Reset old checker CSV, then append fresh results one by one.
+    init_check_csv(out_csv)
+
+    rows = build_rows_for_family(results_dir, family)
+    for row in rows:
+        append_check_row(out_csv, row)
+
     print(f"[OK] {family}: wrote {len(rows)} row(s) to {out_csv}")
     return out_csv
 

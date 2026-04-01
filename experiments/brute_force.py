@@ -22,7 +22,7 @@ import csv
 import itertools
 import time
 from pathlib import Path
-from typing import List, Optional, Sequence, Set, Tuple
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_INPUT_ROOT = PROJECT_ROOT / "data" / "synthetic_selected"
@@ -223,21 +223,51 @@ def write_rows(csv_path: Path, rows: List[dict]) -> None:
         writer.writerows(rows)
 
 
+def load_existing_rows(csv_path: Path) -> Dict[str, dict]:
+    if not csv_path.exists():
+        return {}
+
+    rows: Dict[str, dict] = {}
+    with csv_path.open("r", newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            key = str(row.get("file", "")).strip()
+            if key:
+                rows[key] = row
+    return rows
+
+
+def is_completed_non_timeout(row: Optional[dict]) -> bool:
+    if not row:
+        return False
+    fvs_value = str(row.get("FVS_size", "")).strip().upper()
+    return fvs_value not in {"", "TIMEOUT", "ERROR"}
+
+
+def persist_rows(csv_path: Path, rows_by_file: Dict[str, dict]) -> None:
+    ordered = [rows_by_file[name] for name in sorted(rows_by_file.keys())]
+    write_rows(csv_path, ordered)
+
+
 def run_family(input_root: Path, results_dir: Path, directed: bool, timeout_seconds: float) -> Path:
     family = "directed" if directed else "undirected"
     exact_root = input_root / family / "exact_track"
     files = collect_graph_files(exact_root) if exact_root.exists() else []
+    out_csv = results_dir / f"{family}_brute_force.csv"
+    rows_by_file = load_existing_rows(out_csv)
 
-    rows: List[dict] = []
     if not files:
         print(f"[WARN] No files found in {exact_root}; writing empty report")
-        out_csv = results_dir / f"{family}_brute_force.csv"
-        write_rows(out_csv, rows)
+        write_rows(out_csv, [])
         return out_csv
 
     print(f"[INFO] Brute force on {family}: {len(files)} file(s)")
     for fp in files:
         rel_name = fp.relative_to(exact_root).as_posix()
+        existing = rows_by_file.get(fp.name)
+        if is_completed_non_timeout(existing):
+            print(f"  {family[:3].upper()} | {rel_name} | [SKIPPED] Already stored result")
+            continue
+
         try:
             n, edges = parse_graph(fp, directed=directed)
             fvs_size, runtime_s, validity = brute_force_fvs(n, edges, directed, timeout_seconds)
@@ -255,11 +285,12 @@ def run_family(input_root: Path, results_dir: Path, directed: bool, timeout_seco
             "runtime": round(runtime_s, 6),
             "validity": validity,
         }
-        rows.append(row)
+        rows_by_file[fp.name] = row
+        # Save progress after each testcase so interrupted runs can resume.
+        persist_rows(out_csv, rows_by_file)
         print(f"  {family[:3].upper()} | {rel_name} | FVS={fvs_size} | t={runtime_s:.3f}s | validity={validity}")
 
-    out_csv = results_dir / f"{family}_brute_force.csv"
-    write_rows(out_csv, rows)
+    persist_rows(out_csv, rows_by_file)
     return out_csv
 
 
