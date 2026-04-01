@@ -21,7 +21,6 @@ import argparse
 import shutil
 import subprocess
 import sys
-from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Sequence, Tuple
 
@@ -254,7 +253,6 @@ def run_undirected(
     pop: int,
     gens: int,
     quiet: bool,
-    stamp: str,
     synthetic_dir: Path,
     synthetic_only: bool,
 ) -> List[Path]:
@@ -266,7 +264,6 @@ def run_undirected(
             print(f"[SKIP] no benchmark graph files in {test_dir}")
             continue
 
-        out_csv = RESULTS_DIR / f"undirected_{test_dir.name}_{algo}_{stamp}.csv"
         cmd = [
             sys.executable,
             str(BENCHMARK_UND_SCRIPT),
@@ -274,8 +271,8 @@ def run_undirected(
             algo,
             "--test",
             str(test_dir),
-            "--output",
-            str(out_csv),
+            "--results-dir",
+            str(RESULTS_DIR),
             "--pop",
             str(pop),
             "--gens",
@@ -289,7 +286,16 @@ def run_undirected(
             print(f"[WARN] benchmark failed for {test_dir}")
             continue
 
-        outputs.append(out_csv)
+        if algo == "ALL":
+            outputs.extend([
+                RESULTS_DIR / "undirected_BST.csv",
+                RESULTS_DIR / "undirected_IC.csv",
+                RESULTS_DIR / "undirected_MA.csv",
+                RESULTS_DIR / "undirected_KMA.csv",
+                RESULTS_DIR / "undirected_GNN-KME.csv",
+            ])
+        else:
+            outputs.append(RESULTS_DIR / f"undirected_{algo}.csv")
 
     return outputs
 
@@ -300,7 +306,6 @@ def run_directed(
     gens: int,
     quiet: bool,
     include_pace: bool,
-    stamp: str,
     synthetic_dir: Path,
     synthetic_only: bool,
 ) -> List[Path]:
@@ -314,7 +319,6 @@ def run_directed(
             print(f"[SKIP] no benchmark graph files in {test_dir}")
             continue
 
-        out_csv = RESULTS_DIR / f"directed_{test_dir.name}_{algo}_{stamp}.csv"
         cmd = [
             sys.executable,
             str(BENCHMARK_DIR_SCRIPT),
@@ -322,8 +326,8 @@ def run_directed(
             algo,
             "--test",
             str(test_dir),
-            "--output",
-            str(out_csv),
+            "--results-dir",
+            str(RESULTS_DIR),
             "--pop",
             str(pop),
             "--gens",
@@ -337,7 +341,16 @@ def run_directed(
             print(f"[WARN] benchmark failed for {test_dir}")
             continue
 
-        outputs.append(out_csv)
+        if algo == "ALL":
+            outputs.extend([
+                RESULTS_DIR / "directed_BST.csv",
+                RESULTS_DIR / "directed_IC.csv",
+                RESULTS_DIR / "directed_MA.csv",
+                RESULTS_DIR / "directed_KMA.csv",
+                RESULTS_DIR / "directed_GNN-KME.csv",
+            ])
+        else:
+            outputs.append(RESULTS_DIR / f"directed_{algo}.csv")
 
     return outputs
 
@@ -460,7 +473,6 @@ generate missing files to reach 100 total.
             exact_ratio=args.exact_ratio,
         )
 
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     all_outputs: List[Path] = []
 
     if args.mode in {"all", "undirected"}:
@@ -470,7 +482,6 @@ generate missing files to reach 100 total.
                 args.pop,
                 args.gens,
                 args.quiet,
-                stamp,
                 selected_undirected_dir,
                 args.synthetic_only,
             )
@@ -484,7 +495,6 @@ generate missing files to reach 100 total.
                 args.gens,
                 args.quiet,
                 args.include_pace,
-                stamp,
                 selected_directed_dir,
                 args.synthetic_only,
             )
@@ -498,7 +508,7 @@ generate missing files to reach 100 total.
         print("="*70 + "\n")
         return
 
-    for out_file in all_outputs:
+    for out_file in sorted(set(all_outputs)):
         print(f"  [OK] {out_file}")
     print("="*70 + "\n")
 

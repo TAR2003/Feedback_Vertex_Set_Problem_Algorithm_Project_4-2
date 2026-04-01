@@ -11,7 +11,12 @@ Outputs:
 - results/directed_BRUTE_FORCE.csv
 
 CSV schema (uniform):
-file,n,m,FVS_size,runtime,validity
+file,n,m,FVS_size,runtime,validity,IC result,BST result,IC match?,BST match?
+
+Behavior:
+- A testcase is processed only if it already exists in at least one of:
+    - results/<family>_IC.csv
+    - results/<family>_BST.csv
 """
 
 from __future__ import annotations
@@ -21,7 +26,7 @@ import csv
 import itertools
 import time
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_INPUT_ROOT = PROJECT_ROOT / "data" / "synthetic_selected"
@@ -231,24 +236,86 @@ def brute_force_fvs(
 def write_results(csv_path: Path, rows: List[dict]) -> None:
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     with csv_path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=["file", "n", "m", "FVS_size", "runtime", "validity"])
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "file",
+                "n",
+                "m",
+                "FVS_size",
+                "runtime",
+                "validity",
+                "IC result",
+                "BST result",
+                "IC match?",
+                "BST match?",
+            ],
+        )
         writer.writeheader()
         writer.writerows(rows)
+
+
+def load_algo_results_map(csv_path: Path) -> Dict[str, dict]:
+    if not csv_path.exists():
+        return {}
+
+    out: Dict[str, dict] = {}
+    with csv_path.open("r", newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            key = row.get("file", "").strip()
+            if key:
+                out[key] = row
+    return out
+
+
+def normalize_fvs_value(row: Optional[dict]) -> str:
+    if not row:
+        return "N/A"
+    value = row.get("FVS_size", "N/A")
+    return str(value)
+
+
+def is_int_like(value: str) -> bool:
+    return value.lstrip("-").isdigit()
+
+
+def compare_values(brute_value: str, ref_value: str) -> str:
+    if not is_int_like(brute_value) or not is_int_like(ref_value):
+        return "N/A"
+    return "True" if int(brute_value) == int(ref_value) else "False"
 
 
 def run_family(input_root: Path, results_dir: Path, directed: bool, timeout_seconds: float) -> Path:
     family = "directed" if directed else "undirected"
     exact_root = input_root / family / "exact_track"
-    files = collect_graph_files(exact_root)
+    files = collect_graph_files(exact_root) if exact_root.exists() else []
+
+    ic_map = load_algo_results_map(results_dir / f"{family}_IC.csv")
+    bst_map = load_algo_results_map(results_dir / f"{family}_BST.csv")
 
     if not files:
-        raise RuntimeError(f"No files found in {exact_root}")
+        print(f"[WARN] No files found in {exact_root}; writing empty report")
+        out_csv = results_dir / f"{family}_BRUTE_FORCE.csv"
+        write_results(out_csv, [])
+        return out_csv
 
     rows: List[dict] = []
-    print(f"[INFO] Running brute-force for {family}: {len(files)} file(s)")
+    print(f"[INFO] Running brute-force for {family}: {len(files)} file(s) discovered")
 
     for fp in files:
         rel_name = fp.relative_to(exact_root).as_posix()
+        base_name = fp.name
+
+        ic_row = ic_map.get(base_name)
+        bst_row = bst_map.get(base_name)
+
+        if ic_row is None and bst_row is None:
+            print(f"  {family[:3].upper()} | {rel_name} | skipped (not found in IC/BST CSV)")
+            continue
+
+        ic_result = normalize_fvs_value(ic_row)
+        bst_result = normalize_fvs_value(bst_row)
+
         try:
             n, edges = parse_graph(fp, directed=directed)
             fvs_size, runtime_s, validity = brute_force_fvs(n, edges, directed, timeout_seconds)
@@ -258,16 +325,27 @@ def run_family(input_root: Path, results_dir: Path, directed: bool, timeout_seco
             runtime_s = 0.0
             validity = f"ERROR:{ex}"
 
+        ic_match = compare_values(fvs_size, ic_result)
+        bst_match = compare_values(fvs_size, bst_result)
+
         row = {
-            "file": rel_name,
+            "file": base_name,
             "n": n,
             "m": len(edges),
             "FVS_size": fvs_size,
             "runtime": round(runtime_s, 6),
             "validity": validity,
+            "IC result": ic_result,
+            "BST result": bst_result,
+            "IC match?": ic_match,
+            "BST match?": bst_match,
         }
         rows.append(row)
-        print(f"  {family[:3].upper()} | {rel_name} | FVS={fvs_size} | t={runtime_s:.3f}s | validity={validity}")
+        print(
+            f"  {family[:3].upper()} | {rel_name} | FVS={fvs_size} | "
+            f"IC={ic_result} ({ic_match}) | BST={bst_result} ({bst_match}) | "
+            f"t={runtime_s:.3f}s | validity={validity}"
+        )
 
     out_csv = results_dir / f"{family}_BRUTE_FORCE.csv"
     write_results(out_csv, rows)

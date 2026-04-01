@@ -438,7 +438,7 @@ def run_on_file(filepath: str, algo: str, pop_size: int, max_gens: int,
         csv_path = get_results_csv_path(results_dir, alg, is_directed=False)
         if is_result_already_recorded(csv_path, filename):
             if verbose:
-                print(f"  {alg:4s} — [SKIPPED] Already completed")
+                print(f"  {alg:4s} — [SKIPPED] Already stored result")
             # Load the existing result from CSV and map to summary keys.
             existing = load_existing_results(csv_path).get(filename, {})
             if existing:
