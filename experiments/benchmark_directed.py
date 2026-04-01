@@ -24,11 +24,11 @@ python experiments/benchmark_directed.py --algo MA --test data/raw_directed/ --o
 # 6. Batch ALL algorithms on every file in a folder
 python experiments/benchmark_directed.py --algo ALL --test data/raw_directed/ --output directed_comparison.csv
 
-# 7. GNN-KME (GNN-guided KMA) on one file with custom parameters
-python experiments/benchmark_directed.py --algo GNN-KME --test data/raw_directed/pace001.gr --pop 100 --gens 400
+# 7. GNN-KMA (GNN-guided KMA) on one file with custom parameters
+python experiments/benchmark_directed.py --algo GNN-KMA --test data/raw_directed/pace001.gr --pop 100 --gens 400
 
-# 8. GNN-KME on a folder of graphs
-python experiments/benchmark_directed.py --algo GNN-KME --test data/raw_directed/ --output directed_GNN-KME_results.csv
+# 8. GNN-KMA on a folder of graphs
+python experiments/benchmark_directed.py --algo GNN-KMA --test data/raw_directed/ --output directed_GNN-KMA_results.csv
 
 Supported --algo values
 ───────────────────────
@@ -36,8 +36,8 @@ Supported --algo values
   IC     — Directed Iterative Compression (exact, greedy + compression)
   MA     — Directed Memetic Algorithm (heuristic, scales to large graphs)
     KMA    — Directed Kernelized Memetic Algorithm (kernelization + MA)
-    GNN-KME — GNN-guided KMA (combines GNN inference + kernelized MA refinement)
-    ALL    — Run BST, IC, MA, KMA, and GNN-KME; print comparison table
+    GNN-KMA — GNN-guided KMA (combines GNN inference + kernelized MA refinement)
+    ALL    — Run BST, IC, MA, KMA, and GNN-KMA; print comparison table
 
 Directed Graph File Format
 ──────────────────────────
@@ -90,9 +90,9 @@ except ImportError as e:
     print(f"       (Original error: {e})")
     sys.exit(1)
 
-# Try importing GNN-KME solver from run_hybrid.py (graceful fallback)
-# Note: Import is deferred until GNN-KME algorithm is actually requested to avoid slow startup
-HAS_GNN_KME = True  # Assume available; will fail gracefully at runtime if not
+# Try importing GNN-KMA solver from run_hybrid.py (graceful fallback)
+# Note: Import is deferred until GNN-KMA algorithm is actually requested to avoid slow startup
+HAS_GNN_KMA = True  # Assume available; will fail gracefully at runtime if not
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -396,7 +396,7 @@ ALGO_MAP_D = {
     "BST": cpp_engine.solve_directed_BST,
     "IC":  cpp_engine.solve_directed_IC,
     "MA":  cpp_engine.solve_directed_MA,
-    "KMA": getattr(cpp_engine, "solve_directed_KMA", getattr(cpp_engine, "solve_directed_KME", cpp_engine.solve_directed_MA)),
+    "KMA": getattr(cpp_engine, "solve_directed_KMA", getattr(cpp_engine, "solve_directed_KMA", cpp_engine.solve_directed_MA)),
 }
 
 
@@ -424,13 +424,13 @@ def _directed_worker_run(algo: str, n: int, edges: List[Tuple[int, int]],
         elif algo == "KMA":
             if hasattr(cpp_engine, "solve_directed_KMA"):
                 fvs = cpp_engine.solve_directed_KMA(n, edges, pop_size, max_gens)
-            elif hasattr(cpp_engine, "solve_directed_KME"):
-                fvs = cpp_engine.solve_directed_KME(n, edges, pop_size, max_gens)
+            elif hasattr(cpp_engine, "solve_directed_KMA"):
+                fvs = cpp_engine.solve_directed_KMA(n, edges, pop_size, max_gens)
             else:
                 fvs = cpp_engine.solve_directed_MA(n, edges, pop_size, max_gens)
-        elif algo == "GNN-KME":
-            from run_hybrid import gnn_kme_solve_directed
-            fvs = gnn_kme_solve_directed(n, edges, pop_size, max_gens)
+        elif algo == "GNN-KMA":
+            from run_hybrid import gnn_KMA_solve_directed
+            fvs = gnn_KMA_solve_directed(n, edges, pop_size, max_gens)
         else:
             fvs = ALGO_MAP_D[algo](n, edges)
         elapsed_ms = (time.perf_counter() - start) * 1000.0
@@ -489,13 +489,13 @@ def run_directed_algorithm(algo: str, n: int, edges: List[Tuple[int, int]],
     elif algo == "KMA":
         if hasattr(cpp_engine, "solve_directed_KMA"):
             fvs = cpp_engine.solve_directed_KMA(n, edges, pop_size, max_gens)
-        elif hasattr(cpp_engine, "solve_directed_KME"):
-            fvs = cpp_engine.solve_directed_KME(n, edges, pop_size, max_gens)
+        elif hasattr(cpp_engine, "solve_directed_KMA"):
+            fvs = cpp_engine.solve_directed_KMA(n, edges, pop_size, max_gens)
         else:
             fvs = cpp_engine.solve_directed_MA(n, edges, pop_size, max_gens)
-    elif algo == "GNN-KME":
-        from run_hybrid import gnn_kme_solve_directed
-        fvs = gnn_kme_solve_directed(n, edges, pop_size, max_gens)
+    elif algo == "GNN-KMA":
+        from run_hybrid import gnn_KMA_solve_directed
+        fvs = gnn_KMA_solve_directed(n, edges, pop_size, max_gens)
     else:
         fvs = ALGO_MAP_D[algo](n, edges)
 
@@ -525,7 +525,7 @@ def run_on_file(filepath: str, algo: str, pop_size: int, max_gens: int,
         print(f"  Graph: {n} vertices, {len(edges)} directed edges")
         print(f"{'─' * 60}")
 
-    algos_to_run = ["BST", "IC", "MA", "KMA", "GNN-KME"] if algo == "ALL" else [algo]
+    algos_to_run = ["BST", "IC", "MA", "KMA", "GNN-KMA"] if algo == "ALL" else [algo]
 
     for alg in algos_to_run:
         # Check if this algorithm already processed this file
@@ -606,8 +606,8 @@ def main():
     )
     parser.add_argument(
         "--algo", required=True,
-        choices=["BST", "IC", "MA", "KMA", "GNN-KME", "ALL"],
-        help="Algorithm: BST (exact), IC (exact), MA (heuristic), KMA (kernelized MA), GNN-KME (GNN+KMA), ALL (compare)"
+        choices=["BST", "IC", "MA", "KMA", "GNN-KMA", "ALL"],
+        help="Algorithm: BST (exact), IC (exact), MA (heuristic), KMA (kernelized MA), GNN-KMA (GNN+KMA), ALL (compare)"
     )
     parser.add_argument(
         "--test", required=True,
@@ -667,7 +667,7 @@ def main():
         print(f"{'═' * 80}")
 
         if args.algo == "ALL":
-            algos_ran = ["BST", "IC", "MA", "KMA", "GNN-KME"]
+            algos_ran = ["BST", "IC", "MA", "KMA", "GNN-KMA"]
         else:
             algos_ran = [args.algo]
         header = f"  {'File':<28} {'n':>6} {'m':>8}"
