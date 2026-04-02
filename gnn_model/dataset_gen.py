@@ -17,6 +17,8 @@ Each .pt file is a torch_geometric Data object with:
 from __future__ import annotations
 
 import argparse
+import csv
+import datetime
 import math
 import multiprocessing as mp
 import queue
@@ -61,6 +63,7 @@ def _log(msg: str) -> None:
 
 OUTPUT_ROOT = PROJECT_ROOT / "gnn_model" / "datasets" / "pt"
 SYNTHETIC_ROOT = PROJECT_ROOT / "data" / "synthetic"
+CSV_ROOT = PROJECT_ROOT / "gnn_model" / "datasets"
 
 EXACT_TRACK = "exact_track"
 UNDIRECTED_WEIGHTS: Dict[str, float] = {
@@ -546,6 +549,95 @@ def _list_existing_pt(folder: Path) -> List[Path]:
     return sorted(p for p in folder.glob("*.pt") if p.is_file())
 
 
+def _get_csv_path(variant: str) -> Path:
+    """Get the path to the CSV tracking file for a variant."""
+    CSV_ROOT.mkdir(parents=True, exist_ok=True)
+    return CSV_ROOT / f"dataset_gen_{variant}.csv"
+
+
+def _csv_headers() -> List[str]:
+    """Return the CSV column headers."""
+    return [
+        "source_file",
+        "family",
+        "category",
+        "status",  # 'completed' or 'timeout'
+        "fvs_size",
+        "timestamp",
+        "feature_set",
+    ]
+
+
+def _load_csv_records(variant: str) -> Dict[str, Dict[str, str]]:
+    """Load existing CSV records. Key is (family, category, source_file) tuple as string."""
+    csv_path = _get_csv_path(variant)
+    records: Dict[str, Dict[str, str]] = {}
+    
+    if not csv_path.exists():
+        return records
+    
+    try:
+        with csv_path.open("r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            if reader is None or reader.fieldnames is None:
+                return records
+            for row in reader:
+                if row:
+                    # Key combines family, category, and source_file for uniqueness
+                    key = f"{row.get('family', '')}/{row.get('category', '')}/{row.get('source_file', '')}"
+                    records[key] = row
+    except Exception as e:
+        _log(f"[WARN] Failed to read CSV {csv_path}: {e}")
+    
+    return records
+
+
+def _record_exists(
+    records: Dict[str, Dict[str, str]],
+    family: str,
+    category: str,
+    source_file: str,
+) -> bool:
+    """Check if a record exists for this file."""
+    key = f"{family}/{category}/{source_file}"
+    return key in records
+
+
+def _save_csv_record(
+    variant: str,
+    family: str,
+    category: str,
+    source_file: str,
+    status: str,
+    fvs_size: int = 0,
+) -> None:
+    """Append a record to the CSV file."""
+    csv_path = _get_csv_path(variant)
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    timestamp = datetime.datetime.now().isoformat()
+    
+    # Check if file exists; if not, write headers
+    file_exists = csv_path.exists()
+    
+    try:
+        with csv_path.open("a", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=_csv_headers())
+            if not file_exists:
+                writer.writeheader()
+            writer.writerow({
+                "source_file": source_file,
+                "family": family,
+                "category": category,
+                "status": status,
+                "fvs_size": fvs_size if status == "completed" else "",
+                "timestamp": timestamp,
+                "feature_set": variant,
+            })
+    except Exception as e:
+        _log(f"[WARN] Failed to write CSV record: {e}")
+
+
 def _trim_non_source_pt(folder: Path, source_stems: Set[str]) -> int:
     removed = 0
     for p in _list_existing_pt(folder):
@@ -572,6 +664,9 @@ def _generate_exact_bucket_from_sources(
     out_dir = output_root / family / EXACT_TRACK / category
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # Load CSV records for this variant
+    csv_records = _load_csv_records(variant)
+
     if force:
         removed = _list_existing_pt(out_dir)
         for p in removed:
@@ -591,6 +686,19 @@ def _generate_exact_bucket_from_sources(
 
     for idx, src_path in enumerate(src_files, start=1):
         out_path = out_dir / f"{src_path.stem}.pt"
+        
+        # Check CSV first: if record exists, skip
+        if _record_exists(csv_records, family, category, src_path.name):
+            record = csv_records[f"{family}/{category}/{src_path.name}"]
+            status = record.get("status", "unknown")
+            _log(
+                f"  [{family}/{EXACT_TRACK}/{category}] graph {idx}/{total} "
+                f"skip | source={src_path.name} (already {status})"
+            )
+            existing_used += 1
+            continue
+
+        # Fallback: if .pt file exists but not in CSV, use it
         if out_path.exists():
             existing_used += 1
             continue
@@ -608,9 +716,19 @@ def _generate_exact_bucket_from_sources(
         except SolverTimeoutError:
             dt = time.perf_counter() - t0
             _log(
-                f"    [SKIP] timeout after {dt:.2f}s "
+                f"    [TIMEOUT] {dt:.2f}s "
                 f"(limit={SOLVER_TIMEOUT_SECONDS}s) | source={src_path.name}"
             )
+            # Record the timeout in CSV
+            _save_csv_record(
+                variant=variant,
+                family=family,
+                category=category,
+                source_file=src_path.name,
+                status="timeout",
+                fvs_size=0,
+            )
+            existing_used += 1
             continue
         dt = time.perf_counter() - t0
         data.family = family
@@ -620,6 +738,16 @@ def _generate_exact_bucket_from_sources(
         data.feature_set = variant
         torch.save(data, out_path)
         created += 1
+
+        # Record completion in CSV
+        _save_csv_record(
+            variant=variant,
+            family=family,
+            category=category,
+            source_file=src_path.name,
+            status="completed",
+            fvs_size=int(data.fvs_size),
+        )
 
         _log(f"    done in {dt:.2f}s | fvs_size={int(data.fvs_size)} | saved={out_path.name}")
         if (created % progress_every) == 0 or (created + existing_used) == total:
