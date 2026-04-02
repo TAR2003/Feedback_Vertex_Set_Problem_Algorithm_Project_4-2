@@ -27,38 +27,41 @@ from typing import List, Sequence, Tuple
 import networkx as nx
 
 
+# Exact 4-node motif enumeration is O(n^4); cap it to keep inference practical.
+MAX_EXACT_4NODE_MOTIF_NODES = 90
+
+
 def _rwse_return_probs_undirected(g: nx.Graph, max_step: int = 5) -> List[List[float]]:
     n = g.number_of_nodes()
     if n == 0:
         return []
 
-    # Build row-stochastic transition matrix using dense arrays; exact and stable for small/medium kernels.
-    p = [[0.0 for _ in range(n)] for _ in range(n)]
+    # Sparse row-stochastic transition map keeps runtime manageable on larger kernels.
+    p_rows: List[dict[int, float]] = [dict() for _ in range(n)]
     for i in range(n):
         nbrs = list(g.neighbors(i))
         if not nbrs:
             continue
         w = 1.0 / len(nbrs)
         for j in nbrs:
-            p[i][j] = w
+            p_rows[i][j] = w
 
-    cur = [row[:] for row in p]
+    cur_rows = [row.copy() for row in p_rows]
     diag_by_step = [[0.0 for _ in range(n)] for _ in range(max_step + 1)]
     for s in range(1, max_step + 1):
         for i in range(n):
-            diag_by_step[s][i] = cur[i][i]
+            diag_by_step[s][i] = cur_rows[i].get(i, 0.0)
         if s < max_step:
-            nxt = [[0.0 for _ in range(n)] for _ in range(n)]
+            nxt_rows: List[dict[int, float]] = [dict() for _ in range(n)]
             for i in range(n):
-                for k in range(n):
-                    if cur[i][k] == 0.0:
-                        continue
-                    aik = cur[i][k]
-                    pk = p[k]
-                    for j in range(n):
-                        if pk[j] != 0.0:
-                            nxt[i][j] += aik * pk[j]
-            cur = nxt
+                row = cur_rows[i]
+                if not row:
+                    continue
+                dst = nxt_rows[i]
+                for k, aik in row.items():
+                    for j, pkj in p_rows[k].items():
+                        dst[j] = dst.get(j, 0.0) + aik * pkj
+            cur_rows = nxt_rows
 
     out: List[List[float]] = []
     for v in range(n):
@@ -74,32 +77,31 @@ def _rwse_return_probs_directed(n: int, edges: Sequence[Tuple[int, int]], max_st
         if 0 <= u < n and 0 <= v < n and u != v:
             out_adj[u].append(v)
 
-    p = [[0.0 for _ in range(n)] for _ in range(n)]
+    p_rows: List[dict[int, float]] = [dict() for _ in range(n)]
     for i in range(n):
         deg = len(out_adj[i])
         if deg == 0:
             continue
         w = 1.0 / deg
         for j in out_adj[i]:
-            p[i][j] += w
+            p_rows[i][j] = p_rows[i].get(j, 0.0) + w
 
-    cur = [row[:] for row in p]
+    cur_rows = [row.copy() for row in p_rows]
     diag_by_step = [[0.0 for _ in range(n)] for _ in range(max_step + 1)]
     for s in range(1, max_step + 1):
         for i in range(n):
-            diag_by_step[s][i] = cur[i][i]
+            diag_by_step[s][i] = cur_rows[i].get(i, 0.0)
         if s < max_step:
-            nxt = [[0.0 for _ in range(n)] for _ in range(n)]
+            nxt_rows: List[dict[int, float]] = [dict() for _ in range(n)]
             for i in range(n):
-                for k in range(n):
-                    if cur[i][k] == 0.0:
-                        continue
-                    aik = cur[i][k]
-                    pk = p[k]
-                    for j in range(n):
-                        if pk[j] != 0.0:
-                            nxt[i][j] += aik * pk[j]
-            cur = nxt
+                row = cur_rows[i]
+                if not row:
+                    continue
+                dst = nxt_rows[i]
+                for k, aik in row.items():
+                    for j, pkj in p_rows[k].items():
+                        dst[j] = dst.get(j, 0.0) + aik * pkj
+            cur_rows = nxt_rows
 
     out: List[List[float]] = []
     for v in range(n):
@@ -112,6 +114,10 @@ def _motif_counts_undirected(g: nx.Graph) -> Tuple[List[int], List[int], List[in
     tri = [0] * n
     four_cycle = [0] * n
     four_clique = [0] * n
+
+    # Keep motif extraction bounded: skip exact motif counting on large kernels.
+    if n > MAX_EXACT_4NODE_MOTIF_NODES:
+        return tri, four_cycle, four_clique
 
     tri_map = nx.triangles(g)
     for v, c in tri_map.items():
