@@ -26,6 +26,7 @@ Usage:
 """
 
 import sys
+sys.setrecursionlimit(20000)
 import argparse
 import time
 import math
@@ -211,6 +212,12 @@ def kernelize_directed_graph(n, edges):
     Returns:
       (kernel_n, kernel_edges, forced, new_to_old)
     """
+    # Tarjan SCC below is recursive; large/deep directed instances can exceed
+    # Python's default recursion limit (~1000) without this safeguard.
+    needed_limit = max(2000, 4 * n + 100)
+    if sys.getrecursionlimit() < needed_limit:
+        sys.setrecursionlimit(needed_limit)
+
     out_adj = [set() for _ in range(n)]
     in_adj = [set() for _ in range(n)]
     for u, v in edges:

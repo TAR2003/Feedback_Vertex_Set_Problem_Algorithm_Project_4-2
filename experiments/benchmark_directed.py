@@ -52,6 +52,7 @@ PACE data remains supported as-is:
 import argparse
 import os
 import sys
+sys.setrecursionlimit(20000)
 import time
 import csv
 import multiprocessing as mp
