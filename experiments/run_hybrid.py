@@ -440,11 +440,55 @@ def _load_model_with_checkpoint(model_cls, weights_path, directed=False, hidden_
     return model, hidden_dim
 
 
+def _pick_gnn_candidates_from_probs(
+    positive_probs,
+    threshold=0.2,
+    min_fraction=0.01,
+    max_fraction=0.15,
+):
+    """
+    Select robust GNN candidates from per-vertex positive probabilities.
+
+    Strategy:
+      1) Primary: vertices with p >= threshold.
+      2) Fallback: if empty, take top-k by probability (k ~= min_fraction * n).
+      3) Safety cap: if too many pass, keep only top-k by probability
+         (k ~= max_fraction * n).
+
+    Returns:
+      (candidate_set, mode_string)
+    """
+    torch = get_torch()
+    if torch is None:
+        return set(), "unavailable"
+
+    n = int(positive_probs.numel())
+    if n == 0:
+        return set(), "empty-graph"
+
+    min_k = max(1, int(math.ceil(n * max(0.0, min_fraction))))
+    max_k = max(min_k, int(math.ceil(n * max(0.0, max_fraction))))
+
+    selected = (positive_probs >= threshold).nonzero(as_tuple=True)[0]
+    mode = "threshold"
+
+    if selected.numel() == 0:
+        k = min(min_k, n)
+        selected = torch.topk(positive_probs, k).indices
+        mode = "topk-fallback"
+    elif selected.numel() > max_k:
+        k = min(max_k, n)
+        selected = torch.topk(positive_probs, k).indices
+        mode = "threshold-capped"
+
+    return set(selected.tolist()), mode
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  GNN Inference
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def run_gnn_undirected(n, edges, threshold=0.4, hidden_dim=None):
+def run_gnn_undirected(n, edges, threshold=0.2, hidden_dim=None):
     """
     Run undirected GNN. Returns set of predicted FVS vertex indices.
     Returns None if GNN is unavailable.
@@ -475,11 +519,17 @@ def run_gnn_undirected(n, edges, threshold=0.4, hidden_dim=None):
         x = torch.tensor(feats, dtype=torch.float)
         ei = make_edge_index(edges, n, bidirected=True)
 
-        gnn_candidates = set(model.predict_fvs(x, ei, threshold=threshold))
+        with torch.no_grad():
+            logits = model(x, ei)
+            pos_probs = logits.exp()[:, 1]
+        gnn_candidates, selection_mode = _pick_gnn_candidates_from_probs(
+            pos_probs,
+            threshold=threshold,
+        )
         hidden_note = f", hidden={used_hidden}" if used_hidden is not None else ""
         print(
             f"  [GNN] Predicted {len(gnn_candidates)} / {n} vertices as FVS candidates "
-            f"(threshold={threshold}{hidden_note})"
+            f"(threshold={threshold}, mode={selection_mode}{hidden_note})"
         )
         return gnn_candidates
 
@@ -488,7 +538,7 @@ def run_gnn_undirected(n, edges, threshold=0.4, hidden_dim=None):
         return None
 
 
-def run_gnn_directed(n, edges, threshold=0.4, hidden_dim=None):
+def run_gnn_directed(n, edges, threshold=0.2, hidden_dim=None):
     """
     Run directed GNN (DiGCN). Returns set of predicted DFVS vertex indices.
     Returns None if GNN is unavailable.
@@ -519,11 +569,17 @@ def run_gnn_directed(n, edges, threshold=0.4, hidden_dim=None):
         x = torch.tensor(feats, dtype=torch.float)
         ei = make_edge_index(edges, n, bidirected=False)
 
-        gnn_candidates = set(model.predict_dfvs(x, ei, threshold=threshold))
+        with torch.no_grad():
+            logits = model(x, ei)
+            pos_probs = logits.exp()[:, 1]
+        gnn_candidates, selection_mode = _pick_gnn_candidates_from_probs(
+            pos_probs,
+            threshold=threshold,
+        )
         hidden_note = f", hidden={used_hidden}" if used_hidden is not None else ""
         print(
             f"  [GNN] Predicted {len(gnn_candidates)} / {n} vertices as DFVS candidates "
-            f"(threshold={threshold}{hidden_note})"
+            f"(threshold={threshold}, mode={selection_mode}{hidden_note})"
         )
         return gnn_candidates
 
@@ -537,7 +593,7 @@ def run_gnn_directed(n, edges, threshold=0.4, hidden_dim=None):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def gnn_KMA_solve_undirected(n, edges, pop_size=60, max_gens=300,
-                            gnn_threshold=0.4, gnn_hidden_dim=None):
+                            gnn_threshold=0.2, gnn_hidden_dim=None):
     """
     GNN-KMA: kernelize → GNN on kernel → KMA refinement for undirected FVS.
 
@@ -557,25 +613,55 @@ def gnn_KMA_solve_undirected(n, edges, pop_size=60, max_gens=300,
         k_n, k_edges, threshold=gnn_threshold, hidden_dim=gnn_hidden_dim
     )
 
-    if gnn_candidates is not None and len(gnn_candidates) > 0:
-        print(f"  [KMA] Using GNN-guided kernel core (pop={pop_size}, gens={max_gens})")
-    else:
+    if gnn_candidates is None:
         print(f"  [KMA] GNN unavailable, running pure KMA (pop={pop_size}, gens={max_gens})")
-
-    # Step 2: KMA refinement on the kernel graph.
-    if hasattr(cpp_engine, "solve_undirected_KMA"):
-        kernel_fvs = cpp_engine.solve_undirected_KMA(k_n, k_edges, pop_size, max_gens)
-    elif hasattr(cpp_engine, "solve_undirected_KMA"):
-        kernel_fvs = cpp_engine.solve_undirected_KMA(k_n, k_edges, pop_size, max_gens)
+        fixed_kernel = set()
+        reduced_n = k_n
+        reduced_edges = k_edges
+        reduced_to_kernel = list(range(k_n))
     else:
-        kernel_fvs = cpp_engine.solve_undirected_MA(k_n, k_edges, pop_size, max_gens)
+        fixed_kernel = {v for v in gnn_candidates if 0 <= v < k_n}
+        if fixed_kernel:
+            print(
+                f"  [KMA] Using GNN-guided kernel core "
+                f"(fixed={len(fixed_kernel)}, pop={pop_size}, gens={max_gens})"
+            )
+            keep_kernel = [v for v in range(k_n) if v not in fixed_kernel]
+            kernel_to_reduced = {old: i for i, old in enumerate(keep_kernel)}
+            reduced_edges = [
+                (kernel_to_reduced[u], kernel_to_reduced[v])
+                for u, v in k_edges
+                if u in kernel_to_reduced and v in kernel_to_reduced
+            ]
+            reduced_n = len(keep_kernel)
+            reduced_to_kernel = keep_kernel
+        else:
+            print(f"  [KMA] GNN produced no fixed hints, running standard KMA (pop={pop_size}, gens={max_gens})")
+            reduced_n = k_n
+            reduced_edges = k_edges
+            reduced_to_kernel = list(range(k_n))
 
+    # Step 2: KMA refinement on the reduced kernel graph.
+    if reduced_n > 0:
+        if hasattr(cpp_engine, "solve_undirected_KMA"):
+            reduced_fvs = cpp_engine.solve_undirected_KMA(reduced_n, reduced_edges, pop_size, max_gens)
+        elif hasattr(cpp_engine, "solve_undirected_KMA"):
+            reduced_fvs = cpp_engine.solve_undirected_KMA(reduced_n, reduced_edges, pop_size, max_gens)
+        else:
+            reduced_fvs = cpp_engine.solve_undirected_MA(reduced_n, reduced_edges, pop_size, max_gens)
+    else:
+        reduced_fvs = []
+
+    kernel_fvs = set(fixed_kernel)
+    kernel_fvs.update(
+        reduced_to_kernel[v] for v in reduced_fvs if 0 <= v < len(reduced_to_kernel)
+    )
     mapped = [k_new_to_old[v] for v in kernel_fvs if 0 <= v < len(k_new_to_old)]
     return sorted(set(forced).union(mapped))
 
 
 def gnn_KMA_solve_directed(n, edges, pop_size=60, max_gens=300,
-                          gnn_threshold=0.4, gnn_hidden_dim=None):
+                          gnn_threshold=0.2, gnn_hidden_dim=None):
     """
     GNN-KMA: kernelize → GNN on kernel → KMA refinement for directed FVS.
     """
@@ -591,18 +677,48 @@ def gnn_KMA_solve_directed(n, edges, pop_size=60, max_gens=300,
         k_n, k_edges, threshold=gnn_threshold, hidden_dim=gnn_hidden_dim
     )
 
-    if gnn_candidates is not None and len(gnn_candidates) > 0:
-        print(f"  [KMA] Using GNN-guided kernel core (pop={pop_size}, gens={max_gens})")
-    else:
+    if gnn_candidates is None:
         print(f"  [KMA] GNN unavailable, running pure KMA (pop={pop_size}, gens={max_gens})")
-
-    if hasattr(cpp_engine, "solve_directed_KMA"):
-        kernel_fvs = cpp_engine.solve_directed_KMA(k_n, k_edges, pop_size, max_gens)
-    elif hasattr(cpp_engine, "solve_directed_KMA"):
-        kernel_fvs = cpp_engine.solve_directed_KMA(k_n, k_edges, pop_size, max_gens)
+        fixed_kernel = set()
+        reduced_n = k_n
+        reduced_edges = k_edges
+        reduced_to_kernel = list(range(k_n))
     else:
-        kernel_fvs = cpp_engine.solve_directed_MA(k_n, k_edges, pop_size, max_gens)
+        fixed_kernel = {v for v in gnn_candidates if 0 <= v < k_n}
+        if fixed_kernel:
+            print(
+                f"  [KMA] Using GNN-guided kernel core "
+                f"(fixed={len(fixed_kernel)}, pop={pop_size}, gens={max_gens})"
+            )
+            keep_kernel = [v for v in range(k_n) if v not in fixed_kernel]
+            kernel_to_reduced = {old: i for i, old in enumerate(keep_kernel)}
+            reduced_edges = [
+                (kernel_to_reduced[u], kernel_to_reduced[v])
+                for u, v in k_edges
+                if u in kernel_to_reduced and v in kernel_to_reduced
+            ]
+            reduced_n = len(keep_kernel)
+            reduced_to_kernel = keep_kernel
+        else:
+            print(f"  [KMA] GNN produced no fixed hints, running standard KMA (pop={pop_size}, gens={max_gens})")
+            reduced_n = k_n
+            reduced_edges = k_edges
+            reduced_to_kernel = list(range(k_n))
 
+    if reduced_n > 0:
+        if hasattr(cpp_engine, "solve_directed_KMA"):
+            reduced_fvs = cpp_engine.solve_directed_KMA(reduced_n, reduced_edges, pop_size, max_gens)
+        elif hasattr(cpp_engine, "solve_directed_KMA"):
+            reduced_fvs = cpp_engine.solve_directed_KMA(reduced_n, reduced_edges, pop_size, max_gens)
+        else:
+            reduced_fvs = cpp_engine.solve_directed_MA(reduced_n, reduced_edges, pop_size, max_gens)
+    else:
+        reduced_fvs = []
+
+    kernel_fvs = set(fixed_kernel)
+    kernel_fvs.update(
+        reduced_to_kernel[v] for v in reduced_fvs if 0 <= v < len(reduced_to_kernel)
+    )
     mapped = [k_new_to_old[v] for v in kernel_fvs if 0 <= v < len(k_new_to_old)]
     return sorted(set(forced).union(mapped))
 
@@ -634,8 +750,8 @@ def main():
         help="KMA maximum generations (default: 300)"
     )
     parser.add_argument(
-        "--threshold", type=float, default=0.4,
-        help="GNN probability threshold for FVS candidate selection (default: 0.4)"
+        "--threshold", type=float, default=0.2,
+        help="GNN probability threshold for FVS candidate selection (default: 0.2)"
     )
     parser.add_argument(
         "--gnn-hidden", type=int, default=None,
