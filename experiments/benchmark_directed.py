@@ -647,7 +647,7 @@ def main():
         help="[MA only] Population size (default: 50)"
     )
     parser.add_argument(
-        "--gens", type=int, default=200,
+        "--gens", "--gen", type=int, default=200,
         help="[MA only] Maximum generations (default: 200)"
     )
     parser.add_argument(

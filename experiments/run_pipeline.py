@@ -185,6 +185,8 @@ def run_undirected(
     algo: str,
     pop: int,
     gens: int,
+    gnn_threshold: float,
+    gnn_hidden: int | None,
     quiet: bool,
     synthetic_dir: Path,
     synthetic_only: bool,
@@ -210,7 +212,11 @@ def run_undirected(
             str(pop),
             "--gens",
             str(gens),
+            "--gnn-threshold",
+            str(gnn_threshold),
         ]
+        if gnn_hidden is not None:
+            cmd.extend(["--gnn-hidden", str(gnn_hidden)])
         if quiet:
             cmd.append("--quiet")
 
@@ -225,7 +231,7 @@ def run_undirected(
                 RESULTS_DIR / "undirected_IC.csv",
                 RESULTS_DIR / "undirected_MA.csv",
                 RESULTS_DIR / "undirected_KMA.csv",
-                RESULTS_DIR / "undirected_GNN-KME.csv",
+                RESULTS_DIR / "undirected_GNN-KMA.csv",
             ])
         else:
             outputs.append(RESULTS_DIR / f"undirected_{algo}.csv")
@@ -237,6 +243,8 @@ def run_directed(
     algo: str,
     pop: int,
     gens: int,
+    gnn_threshold: float,
+    gnn_hidden: int | None,
     quiet: bool,
     include_pace: bool,
     synthetic_dir: Path,
@@ -265,7 +273,11 @@ def run_directed(
             str(pop),
             "--gens",
             str(gens),
+            "--gnn-threshold",
+            str(gnn_threshold),
         ]
+        if gnn_hidden is not None:
+            cmd.extend(["--gnn-hidden", str(gnn_hidden)])
         if quiet:
             cmd.append("--quiet")
 
@@ -280,7 +292,7 @@ def run_directed(
                 RESULTS_DIR / "directed_IC.csv",
                 RESULTS_DIR / "directed_MA.csv",
                 RESULTS_DIR / "directed_KMA.csv",
-                RESULTS_DIR / "directed_GNN-KME.csv",
+                RESULTS_DIR / "directed_GNN-KMA.csv",
             ])
         else:
             outputs.append(RESULTS_DIR / f"directed_{algo}.csv")
@@ -306,13 +318,25 @@ def main() -> None:
     )
     parser.add_argument(
         "--algo",
-        choices=["BST", "IC", "MA", "KMA", "GNN-KME", "ALL"],
+        choices=["BST", "IC", "MA", "KMA", "GNN-KMA", "ALL"],
         type=str.upper,
         default="ALL",
         help="Algorithm selection forwarded to benchmark scripts",
     )
-    parser.add_argument("--pop", type=int, default=50, help="Population size for MA/GNN-KME")
-    parser.add_argument("--gens", type=int, default=200, help="Max generations for MA/GNN-KME")
+    parser.add_argument("--pop", type=int, default=50, help="Population size for MA/GNN-KMA")
+    parser.add_argument("--gens", "--gen", type=int, default=200, help="Max generations for MA/GNN-KMA")
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=0.2,
+        help="[GNN-KMA only] Probability threshold for GNN candidate selection (default: 0.2)",
+    )
+    parser.add_argument(
+        "--gnn-hidden",
+        type=int,
+        default=None,
+        help="[GNN-KMA only] Optional hidden dimension override for GNN weights",
+    )
     parser.add_argument(
         "--include-pace",
         action="store_true",
@@ -382,6 +406,11 @@ def main() -> None:
     if args.skip_real or args.skip_synthetic or args.force:
         print("[INFO] Compatibility flags detected (--skip-real/--skip-synthetic/--force); ignored.")
 
+    if not (0.0 <= args.threshold <= 1.0):
+        raise ValueError("--threshold must be in [0.0, 1.0]")
+    if args.gnn_hidden is not None and args.gnn_hidden <= 0:
+        raise ValueError("--gnn-hidden must be a positive integer")
+
     validate_existing_datasets(
         mode=args.mode,
         total_undirected=args.total_undirected,
@@ -415,6 +444,8 @@ def main() -> None:
                 args.algo,
                 args.pop,
                 args.gens,
+                args.threshold,
+                args.gnn_hidden,
                 args.quiet,
                 selected_undirected_dir,
                 args.synthetic_only,
@@ -427,6 +458,8 @@ def main() -> None:
                 args.algo,
                 args.pop,
                 args.gens,
+                args.threshold,
+                args.gnn_hidden,
                 args.quiet,
                 args.include_pace,
                 selected_directed_dir,

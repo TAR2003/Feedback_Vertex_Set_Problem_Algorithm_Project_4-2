@@ -723,6 +723,12 @@ def gnn_KMA_solve_directed(n, edges, pop_size=60, max_gens=300,
     return sorted(set(forced).union(mapped))
 
 
+# Backward-compatible alias names for legacy imports
+# (existing code used gnn_kme_solve_* while implementation is gnn_KMA_solve_*)
+gnn_kme_solve_undirected = gnn_KMA_solve_undirected
+gnn_kme_solve_directed = gnn_KMA_solve_directed
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Main
 # ═══════════════════════════════════════════════════════════════════════════════

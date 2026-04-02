@@ -114,8 +114,8 @@ python experiments/run_benchmark_suite.py
 
 What this single command runs by default (`--profile requested`):
 
-- Directed exact track: `BST`, `IC`, `MA`, `KMA`, `GNN-KME`
-- Undirected heuristic track: `MA`, `KMA`, `GNN-KME`
+- Directed exact track: `BST`, `IC`, `MA`, `KMA`, `GNN-KMA`
+- Undirected heuristic track: `MA`, `KMA`, `GNN-KMA`
 
 Run the full matrix instead:
 
@@ -125,8 +125,8 @@ python experiments/run_benchmark_suite.py --profile full
 
 Full profile runs:
 
-- Exact track (`data/synthetic/*/exact_track`): `BST`, `IC`, `MA`, `KMA`, `GNN-KME`
-- Heuristic track (`data/synthetic/*/heuristic_track`): `MA`, `KMA`, `GNN-KME`
+- Exact track (`data/synthetic/*/exact_track`): `BST`, `IC`, `MA`, `KMA`, `GNN-KMA`
+- Heuristic track (`data/synthetic/*/heuristic_track`): `MA`, `KMA`, `GNN-KMA`
 - Families: both undirected and directed
 
 ### Resume behavior (skip already-run files)
@@ -146,7 +146,7 @@ python experiments/run_benchmark_suite.py --rerun
 # Only directed family
 python experiments/run_benchmark_suite.py --mode directed
 
-# Faster MA/KMA/GNN-KME test run
+# Faster MA/KMA/GNN-KMA test run
 python experiments/run_benchmark_suite.py --pop 20 --gens 50 --quiet
 
 # Tiny smoke run (1 file per suite task)
@@ -575,19 +575,19 @@ python experiments/benchmark_directed.py --algo ALL --test data/raw_directed/sam
 
 ---
 
-## 9. Running the Combined Model WITH GNN (Phase 3 — GNN-KME)
+## 9. Running the Combined Model WITH GNN (Phase 3 — GNN-KMA)
 
-The GNN-KME mode uses the GNN to **predict which vertices are likely in the FVS**, then passes those predictions to the Memetic Algorithm as a warm start. This lets MA begin from a much better initial population, converging faster and to better solutions.
+The GNN-KMA mode uses the GNN to **predict which vertices are likely in the FVS**, then passes those predictions to the Memetic Algorithm as a warm start. This lets MA begin from a much better initial population, converging faster and to better solutions.
 
-### Prerequisites for GNN-KME mode
+### Prerequisites for GNN-KMA mode
 
 1. PyTorch and torch-geometric must be installed (see Step 1 of setup).
 2. Trained weights must exist in `gnn_model/weights/`.
-3. `--algo GNN-KME` flag is used.
+3. `--algo GNN-KMA` flag is used.
 
-### Create the GNN-KME runner script
+### Create the GNN-KMA runner script
 
-The GNN-KME mode is implemented as an extension of the benchmark scripts. You need to add a small Python wrapper. Create `experiments/run_hybrid.py`:
+The GNN-KMA mode is implemented as an extension of the benchmark scripts. You need to add a small Python wrapper. Create `experiments/run_hybrid.py`:
 
 ```python
 #!/usr/bin/env python3
@@ -631,10 +631,10 @@ def get_directed_features(n, edges):
     return [[ind[v]/max(n-1,1), outd[v]/max(n-1,1),
              min(ind[v],outd[v])/max(n-1,1)] for v in range(n)]
 
-def GNN-KME_undirected(n, edges, pop_size=60, max_gens=300):
+def GNN-KMA_undirected(n, edges, pop_size=60, max_gens=300):
     weights = PROJECT_ROOT / "gnn_model" / "weights" / "undirected_fvs_gcn.pt"
     if not weights.exists():
-        print("  [GNN-KME] No trained weights found. Falling back to MA.")
+        print("  [GNN-KMA] No trained weights found. Falling back to MA.")
         return cpp_engine.solve_undirected_MA(n, edges, pop_size, max_gens)
 
     model = UndirectedFVSNet(); model.load_state_dict(torch.load(weights, map_location="cpu"))
@@ -653,10 +653,10 @@ def GNN-KME_undirected(n, edges, pop_size=60, max_gens=300):
     fvs = cpp_engine.solve_undirected_MA(n, edges, pop_size, max_gens)
     return fvs
 
-def GNN-KME_directed(n, edges, pop_size=60, max_gens=300):
+def GNN-KMA_directed(n, edges, pop_size=60, max_gens=300):
     weights = PROJECT_ROOT / "gnn_model" / "weights" / "directed_fvs_gcn.pt"
     if not weights.exists():
-        print("  [GNN-KME] No trained weights found. Falling back to MA.")
+        print("  [GNN-KMA] No trained weights found. Falling back to MA.")
         return cpp_engine.solve_directed_MA(n, edges, pop_size, max_gens)
 
     model = DirectedFVSNet(); model.load_state_dict(torch.load(weights, map_location="cpu"))
@@ -687,21 +687,21 @@ def main():
     start = time.perf_counter()
 
     if args.type == "undirected":
-        fvs   = GNN-KME_undirected(n, edges, args.pop, args.gens)
+        fvs   = GNN-KMA_undirected(n, edges, args.pop, args.gens)
         valid = verify_fvs(n, edges, fvs)
     else:
-        fvs   = GNN-KME_directed(n, edges, args.pop, args.gens)
+        fvs   = GNN-KMA_directed(n, edges, args.pop, args.gens)
         valid = verify_dfvs(n, edges, fvs)
 
     ms = (time.perf_counter() - start) * 1000
     status = "✓ VALID" if valid else "✗ INVALID"
-    print(f"  [GNN-KME] FVS size = {len(fvs)}  |  Time = {ms:.2f} ms  |  {status}")
+    print(f"  [GNN-KMA] FVS size = {len(fvs)}  |  Time = {ms:.2f} ms  |  {status}")
 
 if __name__ == "__main__":
     main()
 ```
 
-### Run GNN-KME on a single undirected graph
+### Run GNN-KMA on a single undirected graph
 
 ```bash
 python experiments/run_hybrid.py \
@@ -709,7 +709,7 @@ python experiments/run_hybrid.py \
     --type undirected
 ```
 
-### Run GNN-KME on a single directed graph
+### Run GNN-KMA on a single directed graph
 
 ```bash
 python experiments/run_hybrid.py \
@@ -717,7 +717,7 @@ python experiments/run_hybrid.py \
     --type directed
 ```
 
-### Run GNN-KME with larger population (better quality)
+### Run GNN-KMA with larger population (better quality)
 
 ```bash
 python experiments/run_hybrid.py \
@@ -727,12 +727,12 @@ python experiments/run_hybrid.py \
     --gens 500
 ```
 
-### Expected GNN-KME output
+### Expected GNN-KMA output
 
 ```
   Graph: 10 vertices, 15 edges  (undirected)
   [GNN]    Predicted 4 vertices as likely FVS candidates
-  [GNN-KME] FVS size = 3  |  Time = 48.21 ms  |  ✓ VALID
+  [GNN-KMA] FVS size = 3  |  Time = 48.21 ms  |  ✓ VALID
 ```
 
 ---
@@ -864,7 +864,7 @@ python gnn_model/dataset_gen.py --type both --n_graphs 2000 --max_n 80 --seed 42
 # Train both models
 python gnn_model/train.py --type both --epochs 200 --hidden 128
 
-# ── PHASE 3: GNN-KME GNN + MA ──────────────────────────────────────────────────
+# ── PHASE 3: GNN-KMA GNN + MA ──────────────────────────────────────────────────
 python experiments/run_hybrid.py --graph data/raw_undirected/sample_petersen.txt --type undirected
 python experiments/run_hybrid.py --graph data/raw_directed/sample_pace.gr        --type directed
 ```

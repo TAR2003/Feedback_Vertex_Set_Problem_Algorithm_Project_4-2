@@ -24,11 +24,11 @@ python experiments/benchmark_undirected.py --algo MA --test data/raw_undirected/
 # 6. Batch ALL algorithms on every file in a folder
 python experiments/benchmark_undirected.py --algo ALL --test data/synthetic/ --output comparison.csv
 
-# 7. GNN-KME (GNN-guided KMA) on one file with custom parameters
-python experiments/benchmark_undirected.py --algo GNN-KME --test data/raw_undirected/graph01.txt --pop 100 --gens 400
+# 7. GNN-KMA (GNN-guided KMA) on one file with custom parameters
+python experiments/benchmark_undirected.py --algo GNN-KMA --test data/raw_undirected/graph01.txt --pop 100 --gens 400
 
-# 8. GNN-KME on a folder of graphs
-python experiments/benchmark_undirected.py --algo GNN-KME --test data/raw_undirected/ --output undirected_GNN-KME_results.csv
+# 8. GNN-KMA on a folder of graphs
+python experiments/benchmark_undirected.py --algo GNN-KMA --test data/raw_undirected/ --output undirected_GNN-KMA_results.csv
 
 Supported --algo values
 ───────────────────────
@@ -36,8 +36,8 @@ Supported --algo values
   IC     — Iterative Compression (exact, faster in practice)
   MA     — Memetic Algorithm (heuristic, fast, scales to 10k+ vertices)
     KMA    — Kernelized Memetic Algorithm (kernelization + MA)
-    GNN-KME — GNN-guided KMA (combines GNN inference + kernelized MA refinement)
-    ALL    — Run BST, IC, MA, KMA, and GNN-KME on the same graph; print comparison table
+    GNN-KMA — GNN-guided KMA (combines GNN inference + kernelized MA refinement)
+    ALL    — Run BST, IC, MA, KMA, and GNN-KMA on the same graph; print comparison table
 
 File format (Universal TXT edge-list)
 ──────────────────────────────────────
@@ -85,8 +85,8 @@ except ImportError as e:
     print(f"       (Original error: {e})")
     sys.exit(1)
 
-# Try importing GNN-KME solver from run_hybrid.py (graceful fallback)
-# Note: Import is deferred until GNN-KME algorithm is actually requested to avoid slow startup
+# Try importing GNN-KMA solver from run_hybrid.py (graceful fallback)
+# Note: Import is deferred until GNN-KMA algorithm is actually requested to avoid slow startup
 HAS_GNN_KME = True  # Assume available; will fail gracefully at runtime if not
 
 
@@ -319,8 +319,16 @@ def get_dynamic_timeout_seconds(n: int) -> int:
     return 600
 
 
-def _undirected_worker_run(algo: str, n: int, edges: List[Tuple[int, int]],
-                           pop_size: int, max_gens: int, out_q: mp.Queue) -> None:
+def _undirected_worker_run(
+    algo: str,
+    n: int,
+    edges: List[Tuple[int, int]],
+    pop_size: int,
+    max_gens: int,
+    gnn_threshold: float,
+    gnn_hidden: int | None,
+    out_q: mp.Queue,
+) -> None:
     """Child-process worker that runs one algorithm and returns via queue."""
     try:
         start = time.perf_counter()
@@ -333,9 +341,9 @@ def _undirected_worker_run(algo: str, n: int, edges: List[Tuple[int, int]],
                 fvs = cpp_engine.solve_undirected_KME(n, edges, pop_size, max_gens)
             else:
                 fvs = cpp_engine.solve_undirected_MA(n, edges, pop_size, max_gens)
-        elif algo == "GNN-KME":
-            from run_hybrid import gnn_kme_solve_undirected
-            fvs = gnn_kme_solve_undirected(n, edges, pop_size, max_gens)
+        elif algo == "GNN-KMA":
+            from run_hybrid import gnn_KMA_solve_undirected
+            fvs = gnn_KMA_solve_undirected(n, edges, pop_size, max_gens)
         else:
             fvs = ALGO_MAP[algo](n, edges)
         elapsed_ms = (time.perf_counter() - start) * 1000.0
@@ -350,6 +358,8 @@ def run_algorithm_with_timeout(
     edges: List[Tuple[int, int]],
     pop_size: int,
     max_gens: int,
+    gnn_threshold: float,
+    gnn_hidden: int | None,
     timeout_s: int,
 ) -> Tuple[Optional[List[int]], Optional[float], Optional[str]]:
     """
@@ -364,7 +374,7 @@ def run_algorithm_with_timeout(
     out_q: mp.Queue = mp.Queue()
     proc = mp.Process(
         target=_undirected_worker_run,
-        args=(algo, n, edges, pop_size, max_gens, out_q),
+        args=(algo, n, edges, pop_size, max_gens, gnn_threshold, gnn_hidden, out_q),
     )
     proc.start()
     proc.join(timeout=timeout_s)
@@ -383,8 +393,15 @@ def run_algorithm_with_timeout(
         return payload, elapsed, None
     return None, None, f"ERROR: {payload}"
 
-def run_algorithm(algo: str, n: int, edges: List[Tuple[int, int]],
-                  pop_size: int = 50, max_gens: int = 200) -> Tuple[List[int], float]:
+def run_algorithm(
+    algo: str,
+    n: int,
+    edges: List[Tuple[int, int]],
+    pop_size: int = 50,
+    max_gens: int = 200,
+    gnn_threshold: float = 0.2,
+    gnn_hidden: int | None = None,
+) -> Tuple[List[int], float]:
     """
     Run a single algorithm and return (fvs, elapsed_ms).
     """
@@ -399,9 +416,16 @@ def run_algorithm(algo: str, n: int, edges: List[Tuple[int, int]],
             fvs = cpp_engine.solve_undirected_KME(n, edges, pop_size, max_gens)
         else:
             fvs = cpp_engine.solve_undirected_MA(n, edges, pop_size, max_gens)
-    elif algo == "GNN-KME":
-        from run_hybrid import gnn_kme_solve_undirected
-        fvs = gnn_kme_solve_undirected(n, edges, pop_size, max_gens)
+    elif algo == "GNN-KMA":
+        from run_hybrid import gnn_KMA_solve_undirected
+        fvs = gnn_KMA_solve_undirected(
+            n,
+            edges,
+            pop_size,
+            max_gens,
+            gnn_threshold=gnn_threshold,
+            gnn_hidden_dim=gnn_hidden,
+        )
     else:
         fn = ALGO_MAP[algo]
         fvs = fn(n, edges)
@@ -410,8 +434,16 @@ def run_algorithm(algo: str, n: int, edges: List[Tuple[int, int]],
     return fvs, elapsed_ms
 
 
-def run_on_file(filepath: str, algo: str, pop_size: int, max_gens: int,
-                results_dir: str = "results", verbose: bool = True) -> dict:
+def run_on_file(
+    filepath: str,
+    algo: str,
+    pop_size: int,
+    max_gens: int,
+    gnn_threshold: float = 0.2,
+    gnn_hidden: int | None = None,
+    results_dir: str = "results",
+    verbose: bool = True,
+) -> dict:
     """
     Parse a graph file, run the specified algorithm(s), and return results dict.
     If results_dir is provided, saves individual algorithm results to CSV files.
@@ -431,7 +463,7 @@ def run_on_file(filepath: str, algo: str, pop_size: int, max_gens: int,
         print(f"  Graph: {n} vertices, {len(edges)} edges")
         print(f"{'─' * 60}")
 
-    algos_to_run = ["BST", "IC", "MA", "KMA", "GNN-KME"] if algo == "ALL" else [algo]
+    algos_to_run = ["BST", "IC", "MA", "KMA", "GNN-KMA"] if algo == "ALL" else [algo]
 
     for alg in algos_to_run:
         # Check if this algorithm already processed this file
@@ -456,7 +488,7 @@ def run_on_file(filepath: str, algo: str, pop_size: int, max_gens: int,
             print(f"  Running {alg:4s} (timeout={timeout_s}s) ... ", end="", flush=True)
 
         fvs, elapsed_ms, error = run_algorithm_with_timeout(
-            alg, n, edges, pop_size, max_gens, timeout_s
+            alg, n, edges, pop_size, max_gens, gnn_threshold, gnn_hidden, timeout_s
         )
 
         # Build single-algorithm result row with unified schema.
@@ -512,8 +544,8 @@ def main():
     )
     parser.add_argument(
         "--algo", required=True,
-        choices=["BST", "IC", "MA", "KMA", "GNN-KME", "ALL"],
-        help="Algorithm to run: BST (exact), IC (exact), MA (heuristic), KMA (kernelized MA), GNN-KME (GNN+KMA), ALL (compare)"
+        choices=["BST", "IC", "MA", "KMA", "GNN-KMA", "ALL"],
+        help="Algorithm to run: BST (exact), IC (exact), MA (heuristic), KMA (kernelized MA), GNN-KMA (GNN+KMA), ALL (compare)"
     )
     parser.add_argument(
         "--test", required=True,
@@ -532,15 +564,30 @@ def main():
         help="[MA only] Population size (default: 50)"
     )
     parser.add_argument(
-        "--gens", type=int, default=200,
+        "--gens", "--gen", type=int, default=200,
         help="[MA only] Maximum generations (default: 200)"
     )
     parser.add_argument(
         "--quiet", action="store_true",
         help="Suppress per-run output (only print summary / CSV)"
     )
+    parser.add_argument(
+        "--gnn-threshold", type=float, default=0.2,
+        help="[GNN-KMA only] Probability threshold for GNN candidate selection (default: 0.2)"
+    )
+    parser.add_argument(
+        "--gnn-hidden", type=int, default=None,
+        help="[GNN-KMA only] Optional hidden dimension override for loading GNN weights"
+    )
 
     args = parser.parse_args()
+
+    if not (0.0 <= args.gnn_threshold <= 1.0):
+        print("ERROR: --gnn-threshold must be between 0.0 and 1.0")
+        sys.exit(1)
+    if args.gnn_hidden is not None and args.gnn_hidden <= 0:
+        print("ERROR: --gnn-hidden must be a positive integer")
+        sys.exit(1)
 
     # ── Collect input files ──────────────────────────────────────────────────
     test_path = Path(args.test)
@@ -561,10 +608,16 @@ def main():
     # ── Run benchmarks ───────────────────────────────────────────────────────
     all_results = []
     for filepath in files:
-        result = run_on_file(filepath, args.algo,
-                             args.pop, args.gens,
-                             results_dir=args.results_dir,
-                             verbose=not args.quiet)
+        result = run_on_file(
+            filepath,
+            args.algo,
+            args.pop,
+            args.gens,
+            gnn_threshold=args.gnn_threshold,
+            gnn_hidden=args.gnn_hidden,
+            results_dir=args.results_dir,
+            verbose=not args.quiet,
+        )
         if result:
             all_results.append(result)
 
@@ -575,7 +628,7 @@ def main():
         print(f"{'═' * 80}")
 
         if args.algo == "ALL":
-            algos_ran = ["BST", "IC", "MA", "KMA", "GNN-KME"]
+            algos_ran = ["BST", "IC", "MA", "KMA", "GNN-KMA"]
         else:
             algos_ran = [args.algo]
         header = f"  {'File':<30} {'n':>6} {'m':>8}"
