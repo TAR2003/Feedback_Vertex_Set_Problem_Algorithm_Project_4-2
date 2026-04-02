@@ -31,8 +31,8 @@ DIR_BENCH = PROJECT_ROOT / "experiments" / "benchmark_directed.py"
 
 GRAPH_EXTENSIONS = {".txt", ".gr", ".edges", ".graph", ".dimacs", ".mtx"}
 
-EXACT_ALGOS = ["BST", "IC", "MA", "KMA", "GNN-KMA"]
-HEURISTIC_ALGOS = ["MA", "KMA", "GNN-KMA"]
+EXACT_ALGOS = ["BST", "IC", "MA", "KMA", "GNN-KMA", "GNN-KMA-2"]
+HEURISTIC_ALGOS = ["MA", "KMA", "GNN-KMA", "GNN-KMA-2"]
 
 
 @dataclass
@@ -341,8 +341,8 @@ def main() -> None:
         default="requested",
         help="Task profile: requested (directed exact all + undirected heuristic only) or full",
     )
-    parser.add_argument("--pop", type=int, default=50, help="Population size for MA/KMA/GNN-KMA")
-    parser.add_argument("--gens", type=int, default=200, help="Max generations for MA/KMA/GNN-KMA")
+    parser.add_argument("--pop", type=int, default=50, help="Population size for MA/KMA/GNN-KMA variants")
+    parser.add_argument("--gens", type=int, default=200, help="Max generations for MA/KMA/GNN-KMA variants")
     parser.add_argument("--quiet", action="store_true", help="Forward quiet mode to benchmark scripts")
     parser.add_argument(
         "--rerun",

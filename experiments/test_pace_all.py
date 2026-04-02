@@ -62,7 +62,7 @@ def run_algorithm_on_instance(algo: str, graph_file: str, graph_type: str = "dir
     try:
         start = time.time()
 
-        if algo == "GNN-KMA":
+        if algo in {"GNN-KMA", "GNN-KMA-2"}:
             cmd = [
                 sys.executable,
                 str(PROJECT_ROOT / "experiments" / "run_hybrid.py"),
@@ -71,6 +71,8 @@ def run_algorithm_on_instance(algo: str, graph_file: str, graph_type: str = "dir
                 "--pop", str(pop),
                 "--gens", str(gens),
             ]
+            if algo == "GNN-KMA-2":
+                cmd.extend(["--mode", "GNN-KMA-2"])
         else:
             script_name = f"benchmark_{graph_type}.py"
             cmd = [
@@ -124,9 +126,9 @@ def main():
     parser.add_argument("--type", choices=["directed", "undirected"], default="directed",
                        help="Graph type")
     parser.add_argument("--filter", default="", help="Filter instances by name pattern")
-    parser.add_argument("--pop", type=int, default=100, help="Population size for MA/GNN-KMA")
-    parser.add_argument("--gens", type=int, default=300, help="Generations for MA/GNN-KMA")
-    parser.add_argument("--algorithms", default="IC,BST,MA,GNN-KMA",
+    parser.add_argument("--pop", type=int, default=100, help="Population size for MA/GNN-KMA variants")
+    parser.add_argument("--gens", type=int, default=300, help="Generations for MA/GNN-KMA variants")
+    parser.add_argument("--algorithms", default="IC,BST,MA,GNN-KMA,GNN-KMA-2",
                        help="Comma-separated algorithms to test")
     args = parser.parse_args()
 

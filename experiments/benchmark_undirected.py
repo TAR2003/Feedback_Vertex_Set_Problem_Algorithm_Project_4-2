@@ -344,6 +344,16 @@ def _undirected_worker_run(
         elif algo == "GNN-KMA":
             from run_hybrid import gnn_KMA_solve_undirected
             fvs = gnn_KMA_solve_undirected(n, edges, pop_size, max_gens)
+        elif algo == "GNN-KMA-2":
+            from run_hybrid import gnn_KMA2_solve_undirected
+            fvs = gnn_KMA2_solve_undirected(
+                n,
+                edges,
+                pop_size,
+                max_gens,
+                gnn_threshold=gnn_threshold,
+                gnn_hidden_dim=gnn_hidden,
+            )
         else:
             fvs = ALGO_MAP[algo](n, edges)
         elapsed_ms = (time.perf_counter() - start) * 1000.0
@@ -426,6 +436,16 @@ def run_algorithm(
             gnn_threshold=gnn_threshold,
             gnn_hidden_dim=gnn_hidden,
         )
+    elif algo == "GNN-KMA-2":
+        from run_hybrid import gnn_KMA2_solve_undirected
+        fvs = gnn_KMA2_solve_undirected(
+            n,
+            edges,
+            pop_size,
+            max_gens,
+            gnn_threshold=gnn_threshold,
+            gnn_hidden_dim=gnn_hidden,
+        )
     else:
         fn = ALGO_MAP[algo]
         fvs = fn(n, edges)
@@ -463,7 +483,7 @@ def run_on_file(
         print(f"  Graph: {n} vertices, {len(edges)} edges")
         print(f"{'─' * 60}")
 
-    algos_to_run = ["BST", "IC", "MA", "KMA", "GNN-KMA"] if algo == "ALL" else [algo]
+    algos_to_run = ["BST", "IC", "MA", "KMA", "GNN-KMA", "GNN-KMA-2"] if algo == "ALL" else [algo]
 
     for alg in algos_to_run:
         # Check if this algorithm already processed this file
@@ -544,8 +564,8 @@ def main():
     )
     parser.add_argument(
         "--algo", required=True,
-        choices=["BST", "IC", "MA", "KMA", "GNN-KMA", "ALL"],
-        help="Algorithm to run: BST (exact), IC (exact), MA (heuristic), KMA (kernelized MA), GNN-KMA (GNN+KMA), ALL (compare)"
+        choices=["BST", "IC", "MA", "KMA", "GNN-KMA", "GNN-KMA-2", "ALL"],
+        help="Algorithm to run: BST (exact), IC (exact), MA (heuristic), KMA (kernelized MA), GNN-KMA (GNN+KMA), GNN-KMA-2 (advanced features), ALL (compare)"
     )
     parser.add_argument(
         "--test", required=True,
@@ -573,11 +593,11 @@ def main():
     )
     parser.add_argument(
         "--gnn-threshold", type=float, default=0.2,
-        help="[GNN-KMA only] Probability threshold for GNN candidate selection (default: 0.2)"
+        help="[GNN-KMA/GNN-KMA-2 only] Probability threshold for GNN candidate selection (default: 0.2)"
     )
     parser.add_argument(
         "--gnn-hidden", type=int, default=None,
-        help="[GNN-KMA only] Optional hidden dimension override for loading GNN weights"
+        help="[GNN-KMA/GNN-KMA-2 only] Optional hidden dimension override for loading GNN weights"
     )
 
     args = parser.parse_args()
@@ -628,7 +648,7 @@ def main():
         print(f"{'═' * 80}")
 
         if args.algo == "ALL":
-            algos_ran = ["BST", "IC", "MA", "KMA", "GNN-KMA"]
+            algos_ran = ["BST", "IC", "MA", "KMA", "GNN-KMA", "GNN-KMA-2"]
         else:
             algos_ran = [args.algo]
         header = f"  {'File':<30} {'n':>6} {'m':>8}"

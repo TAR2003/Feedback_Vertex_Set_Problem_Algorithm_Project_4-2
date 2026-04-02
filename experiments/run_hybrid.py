@@ -41,6 +41,11 @@ for candidate in ("build-linux", "build-macos", "build-win", "build"):
 sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from gnn_model.feature_engineering_v2 import (
+    compute_node_features_directed_v2,
+    compute_node_features_undirected_v2,
+)
+
 try:
     import cpp_engine
 except ImportError as e:
@@ -57,6 +62,9 @@ HAS_TORCH = None  # None = not determined yet, will check on first use
 HAS_GNN = None  # None = not determined yet, will check on first use
 UndirectedFVSNet = None
 DirectedFVSNet = None
+HAS_GNN_V2 = None
+UndirectedFVSNetV2 = None
+DirectedFVSNetV2 = None
 
 try:
     import networkx as nx
@@ -98,6 +106,23 @@ def get_gnn_models():
             UndirectedFVSNet = None
             DirectedFVSNet = None
     return HAS_GNN, UndirectedFVSNet, DirectedFVSNet
+
+
+def get_gnn_models_v2():
+    """Lazy import of v2 GNN models for GNN-KMA-2."""
+    global HAS_GNN_V2, UndirectedFVSNetV2, DirectedFVSNetV2
+    if HAS_GNN_V2 is None:
+        try:
+            from gnn_model.model_undirected_v2 import UndirectedFVSNetV2 as UNetV2
+            from gnn_model.model_directed_v2 import DirectedFVSNetV2 as DNetV2
+            UndirectedFVSNetV2 = UNetV2
+            DirectedFVSNetV2 = DNetV2
+            HAS_GNN_V2 = True
+        except (ImportError, ModuleNotFoundError):
+            HAS_GNN_V2 = False
+            UndirectedFVSNetV2 = None
+            DirectedFVSNetV2 = None
+    return HAS_GNN_V2, UndirectedFVSNetV2, DirectedFVSNetV2
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -367,6 +392,20 @@ def get_directed_features(n, edges):
     return features
 
 
+def get_undirected_features_v2(n, edges):
+    """Advanced undirected structural features used by GNN-KMA-2."""
+    if not HAS_NX:
+        return get_undirected_features(n, edges)
+    return compute_node_features_undirected_v2(n, edges)
+
+
+def get_directed_features_v2(n, edges):
+    """Advanced directed structural features used by GNN-KMA-2."""
+    if not HAS_NX:
+        return get_directed_features(n, edges)
+    return compute_node_features_directed_v2(n, edges)
+
+
 def make_edge_index(edges, n, bidirected=False):
     """
     Convert edge list to PyTorch edge_index tensor.
@@ -588,6 +627,98 @@ def run_gnn_directed(n, edges, threshold=0.2, hidden_dim=None):
         return None
 
 
+def run_gnn_undirected_v2(n, edges, threshold=0.2, hidden_dim=None):
+    """Run undirected GNN-KMA-2 model with advanced structural features."""
+    torch = get_torch()
+    has_gnn_v2, UNetV2, _ = get_gnn_models_v2()
+    weights_path = PROJECT_ROOT / "gnn_model" / "weights" / "undirected_fvs_gcn_v2.pt"
+
+    if not has_gnn_v2 or torch is None:
+        print("  [GNN-2] PyTorch/GNN not available. Skipping GNN step.")
+        return None
+
+    if not weights_path.exists():
+        print(f"  [GNN-2] Weights not found at {weights_path}. Skipping GNN step.")
+        print("          Run: python gnn_model/train.py --type undirected --variant v2")
+        return None
+
+    try:
+        model, used_hidden = _load_model_with_checkpoint(
+            UNetV2,
+            weights_path,
+            directed=False,
+            hidden_dim_override=hidden_dim,
+        )
+        model.eval()
+
+        feats = get_undirected_features_v2(n, edges)
+        x = torch.tensor(feats, dtype=torch.float)
+        ei = make_edge_index(edges, n, bidirected=True)
+
+        with torch.no_grad():
+            logits = model(x, ei)
+            pos_probs = logits.exp()[:, 1]
+        gnn_candidates, selection_mode = _pick_gnn_candidates_from_probs(
+            pos_probs,
+            threshold=threshold,
+        )
+        hidden_note = f", hidden={used_hidden}" if used_hidden is not None else ""
+        print(
+            f"  [GNN-2] Predicted {len(gnn_candidates)} / {n} vertices as FVS candidates "
+            f"(threshold={threshold}, mode={selection_mode}{hidden_note})"
+        )
+        return gnn_candidates
+    except Exception as ex:
+        print(f"  [GNN-2] Error during inference: {ex}. Skipping GNN step.")
+        return None
+
+
+def run_gnn_directed_v2(n, edges, threshold=0.2, hidden_dim=None):
+    """Run directed GNN-KMA-2 model with advanced structural features."""
+    torch = get_torch()
+    has_gnn_v2, _, DNetV2 = get_gnn_models_v2()
+    weights_path = PROJECT_ROOT / "gnn_model" / "weights" / "directed_fvs_gcn_v2.pt"
+
+    if not has_gnn_v2 or torch is None:
+        print("  [GNN-2] PyTorch/GNN not available. Skipping GNN step.")
+        return None
+
+    if not weights_path.exists():
+        print(f"  [GNN-2] Weights not found at {weights_path}. Skipping GNN step.")
+        print("          Run: python gnn_model/train.py --type directed --variant v2")
+        return None
+
+    try:
+        model, used_hidden = _load_model_with_checkpoint(
+            DNetV2,
+            weights_path,
+            directed=True,
+            hidden_dim_override=hidden_dim,
+        )
+        model.eval()
+
+        feats = get_directed_features_v2(n, edges)
+        x = torch.tensor(feats, dtype=torch.float)
+        ei = make_edge_index(edges, n, bidirected=False)
+
+        with torch.no_grad():
+            logits = model(x, ei)
+            pos_probs = logits.exp()[:, 1]
+        gnn_candidates, selection_mode = _pick_gnn_candidates_from_probs(
+            pos_probs,
+            threshold=threshold,
+        )
+        hidden_note = f", hidden={used_hidden}" if used_hidden is not None else ""
+        print(
+            f"  [GNN-2] Predicted {len(gnn_candidates)} / {n} vertices as DFVS candidates "
+            f"(threshold={threshold}, mode={selection_mode}{hidden_note})"
+        )
+        return gnn_candidates
+    except Exception as ex:
+        print(f"  [GNN-2] Error during inference: {ex}. Skipping GNN step.")
+        return None
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  GNN-KMA Solver
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -723,10 +854,136 @@ def gnn_KMA_solve_directed(n, edges, pop_size=60, max_gens=300,
     return sorted(set(forced).union(mapped))
 
 
+def gnn_KMA2_solve_undirected(n, edges, pop_size=60, max_gens=300,
+                              gnn_threshold=0.2, gnn_hidden_dim=None):
+    """
+    GNN-KMA-2: kernelize -> GNN-v2 on kernel -> KMA refinement for undirected FVS.
+    """
+    if not HAS_CPP_ENGINE:
+        raise RuntimeError("cpp_engine not available. Please compile it first.")
+
+    k_n, k_edges, forced, k_new_to_old = kernelize_undirected_graph(n, edges)
+    if k_n == 0:
+        return forced
+
+    gnn_candidates = run_gnn_undirected_v2(
+        k_n, k_edges, threshold=gnn_threshold, hidden_dim=gnn_hidden_dim
+    )
+
+    if gnn_candidates is None:
+        print(f"  [KMA-2] GNN unavailable, running pure KMA (pop={pop_size}, gens={max_gens})")
+        fixed_kernel = set()
+        reduced_n = k_n
+        reduced_edges = k_edges
+        reduced_to_kernel = list(range(k_n))
+    else:
+        fixed_kernel = {v for v in gnn_candidates if 0 <= v < k_n}
+        if fixed_kernel:
+            print(
+                f"  [KMA-2] Using GNN-guided kernel core "
+                f"(fixed={len(fixed_kernel)}, pop={pop_size}, gens={max_gens})"
+            )
+            keep_kernel = [v for v in range(k_n) if v not in fixed_kernel]
+            kernel_to_reduced = {old: i for i, old in enumerate(keep_kernel)}
+            reduced_edges = [
+                (kernel_to_reduced[u], kernel_to_reduced[v])
+                for u, v in k_edges
+                if u in kernel_to_reduced and v in kernel_to_reduced
+            ]
+            reduced_n = len(keep_kernel)
+            reduced_to_kernel = keep_kernel
+        else:
+            print(f"  [KMA-2] GNN produced no fixed hints, running standard KMA (pop={pop_size}, gens={max_gens})")
+            reduced_n = k_n
+            reduced_edges = k_edges
+            reduced_to_kernel = list(range(k_n))
+
+    if reduced_n > 0:
+        if hasattr(cpp_engine, "solve_undirected_KMA"):
+            reduced_fvs = cpp_engine.solve_undirected_KMA(reduced_n, reduced_edges, pop_size, max_gens)
+        elif hasattr(cpp_engine, "solve_undirected_KMA"):
+            reduced_fvs = cpp_engine.solve_undirected_KMA(reduced_n, reduced_edges, pop_size, max_gens)
+        else:
+            reduced_fvs = cpp_engine.solve_undirected_MA(reduced_n, reduced_edges, pop_size, max_gens)
+    else:
+        reduced_fvs = []
+
+    kernel_fvs = set(fixed_kernel)
+    kernel_fvs.update(
+        reduced_to_kernel[v] for v in reduced_fvs if 0 <= v < len(reduced_to_kernel)
+    )
+    mapped = [k_new_to_old[v] for v in kernel_fvs if 0 <= v < len(k_new_to_old)]
+    return sorted(set(forced).union(mapped))
+
+
+def gnn_KMA2_solve_directed(n, edges, pop_size=60, max_gens=300,
+                            gnn_threshold=0.2, gnn_hidden_dim=None):
+    """
+    GNN-KMA-2: kernelize -> GNN-v2 on kernel -> KMA refinement for directed FVS.
+    """
+    if not HAS_CPP_ENGINE:
+        raise RuntimeError("cpp_engine not available. Please compile it first.")
+
+    k_n, k_edges, forced, k_new_to_old = kernelize_directed_graph(n, edges)
+    if k_n == 0:
+        return forced
+
+    gnn_candidates = run_gnn_directed_v2(
+        k_n, k_edges, threshold=gnn_threshold, hidden_dim=gnn_hidden_dim
+    )
+
+    if gnn_candidates is None:
+        print(f"  [KMA-2] GNN unavailable, running pure KMA (pop={pop_size}, gens={max_gens})")
+        fixed_kernel = set()
+        reduced_n = k_n
+        reduced_edges = k_edges
+        reduced_to_kernel = list(range(k_n))
+    else:
+        fixed_kernel = {v for v in gnn_candidates if 0 <= v < k_n}
+        if fixed_kernel:
+            print(
+                f"  [KMA-2] Using GNN-guided kernel core "
+                f"(fixed={len(fixed_kernel)}, pop={pop_size}, gens={max_gens})"
+            )
+            keep_kernel = [v for v in range(k_n) if v not in fixed_kernel]
+            kernel_to_reduced = {old: i for i, old in enumerate(keep_kernel)}
+            reduced_edges = [
+                (kernel_to_reduced[u], kernel_to_reduced[v])
+                for u, v in k_edges
+                if u in kernel_to_reduced and v in kernel_to_reduced
+            ]
+            reduced_n = len(keep_kernel)
+            reduced_to_kernel = keep_kernel
+        else:
+            print(f"  [KMA-2] GNN produced no fixed hints, running standard KMA (pop={pop_size}, gens={max_gens})")
+            reduced_n = k_n
+            reduced_edges = k_edges
+            reduced_to_kernel = list(range(k_n))
+
+    if reduced_n > 0:
+        if hasattr(cpp_engine, "solve_directed_KMA"):
+            reduced_fvs = cpp_engine.solve_directed_KMA(reduced_n, reduced_edges, pop_size, max_gens)
+        elif hasattr(cpp_engine, "solve_directed_KMA"):
+            reduced_fvs = cpp_engine.solve_directed_KMA(reduced_n, reduced_edges, pop_size, max_gens)
+        else:
+            reduced_fvs = cpp_engine.solve_directed_MA(reduced_n, reduced_edges, pop_size, max_gens)
+    else:
+        reduced_fvs = []
+
+    kernel_fvs = set(fixed_kernel)
+    kernel_fvs.update(
+        reduced_to_kernel[v] for v in reduced_fvs if 0 <= v < len(reduced_to_kernel)
+    )
+    mapped = [k_new_to_old[v] for v in kernel_fvs if 0 <= v < len(k_new_to_old)]
+    return sorted(set(forced).union(mapped))
+
+
 # Backward-compatible alias names for legacy imports
 # (existing code used gnn_kme_solve_* while implementation is gnn_KMA_solve_*)
 gnn_kme_solve_undirected = gnn_KMA_solve_undirected
 gnn_kme_solve_directed = gnn_KMA_solve_directed
+gnn_kma2_solve_undirected = gnn_KMA2_solve_undirected
+gnn_kma2_solve_directed = gnn_KMA2_solve_directed
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -767,6 +1024,12 @@ def main():
         "--compare", action="store_true",
         help="Also run pure KMA for comparison (shows GNN benefit)"
     )
+    parser.add_argument(
+        "--mode",
+        choices=["GNN-KMA", "GNN-KMA-2"],
+        default="GNN-KMA",
+        help="Hybrid mode: legacy GNN-KMA or advanced GNN-KMA-2",
+    )
 
     args = parser.parse_args()
 
@@ -796,7 +1059,7 @@ def main():
     print(f"{'─' * 60}")
 
     # ── GNN-KMA run ────────────────────────────────────────────────────────────
-    print(f"\n  ── GNN-KMA (GNN + KMA) ──")
+    print(f"\n  ── {args.mode} (GNN + KMA) ──")
     
     if not HAS_CPP_ENGINE:
         print("ERROR: cpp_engine not available. Please compile it:")
@@ -806,14 +1069,24 @@ def main():
     start = time.perf_counter()
 
     if args.type == "undirected":
-        fvs   = gnn_KMA_solve_undirected(
-            n, edges, args.pop, args.gens, args.threshold, args.gnn_hidden
-        )
+        if args.mode == "GNN-KMA-2":
+            fvs = gnn_KMA2_solve_undirected(
+                n, edges, args.pop, args.gens, args.threshold, args.gnn_hidden
+            )
+        else:
+            fvs = gnn_KMA_solve_undirected(
+                n, edges, args.pop, args.gens, args.threshold, args.gnn_hidden
+            )
         valid = verify_fvs(n, edges, fvs)
     else:
-        fvs   = gnn_KMA_solve_directed(
-            n, edges, args.pop, args.gens, args.threshold, args.gnn_hidden
-        )
+        if args.mode == "GNN-KMA-2":
+            fvs = gnn_KMA2_solve_directed(
+                n, edges, args.pop, args.gens, args.threshold, args.gnn_hidden
+            )
+        else:
+            fvs = gnn_KMA_solve_directed(
+                n, edges, args.pop, args.gens, args.threshold, args.gnn_hidden
+            )
         valid = verify_dfvs(n, edges, fvs)
 
     elapsed_ms = (time.perf_counter() - start) * 1000.0
@@ -848,7 +1121,7 @@ def main():
 
         # Print comparison
         print(f"\n  ── Comparison ──")
-        print(f"  GNN-KMA : {len(fvs):>4} vertices  ({elapsed_ms:.2f} ms)")
+        print(f"  {args.mode:8s}: {len(fvs):>4} vertices  ({elapsed_ms:.2f} ms)")
         print(f"  Pure KMA: {len(fvs_ma):>4} vertices  ({ms_ma:.2f} ms)")
         diff = len(fvs_ma) - len(fvs)
         if diff > 0:

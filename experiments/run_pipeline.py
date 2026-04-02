@@ -232,6 +232,7 @@ def run_undirected(
                 RESULTS_DIR / "undirected_MA.csv",
                 RESULTS_DIR / "undirected_KMA.csv",
                 RESULTS_DIR / "undirected_GNN-KMA.csv",
+                RESULTS_DIR / "undirected_GNN-KMA-2.csv",
             ])
         else:
             outputs.append(RESULTS_DIR / f"undirected_{algo}.csv")
@@ -293,6 +294,7 @@ def run_directed(
                 RESULTS_DIR / "directed_MA.csv",
                 RESULTS_DIR / "directed_KMA.csv",
                 RESULTS_DIR / "directed_GNN-KMA.csv",
+                RESULTS_DIR / "directed_GNN-KMA-2.csv",
             ])
         else:
             outputs.append(RESULTS_DIR / f"directed_{algo}.csv")
@@ -318,24 +320,24 @@ def main() -> None:
     )
     parser.add_argument(
         "--algo",
-        choices=["BST", "IC", "MA", "KMA", "GNN-KMA", "ALL"],
+        choices=["BST", "IC", "MA", "KMA", "GNN-KMA", "GNN-KMA-2", "ALL"],
         type=str.upper,
         default="ALL",
         help="Algorithm selection forwarded to benchmark scripts",
     )
-    parser.add_argument("--pop", type=int, default=50, help="Population size for MA/GNN-KMA")
-    parser.add_argument("--gens", "--gen", type=int, default=200, help="Max generations for MA/GNN-KMA")
+    parser.add_argument("--pop", type=int, default=50, help="Population size for MA/KMA/GNN-KMA variants")
+    parser.add_argument("--gens", "--gen", type=int, default=200, help="Max generations for MA/KMA/GNN-KMA variants")
     parser.add_argument(
         "--threshold",
         type=float,
         default=0.2,
-        help="[GNN-KMA only] Probability threshold for GNN candidate selection (default: 0.2)",
+        help="[GNN-KMA/GNN-KMA-2 only] Probability threshold for GNN candidate selection (default: 0.2)",
     )
     parser.add_argument(
         "--gnn-hidden",
         type=int,
         default=None,
-        help="[GNN-KMA only] Optional hidden dimension override for GNN weights",
+        help="[GNN-KMA/GNN-KMA-2 only] Optional hidden dimension override for GNN weights",
     )
     parser.add_argument(
         "--include-pace",

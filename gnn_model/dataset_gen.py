@@ -28,6 +28,10 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Sequence, Set, Tuple
 
 import networkx as nx
+from feature_engineering_v2 import (
+    compute_node_features_directed_v2,
+    compute_node_features_undirected_v2,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 for candidate in ("build-linux", "build-macos", "build-win", "build"):
@@ -499,15 +503,22 @@ def _build_pt_sample(
     graph_type: str,
     n: int,
     edges: List[Tuple[int, int]],
+    variant: str = "v1",
     solver_timeout_seconds: int = SOLVER_TIMEOUT_SECONDS,
 ) -> Data:
     if not HAS_TORCH:
         raise RuntimeError("torch and torch_geometric are required for PT generation")
 
-    if graph_type == "undirected":
-        feats = compute_node_features_undirected(n, edges)
+    if variant == "v2":
+        if graph_type == "undirected":
+            feats = compute_node_features_undirected_v2(n, edges)
+        else:
+            feats = compute_node_features_directed_v2(n, edges)
     else:
-        feats = compute_node_features_directed(n, edges)
+        if graph_type == "undirected":
+            feats = compute_node_features_undirected(n, edges)
+        else:
+            feats = compute_node_features_directed(n, edges)
 
     fvs = _solve_with_timeout(graph_type, n, edges, solver_timeout_seconds)
 
@@ -547,6 +558,8 @@ def _trim_non_source_pt(folder: Path, source_stems: Set[str]) -> int:
 def _generate_exact_bucket_from_sources(
     family: str,
     category: str,
+    output_root: Path,
+    variant: str,
     force: bool,
     progress_every: int,
 ) -> Tuple[int, int]:
@@ -556,7 +569,7 @@ def _generate_exact_bucket_from_sources(
         _log(f"[WARN] No exact source graphs found in {src_dir}")
         return 0, 0
 
-    out_dir = OUTPUT_ROOT / family / EXACT_TRACK / category
+    out_dir = output_root / family / EXACT_TRACK / category
     out_dir.mkdir(parents=True, exist_ok=True)
 
     if force:
@@ -591,7 +604,7 @@ def _generate_exact_bucket_from_sources(
         )
         t0 = time.perf_counter()
         try:
-            data = _build_pt_sample(graph_type, n, edges)
+            data = _build_pt_sample(graph_type, n, edges, variant=variant)
         except SolverTimeoutError:
             dt = time.perf_counter() - t0
             _log(
@@ -604,6 +617,7 @@ def _generate_exact_bucket_from_sources(
         data.track = EXACT_TRACK
         data.category = category
         data.source_file = src_path.name
+        data.feature_set = variant
         torch.save(data, out_path)
         created += 1
 
@@ -618,6 +632,8 @@ def _generate_exact_bucket_from_sources(
 
 def _run_family(
     family: str,
+    output_root: Path,
+    variant: str,
     force: bool,
     progress_every: int,
 ) -> Tuple[int, int]:
@@ -637,6 +653,8 @@ def _run_family(
         c, s = _generate_exact_bucket_from_sources(
             family=family,
             category=category,
+            output_root=output_root,
+            variant=variant,
             force=force,
             progress_every=progress_every,
         )
@@ -646,15 +664,19 @@ def _run_family(
     return created, skipped
 
 
-def _remove_heuristic_outputs(families: Sequence[str]) -> int:
+def _remove_heuristic_outputs(families: Sequence[str], output_root: Path) -> int:
     removed = 0
     for family in families:
-        path = OUTPUT_ROOT / family / "heuristic_track"
+        path = output_root / family / "heuristic_track"
         if path.exists():
             shutil.rmtree(path)
             removed += 1
             _log(f"[CLEAN] removed stale heuristic outputs at {path}")
     return removed
+
+
+def _get_output_root(variant: str) -> Path:
+    return OUTPUT_ROOT if variant == "v1" else (PROJECT_ROOT / "gnn_model" / "datasets" / "pt_v2")
 
 
 def main() -> None:
@@ -676,6 +698,12 @@ def main() -> None:
         default=10,
         help="Print progress every N created files per bucket (default: 10)",
     )
+    parser.add_argument(
+        "--variant",
+        choices=["v1", "v2"],
+        default="v1",
+        help="Feature pipeline variant: v1 (legacy) or v2 (RWSE+motifs+coreness)",
+    )
     args = parser.parse_args()
 
     if not HAS_TORCH:
@@ -683,20 +711,24 @@ def main() -> None:
         _log("Install with: pip install torch torch-geometric")
         sys.exit(1)
 
-    if args.clean_root and OUTPUT_ROOT.exists():
-        shutil.rmtree(OUTPUT_ROOT)
-    OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
+    output_root = _get_output_root(args.variant)
+
+    if args.clean_root and output_root.exists():
+        shutil.rmtree(output_root)
+    output_root.mkdir(parents=True, exist_ok=True)
 
     progress_every = max(1, args.progress_every)
 
     families: Sequence[str] = ("undirected", "directed") if args.family == "all" else (args.family,)
-    _remove_heuristic_outputs(families)
+    _remove_heuristic_outputs(families, output_root)
 
     total_created = 0
     total_existing_used = 0
     for family in families:
         c, s = _run_family(
             family,
+            output_root,
+            args.variant,
             args.force,
             progress_every,
         )
@@ -707,7 +739,7 @@ def main() -> None:
     _log("-------")
     _log(f"Created:       {total_created}")
     _log(f"Existing-used: {total_existing_used}")
-    _log(f"Output root:   {OUTPUT_ROOT}")
+    _log(f"Output root:   {output_root}")
 
 
 if __name__ == "__main__":

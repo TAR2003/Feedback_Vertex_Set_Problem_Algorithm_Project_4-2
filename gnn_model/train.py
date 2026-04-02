@@ -43,6 +43,8 @@ except ImportError:
 
 from gnn_model.model_undirected import UndirectedFVSNet, compute_class_weights
 from gnn_model.model_directed   import DirectedFVSNet, compute_class_weights_directed
+from gnn_model.model_undirected_v2 import UndirectedFVSNetV2, compute_class_weights_v2
+from gnn_model.model_directed_v2 import DirectedFVSNetV2, compute_class_weights_directed_v2
 
 
 def _log(msg: str) -> None:
@@ -199,6 +201,7 @@ def main():
     parser.add_argument("--dropout", type=float, default=0.3)
     parser.add_argument("--val-ratio", type=float, default=0.2)
     parser.add_argument("--log-every", type=int, default=1)
+    parser.add_argument("--variant", choices=["v1", "v2"], default="v1")
     parser.add_argument("--data-root", type=str, default=str(PROJECT_ROOT / "gnn_model" / "datasets" / "pt"))
     args = parser.parse_args()
 
@@ -207,38 +210,47 @@ def main():
 
     device   = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     data_dir = Path(args.data_root)
+    if args.data_root == str(PROJECT_ROOT / "gnn_model" / "datasets" / "pt") and args.variant == "v2":
+        data_dir = PROJECT_ROOT / "gnn_model" / "datasets" / "pt_v2"
     wt_dir   = PROJECT_ROOT / "gnn_model" / "weights"
+
+    und_model_cls = UndirectedFVSNet if args.variant == "v1" else UndirectedFVSNetV2
+    dir_model_cls = DirectedFVSNet if args.variant == "v1" else DirectedFVSNetV2
+    und_weight_fn = compute_class_weights if args.variant == "v1" else compute_class_weights_v2
+    dir_weight_fn = compute_class_weights_directed if args.variant == "v1" else compute_class_weights_directed_v2
+    und_weight_path = wt_dir / ("undirected_fvs_gcn.pt" if args.variant == "v1" else "undirected_fvs_gcn_v2.pt")
+    dir_weight_path = wt_dir / ("directed_fvs_gcn.pt" if args.variant == "v1" else "directed_fvs_gcn_v2.pt")
 
     if args.type in ("undirected", "both"):
         _log("\n" + "═" * 60)
-        _log("  Training UNDIRECTED FVS GCN")
+        _log(f"  Training UNDIRECTED FVS GCN ({args.variant})")
         _log("═" * 60)
         dataset = load_pt_dataset(data_dir / "undirected")
         if not dataset:
             _log("  No data found. Run dataset_gen.py first.")
         else:
             train_set, val_set = train_val_split(dataset, val_ratio=args.val_ratio)
-            model = UndirectedFVSNet(hidden_dim=args.hidden, dropout=args.dropout)
+            model = und_model_cls(hidden_dim=args.hidden, dropout=args.dropout)
             train_model(
-                model, train_set, val_set, compute_class_weights,
+                model, train_set, val_set, und_weight_fn,
                 epochs=args.epochs, lr=args.lr, device=device,
-                save_path=wt_dir / "undirected_fvs_gcn.pt", log_every=args.log_every
+                save_path=und_weight_path, log_every=args.log_every
             )
 
     if args.type in ("directed", "both"):
         _log("\n" + "═" * 60)
-        _log("  Training DIRECTED FVS DiGCN")
+        _log(f"  Training DIRECTED FVS DiGCN ({args.variant})")
         _log("═" * 60)
         dataset = load_pt_dataset(data_dir / "directed")
         if not dataset:
             _log("  No data found. Run dataset_gen.py first.")
         else:
             train_set, val_set = train_val_split(dataset, val_ratio=args.val_ratio)
-            model = DirectedFVSNet(hidden_dim=args.hidden, dropout=args.dropout)
+            model = dir_model_cls(hidden_dim=args.hidden, dropout=args.dropout)
             train_model(
-                model, train_set, val_set, compute_class_weights_directed,
+                model, train_set, val_set, dir_weight_fn,
                 epochs=args.epochs, lr=args.lr, device=device,
-                save_path=wt_dir / "directed_fvs_gcn.pt", log_every=args.log_every
+                save_path=dir_weight_path, log_every=args.log_every
             )
 
 
