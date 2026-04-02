@@ -316,7 +316,12 @@ def verify_dfvs(n: int, edges: List[Tuple[int, int]], fvs: List[int]) -> bool:
 #  CSV Result Tracking
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def get_results_csv_path(results_dir: str, algo: str, is_directed: bool = False) -> Path:
+def get_results_csv_path(
+    results_dir: str,
+    algo: str,
+    is_directed: bool = False,
+    result_tag: Optional[str] = None,
+) -> Path:
     """
     Get the CSV file path for a specific algorithm.
     Adds algorithm type suffix: _exact for BST/IC, _heuristic for MA/KMA/GNN-KMA/GNN-KMA-2
@@ -324,13 +329,17 @@ def get_results_csv_path(results_dir: str, algo: str, is_directed: bool = False)
     """
     prefix = "directed" if is_directed else "undirected"
     
-    # Determine algorithm type (exact vs heuristic)
-    if algo in ["BST", "IC"]:
-        algo_type = "exact"
-    elif algo in ["MA", "KMA", "GNN-KMA", "GNN-KMA-2"]:
-        algo_type = "heuristic"
+    # Prefer explicit result tag (dataset track) when provided by pipeline.
+    if result_tag in {"exact", "heuristic"}:
+        algo_type = result_tag
     else:
-        algo_type = "unknown"
+        # Fallback to algorithm family for backwards compatibility.
+        if algo in ["BST", "IC"]:
+            algo_type = "exact"
+        elif algo in ["MA", "KMA", "GNN-KMA", "GNN-KMA-2"]:
+            algo_type = "heuristic"
+        else:
+            algo_type = "unknown"
     
     csv_name = f"{prefix}_{algo}_{algo_type}.csv"
     return Path(results_dir) / csv_name
@@ -556,7 +565,8 @@ def run_directed_algorithm(algo: str, n: int, edges: List[Tuple[int, int]],
 
 def run_on_file(filepath: str, algo: str, pop_size: int, max_gens: int,
                 gnn_threshold: float = 0.2, gnn_hidden: Optional[int] = None,
-                results_dir: str = "results", verbose: bool = True) -> dict:
+                results_dir: str = "results", result_tag: Optional[str] = None,
+                verbose: bool = True) -> dict:
     """
     Parse a directed graph file, run the specified algorithm(s), print and
     return a results dictionary.
@@ -586,7 +596,12 @@ def run_on_file(filepath: str, algo: str, pop_size: int, max_gens: int,
 
     for alg in algos_to_run:
         # Check if this algorithm already processed this file
-        csv_path = get_results_csv_path(results_dir, alg, is_directed=True)
+        csv_path = get_results_csv_path(
+            results_dir,
+            alg,
+            is_directed=True,
+            result_tag=result_tag,
+        )
         if is_result_already_recorded(csv_path, filename):
             if verbose:
                 print(f"  {alg:4s} — [SKIPPED] Already stored result")
@@ -675,6 +690,10 @@ def main():
         help="Directory where per-algorithm CSV result files will be stored (default: results)"
     )
     parser.add_argument(
+        "--result-tag", choices=["exact", "heuristic"], default=None,
+        help="Optional output suffix override for CSV naming based on dataset track"
+    )
+    parser.add_argument(
         "--output", default=None,
         help="Optional: also save combined summary to this CSV file"
     )
@@ -730,6 +749,7 @@ def main():
                              gnn_threshold=args.gnn_threshold,
                              gnn_hidden=args.gnn_hidden,
                              results_dir=args.results_dir,
+                            result_tag=args.result_tag,
                              verbose=not args.quiet)
         if result:
             all_results.append(result)

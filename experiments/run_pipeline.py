@@ -122,8 +122,19 @@ def plan_per_bucket(total: int, exact_ratio: float, weights: Dict[str, float]) -
     return plan
 
 
-def select_synthetic_subset(family: str, total: int, exact_ratio: float) -> Path:
-    """Build a synthetic subset folder with the first-N existing files."""
+def select_synthetic_subset(
+    family: str,
+    total: int,
+    exact_ratio: float,
+    track: str = "both",
+) -> Path:
+    """Build a synthetic subset folder with deterministic per-track sampling.
+
+    If exact/heuristic track folders exist, selects files according to `track`:
+    - both: up to `total` files from each track
+    - exact: up to `total` files from exact_track only
+    - heuristic: up to `total` files from heuristic_track only
+    """
     src_root = DATA_DIR / "synthetic" / family
     dst_root = SELECTED_SYNTH_ROOT / family
     del exact_ratio  # kept for call compatibility
@@ -132,19 +143,50 @@ def select_synthetic_subset(family: str, total: int, exact_ratio: float) -> Path
         shutil.rmtree(dst_root)
     dst_root.mkdir(parents=True, exist_ok=True)
 
-    files = list_existing_txt_files(family)
-    if len(files) < total:
-        raise RuntimeError(
-            f"Not enough existing synthetic {family} files: have {len(files)}, need {total}."
-        )
-
     copied = 0
-    for src in files[:total]:
-        rel = src.relative_to(src_root)
-        dst = dst_root / rel
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dst)
-        copied += 1
+    exact_root = src_root / EXACT_TRACK
+    heuristic_root = src_root / HEURISTIC_TRACK
+
+    if exact_root.exists() and heuristic_root.exists():
+        if track == "both":
+            track_roots = [
+                (EXACT_TRACK, exact_root),
+                (HEURISTIC_TRACK, heuristic_root),
+            ]
+        elif track == "exact":
+            track_roots = [(EXACT_TRACK, exact_root)]
+        elif track == "heuristic":
+            track_roots = [(HEURISTIC_TRACK, heuristic_root)]
+        else:
+            raise ValueError("track must be one of: both, exact, heuristic")
+
+        for track_name, track_root in track_roots:
+            track_files = sorted(p for p in track_root.rglob("*.txt") if p.is_file())
+            if len(track_files) < total:
+                raise RuntimeError(
+                    f"Not enough synthetic {family} files in {track_name}: "
+                    f"have {len(track_files)}, need {total}."
+                )
+
+            for src in track_files[:total]:
+                rel = src.relative_to(src_root)
+                dst = dst_root / rel
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst)
+                copied += 1
+    else:
+        files = list_existing_txt_files(family)
+        if len(files) < total:
+            raise RuntimeError(
+                f"Not enough existing synthetic {family} files: have {len(files)}, need {total}."
+            )
+
+        for src in files[:total]:
+            rel = src.relative_to(src_root)
+            dst = dst_root / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+            copied += 1
 
     print(f"[SMART] Prepared {copied} synthetic {family} file(s) in {dst_root}")
     return dst_root
@@ -191,6 +233,35 @@ def _results_path(algo: str, family: str) -> Path:
     return RESULTS_DIR / f"{family}_{algo}_{kind}.csv"
 
 
+def _results_path_for_tag(algo: str, family: str, result_tag: str | None) -> Path:
+    if result_tag in {"exact", "heuristic"}:
+        kind = result_tag
+    else:
+        if algo in ["BST", "IC"]:
+            kind = "exact"
+        elif algo in ["MA", "KMA", "GNN-KMA", "GNN-KMA-2"]:
+            kind = "heuristic"
+        else:
+            kind = "unknown"
+    return RESULTS_DIR / f"{family}_{algo}_{kind}.csv"
+
+
+def _expand_synthetic_track_targets(synthetic_dir: Path, track: str = "both") -> List[Tuple[Path, str | None]]:
+    """Split synthetic input into selected track directories when available."""
+    exact_dir = synthetic_dir / EXACT_TRACK
+    heuristic_dir = synthetic_dir / HEURISTIC_TRACK
+
+    targets: List[Tuple[Path, str | None]] = []
+    if track in {"both", "exact"} and exact_dir.exists() and exact_dir.is_dir():
+        targets.append((exact_dir, "exact"))
+    if track in {"both", "heuristic"} and heuristic_dir.exists() and heuristic_dir.is_dir():
+        targets.append((heuristic_dir, "heuristic"))
+
+    if not targets:
+        targets.append((synthetic_dir, None))
+    return targets
+
+
 def run_undirected(
     algo: str,
     pop: int,
@@ -200,9 +271,13 @@ def run_undirected(
     quiet: bool,
     synthetic_dir: Path,
     synthetic_only: bool,
+    track: str,
 ) -> List[Path]:
     outputs: List[Path] = []
-    test_dirs = [synthetic_dir] if synthetic_only else [DATA_DIR / "raw_undirected", synthetic_dir]
+    test_targets: List[Tuple[Path, str | None]] = []
+    if not synthetic_only:
+        test_targets.append((DATA_DIR / "raw_undirected", None))
+    test_targets.extend(_expand_synthetic_track_targets(synthetic_dir, track=track))
 
     if algo == "ALL":
         algos_to_run = ["BST", "IC", "MA", "KMA", "GNN-KMA", "GNN-KMA-2"]
@@ -211,7 +286,7 @@ def run_undirected(
     else:
         algos_to_run = [algo]
 
-    for test_dir in test_dirs:
+    for test_dir, result_tag in test_targets:
         if not has_graph_files(test_dir):
             print(f"[SKIP] no benchmark graph files in {test_dir}")
             continue
@@ -233,6 +308,8 @@ def run_undirected(
                 "--gnn-threshold",
                 str(gnn_threshold),
             ]
+            if result_tag is not None:
+                cmd.extend(["--result-tag", result_tag])
             if gnn_hidden is not None:
                 cmd.extend(["--gnn-hidden", str(gnn_hidden)])
             if quiet:
@@ -243,7 +320,7 @@ def run_undirected(
                 print(f"[WARN] benchmark failed for {test_dir} (algo={run_algo})")
                 continue
 
-            outputs.append(_results_path(run_algo, "undirected"))
+            outputs.append(_results_path_for_tag(run_algo, "undirected", result_tag))
 
     return outputs
 
@@ -258,11 +335,15 @@ def run_directed(
     include_pace: bool,
     synthetic_dir: Path,
     synthetic_only: bool,
+    track: str,
 ) -> List[Path]:
     outputs: List[Path] = []
-    test_dirs = [synthetic_dir] if synthetic_only else [DATA_DIR / "raw_directed", synthetic_dir]
+    test_targets: List[Tuple[Path, str | None]] = []
+    if not synthetic_only:
+        test_targets.append((DATA_DIR / "raw_directed", None))
+    test_targets.extend(_expand_synthetic_track_targets(synthetic_dir, track=track))
     if include_pace:
-        test_dirs.append(DATA_DIR / "pace2022")
+        test_targets.append((DATA_DIR / "pace2022", None))
 
     if algo == "ALL":
         algos_to_run = ["BST", "IC", "MA", "KMA", "GNN-KMA", "GNN-KMA-2"]
@@ -271,7 +352,7 @@ def run_directed(
     else:
         algos_to_run = [algo]
 
-    for test_dir in test_dirs:
+    for test_dir, result_tag in test_targets:
         if not has_graph_files(test_dir):
             print(f"[SKIP] no benchmark graph files in {test_dir}")
             continue
@@ -293,6 +374,8 @@ def run_directed(
                 "--gnn-threshold",
                 str(gnn_threshold),
             ]
+            if result_tag is not None:
+                cmd.extend(["--result-tag", result_tag])
             if gnn_hidden is not None:
                 cmd.extend(["--gnn-hidden", str(gnn_hidden)])
             if quiet:
@@ -303,7 +386,7 @@ def run_directed(
                 print(f"[WARN] benchmark failed for {test_dir} (algo={run_algo})")
                 continue
 
-            outputs.append(_results_path(run_algo, "directed"))
+            outputs.append(_results_path_for_tag(run_algo, "directed", result_tag))
 
     return outputs
 
@@ -398,6 +481,13 @@ def main() -> None:
         default=0.5,
         help="Fraction of each category allocated to exact_track (% split per category preserved)",
     )
+    parser.add_argument(
+        "--track",
+        choices=["both", "exact", "heuristic"],
+        type=str.lower,
+        default="both",
+        help="Synthetic track selection: both, exact, or heuristic",
+    )
 
     args = parser.parse_args()
 
@@ -407,6 +497,7 @@ def main() -> None:
     print(f"  FVS Benchmark Pipeline - Existing Dataset Mode")
     print(f"{'='*70}")
     print(f"  Mode: {args.mode} | Algo: {args.algo}")
+    print(f"  Track: {args.track}")
     print(f"  Target: {args.total_undirected} undirected, {args.total_directed} directed")
     print(f"  Exact ratio: {args.exact_ratio:.2f}")
     print(f"{'='*70}\n")
@@ -436,12 +527,14 @@ def main() -> None:
             family="undirected",
             total=args.total_undirected,
             exact_ratio=args.exact_ratio,
+            track=args.track,
         )
     if args.mode in {"all", "directed"}:
         selected_directed_dir = select_synthetic_subset(
             family="directed",
             total=args.total_directed,
             exact_ratio=args.exact_ratio,
+            track=args.track,
         )
 
     all_outputs: List[Path] = []
@@ -457,6 +550,7 @@ def main() -> None:
                 args.quiet,
                 selected_undirected_dir,
                 args.synthetic_only,
+                args.track,
             )
         )
 
@@ -472,6 +566,7 @@ def main() -> None:
                 args.include_pace,
                 selected_directed_dir,
                 args.synthetic_only,
+                args.track,
             )
         )
 
