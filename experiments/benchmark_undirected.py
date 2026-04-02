@@ -223,10 +223,20 @@ def verify_fvs(n: int, edges: List[Tuple[int, int]], fvs: List[int]) -> bool:
 def get_results_csv_path(results_dir: str, algo: str, is_directed: bool = False) -> Path:
     """
     Get the CSV file path for a specific algorithm.
-    E.g., results/undirected_BST.csv or results/directed_BST.csv
+    Adds algorithm type suffix: _exact for BST/IC, _heuristic for MA/KMA/GNN-KMA/GNN-KMA-2
+    E.g., results/directed_BST_exact.csv or results/directed_KMA_heuristic.csv
     """
     prefix = "directed" if is_directed else "undirected"
-    csv_name = f"{prefix}_{algo}.csv"
+    
+    # Determine algorithm type (exact vs heuristic)
+    if algo in ["BST", "IC"]:
+        algo_type = "exact"
+    elif algo in ["MA", "KMA", "GNN-KMA", "GNN-KMA-2"]:
+        algo_type = "heuristic"
+    else:
+        algo_type = "unknown"
+    
+    csv_name = f"{prefix}_{algo}_{algo_type}.csv"
     return Path(results_dir) / csv_name
 
 
