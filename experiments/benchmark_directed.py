@@ -577,7 +577,12 @@ def run_on_file(filepath: str, algo: str, pop_size: int, max_gens: int,
         print(f"  Graph: {n} vertices, {len(edges)} directed edges")
         print(f"{'─' * 60}")
 
-    algos_to_run = ["BST", "IC", "MA", "KMA", "GNN-KMA", "GNN-KMA-2"] if algo == "ALL" else [algo]
+    if algo == "ALL":
+        algos_to_run = ["BST", "IC", "MA", "KMA", "GNN-KMA", "GNN-KMA-2"]
+    elif algo == "PUREALGO":
+        algos_to_run = ["BST", "IC", "MA", "KMA"]
+    else:
+        algos_to_run = [algo]
 
     for alg in algos_to_run:
         # Check if this algorithm already processed this file
@@ -658,8 +663,8 @@ def main():
     )
     parser.add_argument(
         "--algo", required=True,
-        choices=["BST", "IC", "MA", "KMA", "GNN-KMA", "GNN-KMA-2", "ALL"],
-        help="Algorithm: BST (exact), IC (exact), MA (heuristic), KMA (kernelized MA), GNN-KMA (GNN+KMA), GNN-KMA-2 (advanced features), ALL (compare)"
+        choices=["BST", "IC", "MA", "KMA", "GNN-KMA", "GNN-KMA-2", "ALL", "PUREALGO"],
+        help="Algorithm: BST (exact), IC (exact), MA (heuristic), KMA (kernelized MA), GNN-KMA (GNN+KMA), GNN-KMA-2 (advanced features), ALL (compare), PUREALGO (BST+IC+MA+KMA)"
     )
     parser.add_argument(
         "--test", required=True,
@@ -737,6 +742,8 @@ def main():
 
         if args.algo == "ALL":
             algos_ran = ["BST", "IC", "MA", "KMA", "GNN-KMA", "GNN-KMA-2"]
+        elif args.algo == "PUREALGO":
+            algos_ran = ["BST", "IC", "MA", "KMA"]
         else:
             algos_ran = [args.algo]
         header = f"  {'File':<28} {'n':>6} {'m':>8}"
