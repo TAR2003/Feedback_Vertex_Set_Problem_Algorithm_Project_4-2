@@ -25,6 +25,7 @@
 # /results/*
 !results/.gitkeep
 !results/report.csv
+.cache/
 
 # Generated figures (from plot.py)
 # /figures/
@@ -183,6 +184,7 @@ data/synthetic/directed/exact_track/
 data/synthetic/directed/heuristic_track/
 data/pace2022/*
 data/synthetic_benchmark/*
+data/_selected_synthetic/
 # Keep the folder structure
 !data/synthetic/.gitkeep
 !data/synthetic/undirected/.gitkeep

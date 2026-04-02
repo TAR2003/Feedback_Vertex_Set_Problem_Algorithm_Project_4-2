@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """
-Unified data + benchmark runner for the FVS project.
+Unified benchmark runner for the FVS project (existing datasets only).
 
-Smart behavior:
-1) Checks how many synthetic datasets already exist per category
-2) Only generates missing files to reach your target count
-3) Keeps category distribution percentages constant (undirected: 20/20/20/20/20, directed: 30/20/20/15/15)
-4) Downloads real-world data
-5) Runs directed and/or undirected benchmarks
+Behavior:
+1) Checks how many synthetic datasets already exist for undirected/directed families
+2) Exits early if requested totals are not available
+3) Builds deterministic first-N subsets from existing files
+4) Runs directed and/or undirected benchmarks
 
 Examples:
   python experiments/run_pipeline.py --mode all --algo ALL --total-undirected 100 --total-directed 100
@@ -28,9 +27,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 RESULTS_DIR = PROJECT_ROOT / "results"
 synthetic_DIR = DATA_DIR / "synthetic"
+SELECTED_SYNTH_ROOT = DATA_DIR / "_selected_synthetic"
 
-DOWNLOAD_REAL_SCRIPT = PROJECT_ROOT / "data" / "download_real_world.py"
-GENERATE_SYNTH_SCRIPT = PROJECT_ROOT / "data" / "generate_synthetic.py"
 BENCHMARK_UND_SCRIPT = PROJECT_ROOT / "experiments" / "benchmark_undirected.py"
 BENCHMARK_DIR_SCRIPT = PROJECT_ROOT / "experiments" / "benchmark_directed.py"
 
@@ -71,11 +69,19 @@ def has_graph_files(folder: Path) -> bool:
 
 
 def count_existing_txt_files(family: str) -> int:
-    """Count all .txt files in data/synthetic/{family}/*/"""
+    """Count all .txt files in data/synthetic/{family}/**/."""
     synth_root = DATA_DIR / "synthetic" / family
     if not synth_root.exists():
         return 0
     return len(list(synth_root.rglob("*.txt")))
+
+
+def list_existing_txt_files(family: str) -> List[Path]:
+    """List all existing .txt files for a synthetic family in deterministic order."""
+    synth_root = DATA_DIR / "synthetic" / family
+    if not synth_root.exists():
+        return []
+    return sorted(p for p in synth_root.rglob("*.txt") if p.is_file())
 
 
 def allocate_counts(total: int, weights: Dict[str, float]) -> Dict[str, int]:
@@ -117,33 +123,28 @@ def plan_per_bucket(total: int, exact_ratio: float, weights: Dict[str, float]) -
 
 
 def select_synthetic_subset(family: str, total: int, exact_ratio: float) -> Path:
-    """Build a synthetic subset folder that contains exactly the requested count."""
-    weights = UNDIRECTED_WEIGHTS if family == "undirected" else DIRECTED_WEIGHTS
+    """Build a synthetic subset folder with the first-N existing files."""
     src_root = DATA_DIR / "synthetic" / family
-    dst_root = synthetic_DIR / family
-    plan = plan_per_bucket(total, exact_ratio, weights)
+    dst_root = SELECTED_SYNTH_ROOT / family
+    del exact_ratio  # kept for call compatibility
 
     if dst_root.exists():
         shutil.rmtree(dst_root)
     dst_root.mkdir(parents=True, exist_ok=True)
 
+    files = list_existing_txt_files(family)
+    if len(files) < total:
+        raise RuntimeError(
+            f"Not enough existing synthetic {family} files: have {len(files)}, need {total}."
+        )
+
     copied = 0
-    for (track, category), needed in plan.items():
-        src_bucket = src_root / track / category
-        files = sorted(p for p in src_bucket.glob("*.txt") if p.is_file())
-        if len(files) < needed:
-            raise RuntimeError(
-                f"Not enough files in {src_bucket}: have {len(files)}, need {needed}. "
-                "Run preparation again."
-            )
-
-        dst_bucket = dst_root / track / category
-        dst_bucket.mkdir(parents=True, exist_ok=True)
-
-        # Keep deterministic selection by taking the lexicographically first N files.
-        for src in files[:needed]:
-            shutil.copy2(src, dst_bucket / src.name)
-            copied += 1
+    for src in files[:total]:
+        rel = src.relative_to(src_root)
+        dst = dst_root / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+        copied += 1
 
     print(f"[SMART] Prepared {copied} synthetic {family} file(s) in {dst_root}")
     return dst_root
@@ -156,95 +157,27 @@ def run_command(cmd: Sequence[str]) -> int:
 
 
 
-def prepare_datasets(
-    mode: str,
-    skip_real: bool,
-    skip_synth: bool,
-    force: bool,
-    total_undirected: int,
-    total_directed: int,
-    exact_ratio: float,
-) -> None:
-    """
-    Smart dataset preparation:
-    - For real-world: prepare using the requested totals (unless skip_real)
-    - For synthetic: count existing files, only generate missing ones to reach target
-    """
-    if not skip_real:
-        cmd = [
-            sys.executable,
-            str(DOWNLOAD_REAL_SCRIPT),
-            "--total-undirected",
-            str(total_undirected),
-            "--total-directed",
-            str(total_directed),
-            "--exact-ratio",
-            str(exact_ratio),
-        ]
-        if mode == "undirected":
-            cmd.extend(["--family", "undirected"])
-        elif mode == "directed":
-            cmd.extend(["--family", "directed"])
-        if force:
-            cmd.append("--force")
-        rc = run_command(cmd)
-        if rc != 0:
-            raise RuntimeError("Real-world dataset step failed")
+def validate_existing_datasets(mode: str, total_undirected: int, total_directed: int) -> None:
+    """Validate required synthetic file counts exist; never generate/download here."""
+    if mode in {"all", "undirected"}:
+        existing_undirected = count_existing_txt_files("undirected")
+        if existing_undirected < total_undirected:
+            print(
+                f"[ERROR] Not enough undirected synthetic files: "
+                f"have {existing_undirected}, need {total_undirected}."
+            )
+            raise RuntimeError("Insufficient undirected datasets")
+        print(f"[OK] Undirected synthetic files: {existing_undirected} (requested {total_undirected})")
 
-    if not skip_synth:
-        # Check how many synthetic files already exist
-        existing_undirected = count_existing_txt_files("undirected") if mode in {"all", "undirected"} else 0
-        existing_directed = count_existing_txt_files("directed") if mode in {"all", "directed"} else 0
-
-        # Only generate synthetic if needed
-        if mode in {"all", "undirected"} and existing_undirected < total_undirected:
-            needed = total_undirected - existing_undirected
-            print(f"\n[SMART] Undirected: {existing_undirected} exist, need {needed} more to reach {total_undirected}")
-            cmd = [
-                sys.executable,
-                str(GENERATE_SYNTH_SCRIPT),
-                "--total-undirected",
-                str(total_undirected),
-                "--exact-ratio",
-                str(exact_ratio),
-                "--family",
-                "undirected",
-            ]
-            if force:
-                cmd.append("--force")
-            rc = run_command(cmd)
-            if rc != 0:
-                raise RuntimeError("Synthetic undirected dataset step failed")
-
-        if mode in {"all", "directed"} and existing_directed < total_directed:
-            needed = total_directed - existing_directed
-            print(f"\n[SMART] Directed: {existing_directed} exist, need {needed} more to reach {total_directed}")
-            cmd = [
-                sys.executable,
-                str(GENERATE_SYNTH_SCRIPT),
-                "--total-directed",
-                str(total_directed),
-                "--exact-ratio",
-                str(exact_ratio),
-                "--family",
-                "directed",
-            ]
-            if force:
-                cmd.append("--force")
-            rc = run_command(cmd)
-            if rc != 0:
-                raise RuntimeError("Synthetic directed dataset step failed")
-
-        # Report final state
-        if mode in {"all", "undirected"}:
-            final_undirected = count_existing_txt_files("undirected")
-            status = "[OK]" if final_undirected >= total_undirected else "[WARN]"
-            print(f"{status} Undirected: {final_undirected}/{total_undirected} datasets ready")
-
-        if mode in {"all", "directed"}:
-            final_directed = count_existing_txt_files("directed")
-            status = "[OK]" if final_directed >= total_directed else "[WARN]"
-            print(f"{status} Directed: {final_directed}/{total_directed} datasets ready")
+    if mode in {"all", "directed"}:
+        existing_directed = count_existing_txt_files("directed")
+        if existing_directed < total_directed:
+            print(
+                f"[ERROR] Not enough directed synthetic files: "
+                f"have {existing_directed}, need {total_directed}."
+            )
+            raise RuntimeError("Insufficient directed datasets")
+        print(f"[OK] Directed synthetic files: {existing_directed} (requested {total_directed})")
 
 
 
@@ -357,22 +290,24 @@ def run_directed(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Smart dataset preparation + FVS benchmark runner",
+        description="Existing-dataset-only FVS benchmark runner",
         epilog="""
-Smart behavior: Only generates synthetic datasets that don't already exist.
-Example: --total-undirected 100 will check data/synthetic/undirected/ and only
-generate missing files to reach 100 total.
+    This pipeline never downloads or generates datasets.
+    Example: --total-undirected 100 will check data/synthetic/undirected/ and
+    exit if fewer than 100 files exist.
         """,
     )
     parser.add_argument(
         "--mode",
         choices=["all", "undirected", "directed"],
+        type=str.lower,
         default="all",
         help="Which benchmark family to run",
     )
     parser.add_argument(
         "--algo",
         choices=["BST", "IC", "MA", "KMA", "GNN-KME", "ALL"],
+        type=str.upper,
         default="ALL",
         help="Algorithm selection forwarded to benchmark scripts",
     )
@@ -386,22 +321,22 @@ generate missing files to reach 100 total.
     parser.add_argument(
         "--skip-real",
         action="store_true",
-        help="Skip real-world data download step",
+        help="Deprecated compatibility flag (ignored; pipeline does not download)",
     )
     parser.add_argument(
         "--skip-synthetic",
         action="store_true",
-        help="Skip synthetic data generation step",
+        help="Deprecated compatibility flag (ignored; pipeline does not generate)",
     )
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Force overwrite existing synthetic datasets",
+        help="Deprecated compatibility flag (ignored by this pipeline)",
     )
     parser.add_argument(
         "--prepare-only",
         action="store_true",
-        help="Only prepare datasets, do not run benchmarks",
+        help="Only validate dataset counts, do not run benchmarks",
     )
     parser.add_argument(
         "--quiet",
@@ -437,25 +372,24 @@ generate missing files to reach 100 total.
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
     print(f"\n{'='*70}")
-    print(f"  FVS Benchmark Pipeline - Smart Dataset Mode")
+    print(f"  FVS Benchmark Pipeline - Existing Dataset Mode")
     print(f"{'='*70}")
     print(f"  Mode: {args.mode} | Algo: {args.algo}")
     print(f"  Target: {args.total_undirected} undirected, {args.total_directed} directed")
     print(f"  Exact ratio: {args.exact_ratio:.2f}")
     print(f"{'='*70}\n")
 
-    prepare_datasets(
+    if args.skip_real or args.skip_synthetic or args.force:
+        print("[INFO] Compatibility flags detected (--skip-real/--skip-synthetic/--force); ignored.")
+
+    validate_existing_datasets(
         mode=args.mode,
-        skip_real=args.skip_real,
-        skip_synth=args.skip_synthetic,
-        force=args.force,
         total_undirected=args.total_undirected,
         total_directed=args.total_directed,
-        exact_ratio=args.exact_ratio,
     )
 
     if args.prepare_only:
-        print("\n[DONE] dataset preparation finished (prepare-only mode)\n")
+        print("\n[DONE] dataset validation finished (prepare-only mode)\n")
         return
 
     selected_undirected_dir = DATA_DIR / "synthetic" / "undirected"
