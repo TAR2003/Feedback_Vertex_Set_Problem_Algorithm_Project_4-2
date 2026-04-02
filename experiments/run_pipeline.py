@@ -181,6 +181,16 @@ def validate_existing_datasets(mode: str, total_undirected: int, total_directed:
 
 
 
+def _results_path(algo: str, family: str) -> Path:
+    if algo in ["BST", "IC"]:
+        kind = "exact"
+    elif algo in ["MA", "KMA", "GNN-KMA", "GNN-KMA-2"]:
+        kind = "heuristic"
+    else:
+        kind = "unknown"
+    return RESULTS_DIR / f"{family}_{algo}_{kind}.csv"
+
+
 def run_undirected(
     algo: str,
     pop: int,
@@ -194,48 +204,46 @@ def run_undirected(
     outputs: List[Path] = []
     test_dirs = [synthetic_dir] if synthetic_only else [DATA_DIR / "raw_undirected", synthetic_dir]
 
+    if algo == "ALL":
+        algos_to_run = ["BST", "IC", "MA", "KMA", "GNN-KMA", "GNN-KMA-2"]
+    elif algo == "PUREALGO":
+        algos_to_run = ["BST", "IC", "MA", "KMA"]
+    else:
+        algos_to_run = [algo]
+
     for test_dir in test_dirs:
         if not has_graph_files(test_dir):
             print(f"[SKIP] no benchmark graph files in {test_dir}")
             continue
 
-        cmd = [
-            sys.executable,
-            str(BENCHMARK_UND_SCRIPT),
-            "--algo",
-            algo,
-            "--test",
-            str(test_dir),
-            "--results-dir",
-            str(RESULTS_DIR),
-            "--pop",
-            str(pop),
-            "--gens",
-            str(gens),
-            "--gnn-threshold",
-            str(gnn_threshold),
-        ]
-        if gnn_hidden is not None:
-            cmd.extend(["--gnn-hidden", str(gnn_hidden)])
-        if quiet:
-            cmd.append("--quiet")
+        for run_algo in algos_to_run:
+            cmd = [
+                sys.executable,
+                str(BENCHMARK_UND_SCRIPT),
+                "--algo",
+                run_algo,
+                "--test",
+                str(test_dir),
+                "--results-dir",
+                str(RESULTS_DIR),
+                "--pop",
+                str(pop),
+                "--gens",
+                str(gens),
+                "--gnn-threshold",
+                str(gnn_threshold),
+            ]
+            if gnn_hidden is not None:
+                cmd.extend(["--gnn-hidden", str(gnn_hidden)])
+            if quiet:
+                cmd.append("--quiet")
 
-        rc = run_command(cmd)
-        if rc != 0:
-            print(f"[WARN] benchmark failed for {test_dir}")
-            continue
+            rc = run_command(cmd)
+            if rc != 0:
+                print(f"[WARN] benchmark failed for {test_dir} (algo={run_algo})")
+                continue
 
-        if algo == "ALL":
-            outputs.extend([
-                RESULTS_DIR / "undirected_BST.csv",
-                RESULTS_DIR / "undirected_IC.csv",
-                RESULTS_DIR / "undirected_MA.csv",
-                RESULTS_DIR / "undirected_KMA.csv",
-                RESULTS_DIR / "undirected_GNN-KMA.csv",
-                RESULTS_DIR / "undirected_GNN-KMA-2.csv",
-            ])
-        else:
-            outputs.append(RESULTS_DIR / f"undirected_{algo}.csv")
+            outputs.append(_results_path(run_algo, "undirected"))
 
     return outputs
 
@@ -256,48 +264,46 @@ def run_directed(
     if include_pace:
         test_dirs.append(DATA_DIR / "pace2022")
 
+    if algo == "ALL":
+        algos_to_run = ["BST", "IC", "MA", "KMA", "GNN-KMA", "GNN-KMA-2"]
+    elif algo == "PUREALGO":
+        algos_to_run = ["BST", "IC", "MA", "KMA"]
+    else:
+        algos_to_run = [algo]
+
     for test_dir in test_dirs:
         if not has_graph_files(test_dir):
             print(f"[SKIP] no benchmark graph files in {test_dir}")
             continue
 
-        cmd = [
-            sys.executable,
-            str(BENCHMARK_DIR_SCRIPT),
-            "--algo",
-            algo,
-            "--test",
-            str(test_dir),
-            "--results-dir",
-            str(RESULTS_DIR),
-            "--pop",
-            str(pop),
-            "--gens",
-            str(gens),
-            "--gnn-threshold",
-            str(gnn_threshold),
-        ]
-        if gnn_hidden is not None:
-            cmd.extend(["--gnn-hidden", str(gnn_hidden)])
-        if quiet:
-            cmd.append("--quiet")
+        for run_algo in algos_to_run:
+            cmd = [
+                sys.executable,
+                str(BENCHMARK_DIR_SCRIPT),
+                "--algo",
+                run_algo,
+                "--test",
+                str(test_dir),
+                "--results-dir",
+                str(RESULTS_DIR),
+                "--pop",
+                str(pop),
+                "--gens",
+                str(gens),
+                "--gnn-threshold",
+                str(gnn_threshold),
+            ]
+            if gnn_hidden is not None:
+                cmd.extend(["--gnn-hidden", str(gnn_hidden)])
+            if quiet:
+                cmd.append("--quiet")
 
-        rc = run_command(cmd)
-        if rc != 0:
-            print(f"[WARN] benchmark failed for {test_dir}")
-            continue
+            rc = run_command(cmd)
+            if rc != 0:
+                print(f"[WARN] benchmark failed for {test_dir} (algo={run_algo})")
+                continue
 
-        if algo == "ALL":
-            outputs.extend([
-                RESULTS_DIR / "directed_BST.csv",
-                RESULTS_DIR / "directed_IC.csv",
-                RESULTS_DIR / "directed_MA.csv",
-                RESULTS_DIR / "directed_KMA.csv",
-                RESULTS_DIR / "directed_GNN-KMA.csv",
-                RESULTS_DIR / "directed_GNN-KMA-2.csv",
-            ])
-        else:
-            outputs.append(RESULTS_DIR / f"directed_{algo}.csv")
+            outputs.append(_results_path(run_algo, "directed"))
 
     return outputs
 
@@ -320,10 +326,10 @@ def main() -> None:
     )
     parser.add_argument(
         "--algo",
-        choices=["BST", "IC", "MA", "KMA", "GNN-KMA", "GNN-KMA-2", "ALL"],
+        choices=["BST", "IC", "MA", "KMA", "GNN-KMA", "GNN-KMA-2", "ALL", "PUREALGO"],
         type=str.upper,
         default="ALL",
-        help="Algorithm selection forwarded to benchmark scripts",
+        help="Algorithm selection forwarded to benchmark scripts (PUREALGO: BST, IC, MA, KMA)",
     )
     parser.add_argument("--pop", type=int, default=50, help="Population size for MA/KMA/GNN-KMA variants")
     parser.add_argument("--gens", "--gen", type=int, default=200, help="Max generations for MA/KMA/GNN-KMA variants")
