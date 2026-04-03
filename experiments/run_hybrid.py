@@ -782,11 +782,11 @@ def gnn_KMA_solve_undirected(n, edges, pop_size=60, max_gens=300,
     # Step 2: KMA refinement on the reduced kernel graph.
     if reduced_n > 0:
         if hasattr(cpp_engine, "solve_undirected_KMA"):
-            reduced_fvs = cpp_engine.solve_undirected_KMA(reduced_n, reduced_edges, pop_size, max_gens)
+            reduced_fvs = cpp_engine.solve_undirected_KMA(reduced_n, reduced_edges, pop_size, max_gens, 20)
         elif hasattr(cpp_engine, "solve_undirected_KMA"):
-            reduced_fvs = cpp_engine.solve_undirected_KMA(reduced_n, reduced_edges, pop_size, max_gens)
+            reduced_fvs = cpp_engine.solve_undirected_KMA(reduced_n, reduced_edges, pop_size, max_gens, 20)
         else:
-            reduced_fvs = cpp_engine.solve_undirected_MA(reduced_n, reduced_edges, pop_size, max_gens)
+            reduced_fvs = cpp_engine.solve_undirected_MA(reduced_n, reduced_edges, pop_size, max_gens, 20)
     else:
         reduced_fvs = []
 
@@ -845,11 +845,11 @@ def gnn_KMA_solve_directed(n, edges, pop_size=60, max_gens=300,
 
     if reduced_n > 0:
         if hasattr(cpp_engine, "solve_directed_KMA"):
-            reduced_fvs = cpp_engine.solve_directed_KMA(reduced_n, reduced_edges, pop_size, max_gens)
+            reduced_fvs = cpp_engine.solve_directed_KMA(reduced_n, reduced_edges, pop_size, max_gens, 20)
         elif hasattr(cpp_engine, "solve_directed_KMA"):
-            reduced_fvs = cpp_engine.solve_directed_KMA(reduced_n, reduced_edges, pop_size, max_gens)
+            reduced_fvs = cpp_engine.solve_directed_KMA(reduced_n, reduced_edges, pop_size, max_gens, 20)
         else:
-            reduced_fvs = cpp_engine.solve_directed_MA(reduced_n, reduced_edges, pop_size, max_gens)
+            reduced_fvs = cpp_engine.solve_directed_MA(reduced_n, reduced_edges, pop_size, max_gens, 20)
     else:
         reduced_fvs = []
 
@@ -907,11 +907,11 @@ def gnn_KMA2_solve_undirected(n, edges, pop_size=60, max_gens=300,
 
     if reduced_n > 0:
         if hasattr(cpp_engine, "solve_undirected_KMA"):
-            reduced_fvs = cpp_engine.solve_undirected_KMA(reduced_n, reduced_edges, pop_size, max_gens)
+            reduced_fvs = cpp_engine.solve_undirected_KMA(reduced_n, reduced_edges, pop_size, max_gens, 20)
         elif hasattr(cpp_engine, "solve_undirected_KMA"):
-            reduced_fvs = cpp_engine.solve_undirected_KMA(reduced_n, reduced_edges, pop_size, max_gens)
+            reduced_fvs = cpp_engine.solve_undirected_KMA(reduced_n, reduced_edges, pop_size, max_gens, 20)
         else:
-            reduced_fvs = cpp_engine.solve_undirected_MA(reduced_n, reduced_edges, pop_size, max_gens)
+            reduced_fvs = cpp_engine.solve_undirected_MA(reduced_n, reduced_edges, pop_size, max_gens, 20)
     else:
         reduced_fvs = []
 
@@ -969,11 +969,11 @@ def gnn_KMA2_solve_directed(n, edges, pop_size=60, max_gens=300,
 
     if reduced_n > 0:
         if hasattr(cpp_engine, "solve_directed_KMA"):
-            reduced_fvs = cpp_engine.solve_directed_KMA(reduced_n, reduced_edges, pop_size, max_gens)
+            reduced_fvs = cpp_engine.solve_directed_KMA(reduced_n, reduced_edges, pop_size, max_gens, 20)
         elif hasattr(cpp_engine, "solve_directed_KMA"):
-            reduced_fvs = cpp_engine.solve_directed_KMA(reduced_n, reduced_edges, pop_size, max_gens)
+            reduced_fvs = cpp_engine.solve_directed_KMA(reduced_n, reduced_edges, pop_size, max_gens, 20)
         else:
-            reduced_fvs = cpp_engine.solve_directed_MA(reduced_n, reduced_edges, pop_size, max_gens)
+            reduced_fvs = cpp_engine.solve_directed_MA(reduced_n, reduced_edges, pop_size, max_gens, 20)
     else:
         reduced_fvs = []
 

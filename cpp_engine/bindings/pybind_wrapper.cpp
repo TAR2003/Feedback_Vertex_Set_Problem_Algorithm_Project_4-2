@@ -26,24 +26,24 @@ PYBIND11_MODULE(cpp_engine, m) {
           "Iterative Compression exact solver for undirected FVS");
 
     m.def("solve_undirected_MA",
-          py::overload_cast<int, const std::vector<std::pair<int, int>> &, int, int>(
+          py::overload_cast<int, const std::vector<std::pair<int, int>> &, int, int, int>(
               &solve_undirected_MA),
           py::arg("n"), py::arg("edges"), py::arg("pop_size") = 50,
-          py::arg("max_gens") = 200,
+          py::arg("max_gens") = 200, py::arg("patience") = 50,
           "Memetic Algorithm solver for undirected FVS");
 
     m.def("solve_undirected_KMA",
-          py::overload_cast<int, const std::vector<std::pair<int, int>> &, int, int>(
+          py::overload_cast<int, const std::vector<std::pair<int, int>> &, int, int, int>(
               &solve_undirected_KMA),
           py::arg("n"), py::arg("edges"), py::arg("pop_size") = 50,
-          py::arg("max_gens") = 200,
+          py::arg("max_gens") = 200, py::arg("patience") = 30,
           "Kernelized Memetic Algorithm solver for undirected FVS");
 
     m.def("solve_undirected_KME",
-          py::overload_cast<int, const std::vector<std::pair<int, int>> &, int, int>(
+          py::overload_cast<int, const std::vector<std::pair<int, int>> &, int, int, int>(
               &solve_undirected_KME),
           py::arg("n"), py::arg("edges"), py::arg("pop_size") = 50,
-          py::arg("max_gens") = 200,
+          py::arg("max_gens") = 200, py::arg("patience") = 30,
           "Legacy alias for solve_undirected_KMA");
 
     // ────────────────────────────────────────────────────────────────────────
@@ -63,23 +63,23 @@ PYBIND11_MODULE(cpp_engine, m) {
           "Iterative Compression exact solver for directed FVS");
 
     m.def("solve_directed_MA",
-          py::overload_cast<int, const std::vector<std::pair<int, int>> &, int, int>(
+          py::overload_cast<int, const std::vector<std::pair<int, int>> &, int, int, int>(
               &solve_directed_MA),
           py::arg("n"), py::arg("edges"), py::arg("pop_size") = 50,
-          py::arg("max_gens") = 200,
+          py::arg("max_gens") = 200, py::arg("patience") = 50,
           "Memetic Algorithm solver for directed FVS");
 
     m.def("solve_directed_KMA",
-          py::overload_cast<int, const std::vector<std::pair<int, int>> &, int, int>(
+          py::overload_cast<int, const std::vector<std::pair<int, int>> &, int, int, int>(
               &solve_directed_KMA),
           py::arg("n"), py::arg("edges"), py::arg("pop_size") = 50,
-          py::arg("max_gens") = 200,
+          py::arg("max_gens") = 200, py::arg("patience") = 30,
           "Kernelized Memetic Algorithm solver for directed FVS");
 
     m.def("solve_directed_KME",
-          py::overload_cast<int, const std::vector<std::pair<int, int>> &, int, int>(
+          py::overload_cast<int, const std::vector<std::pair<int, int>> &, int, int, int>(
               &solve_directed_KME),
           py::arg("n"), py::arg("edges"), py::arg("pop_size") = 50,
-          py::arg("max_gens") = 200,
+          py::arg("max_gens") = 200, py::arg("patience") = 30,
           "Legacy alias for solve_directed_KMA");
 }

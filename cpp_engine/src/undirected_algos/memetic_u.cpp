@@ -237,7 +237,8 @@ static std::vector<Individual> init_population(
 
 std::vector<int> solve_undirected_MA(int n,
                                      const std::vector<std::pair<int, int>> &edges,
-                                     int pop_size, int max_gens)
+                                     int pop_size, int max_gens,
+                                     int patience)
 {
 
     if (n == 0)
@@ -269,6 +270,9 @@ std::vector<int> solve_undirected_MA(int n,
         std::min_element(scores.begin(), scores.end()) - scores.begin());
     Individual best_ind = pop[best_idx];
     int best_score = scores[best_idx];
+    int best_fvs_size = fvs_size(best_ind);
+    int no_improve_gens = 0;
+    int effective_patience = (patience > 0) ? patience : 50;
 
     // ── Main loop ────────────────────────────────────────────────────────────
     for (int gen = 0; gen < max_gens; ++gen)
@@ -313,10 +317,28 @@ std::vector<int> solve_undirected_MA(int n,
         }
 
         // Update global best
+        bool improved_fvs_size = false;
         if (child_score < best_score)
         {
             best_score = child_score;
             best_ind = child;
+            int child_fvs_size = fvs_size(child);
+            if (child_fvs_size < best_fvs_size)
+            {
+                best_fvs_size = child_fvs_size;
+                improved_fvs_size = true;
+            }
+        }
+
+        if (improved_fvs_size)
+        {
+            no_improve_gens = 0;
+        }
+        else
+        {
+            ++no_improve_gens;
+            if (no_improve_gens >= effective_patience)
+                break;
         }
     }
 
@@ -332,7 +354,8 @@ std::vector<int> solve_undirected_MA(int n,
 
 std::vector<int> solve_undirected_KMA(int n,
                                       const std::vector<std::pair<int, int>> &edges,
-                                      int pop_size, int max_gens)
+                                      int pop_size, int max_gens,
+                                      int patience)
 {
     if (n == 0)
         return {};
@@ -381,7 +404,8 @@ std::vector<int> solve_undirected_KMA(int n,
             static_cast<int>(kernel_new_to_old.size()),
             kernel_edges,
             pop_size,
-            max_gens);
+            max_gens,
+            patience);
     }
 
     std::vector<int> result = forced;
@@ -399,7 +423,8 @@ std::vector<int> solve_undirected_KMA(int n,
 
 std::vector<int> solve_undirected_KME(int n,
                                       const std::vector<std::pair<int, int>> &edges,
-                                      int pop_size, int max_gens)
+                                      int pop_size, int max_gens,
+                                      int patience)
 {
-    return solve_undirected_KMA(n, edges, pop_size, max_gens);
+    return solve_undirected_KMA(n, edges, pop_size, max_gens, patience);
 }
