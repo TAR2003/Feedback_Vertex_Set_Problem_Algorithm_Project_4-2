@@ -501,6 +501,24 @@ def run_directed_algorithm_with_timeout(
       - on timeout: error == "TIMEOUT"
       - on failure: error starts with "ERROR:"
     """
+    # Heuristic solvers already implement internal timeout handling and can
+    # return best-so-far solutions; do not hard-kill them from the parent.
+    if algo in {"MA", "KMA", "GNN-KMA", "GNN-KMA-2"}:
+        try:
+            fvs, elapsed_ms = run_directed_algorithm(
+                algo,
+                n,
+                edges,
+                pop_size,
+                max_gens,
+                gnn_threshold,
+                gnn_hidden,
+                timeout_seconds,
+            )
+            return fvs, elapsed_ms, None
+        except Exception as ex:
+            return None, None, f"ERROR: {ex}"
+
     out_q: mp.Queue = mp.Queue()
     proc = mp.Process(
         target=_directed_worker_run,
