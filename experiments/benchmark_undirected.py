@@ -411,8 +411,9 @@ def run_algorithm_with_timeout(
       - on timeout: error == "TIMEOUT"
       - on failure: error starts with "ERROR:"
     """
-    # Heuristic solvers already enforce their own timeout and can return
-    # best-so-far solutions; avoid parent hard-kill for these algorithms.
+    # Heuristic solvers return best-so-far at their own timeout boundary.
+    # Keep them in-process so we can always receive that solution instead of
+    # parent-level TIMEOUT without a candidate set.
     if algo in {"MA", "KMA", "GNN-KMA", "GNN-KMA-2"}:
         try:
             fvs, elapsed_ms = run_algorithm(
@@ -439,7 +440,10 @@ def run_algorithm_with_timeout(
 
     if proc.is_alive():
         proc.terminate()
-        proc.join()
+        proc.join(timeout=1.0)
+        if proc.is_alive() and hasattr(proc, "kill"):
+            proc.kill()
+            proc.join(timeout=1.0)
         return None, None, "TIMEOUT"
 
     try:

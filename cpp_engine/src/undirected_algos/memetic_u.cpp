@@ -48,6 +48,13 @@
 
 using Individual = std::vector<int>; ///< Binary vector of length n
 
+using SteadyClock = std::chrono::steady_clock;
+
+static bool deadline_reached(const SteadyClock::time_point *deadline)
+{
+    return deadline != nullptr && SteadyClock::now() >= *deadline;
+}
+
 /** Count active vertices set to 1 in individual `x`. */
 static int fvs_size(const Individual &x)
 {
@@ -92,14 +99,28 @@ static int fitness(const UndirectedGraph &g, const Individual &x)
  * Greedy local search: try removing each FVS vertex; keep removal if valid.
  * Repeat until no improvement.  O(|FVS| × (n + m)) per pass.
  */
-static void local_search(const UndirectedGraph &g, Individual &x)
+static void local_search(const UndirectedGraph &g, Individual &x,
+                         const SteadyClock::time_point *deadline,
+                         bool *timed_out)
 {
     bool improved = true;
     while (improved)
     {
+        if (deadline_reached(deadline))
+        {
+            if (timed_out != nullptr)
+                *timed_out = true;
+            return;
+        }
         improved = false;
         for (int v = 0; v < g.n; ++v)
         {
+            if (deadline_reached(deadline))
+            {
+                if (timed_out != nullptr)
+                    *timed_out = true;
+                return;
+            }
             if (x[v] == 0)
                 continue;
             x[v] = 0;
@@ -182,7 +203,9 @@ static int tournament_select(const std::vector<int> &scores,
  *   - Remaining: random binary, repaired by adding vertices until feasible
  */
 static std::vector<Individual> init_population(
-    const UndirectedGraph &g, int pop_size, std::mt19937 &rng)
+    const UndirectedGraph &g, int pop_size, std::mt19937 &rng,
+    const SteadyClock::time_point *deadline,
+    bool *timed_out)
 {
 
     int n = g.n;
@@ -198,13 +221,19 @@ static std::vector<Individual> init_population(
         UndirectedGraph g_tmp = g.copy();
         for (int v : order)
         {
+            if (deadline_reached(deadline))
+            {
+                if (timed_out != nullptr)
+                    *timed_out = true;
+                break;
+            }
             if (!g_tmp.has_cycle())
                 break;
             seed[v] = 1;
             std::vector<std::pair<int, int>> dummy;
             g_tmp.deactivate_full(v, dummy);
         }
-        local_search(g, seed);
+        local_search(g, seed, deadline, timed_out);
         pop.push_back(seed);
     }
 
@@ -212,10 +241,24 @@ static std::vector<Individual> init_population(
     std::uniform_real_distribution<double> prob(0.0, 1.0);
     while (static_cast<int>(pop.size()) < pop_size)
     {
+        if (deadline_reached(deadline))
+        {
+            if (timed_out != nullptr)
+                *timed_out = true;
+            break;
+        }
         Individual ind(n, 0);
         // Random inclusion with probability 0.5
         for (int v = 0; v < n; ++v)
+        {
+            if (deadline_reached(deadline))
+            {
+                if (timed_out != nullptr)
+                    *timed_out = true;
+                break;
+            }
             ind[v] = (prob(rng) < 0.5) ? 1 : 0;
+        }
         // Repair: add vertices until feasible
         if (cycles_remaining(g, ind) > 0)
         {
@@ -224,12 +267,18 @@ static std::vector<Individual> init_population(
             std::shuffle(order.begin(), order.end(), rng);
             for (int v : order)
             {
+                if (deadline_reached(deadline))
+                {
+                    if (timed_out != nullptr)
+                        *timed_out = true;
+                    break;
+                }
                 if (cycles_remaining(g, ind) == 0)
                     break;
                 ind[v] = 1;
             }
         }
-        local_search(g, ind);
+        local_search(g, ind, deadline, timed_out);
         pop.push_back(ind);
     }
     return pop;
@@ -261,11 +310,22 @@ std::vector<int> solve_undirected_MA(int n,
     std::mt19937 rng(42); // fixed seed for reproducibility
 
     // ── Initialise population ────────────────────────────────────────────────
-    std::vector<Individual> pop = init_population(g, pop_size, rng);
+    const SteadyClock::time_point *deadline = nullptr;
+    SteadyClock::time_point absolute_deadline;
+    if (max_time_seconds > 0)
+    {
+        absolute_deadline = SteadyClock::now() + std::chrono::seconds(max_time_seconds);
+        deadline = &absolute_deadline;
+    }
+
+    bool timed_out = false;
+    std::vector<Individual> pop = init_population(g, pop_size, rng, deadline, &timed_out);
+    if (pop.empty())
+        return {};
 
     // Compute initial fitness
-    std::vector<int> scores(pop_size);
-    for (int i = 0; i < pop_size; ++i)
+    std::vector<int> scores(pop.size());
+    for (int i = 0; i < static_cast<int>(pop.size()); ++i)
         scores[i] = fitness(g, pop[i]);
 
     // Track best solution
@@ -276,21 +336,19 @@ std::vector<int> solve_undirected_MA(int n,
     int best_fitness_ever = INT_MAX;
     int gens_without_improvement = 0;
     int patience_limit = (patience > 0) ? patience : 20;
-    const auto start_time = std::chrono::steady_clock::now();
+    bool timeout_message_printed = false;
 
     // ── Main loop ────────────────────────────────────────────────────────────
     for (int gen = 0; gen < max_gens; ++gen)
     {
-        if (max_time_seconds > 0)
+        if (deadline_reached(deadline) || timed_out)
         {
-            const auto elapsed_seconds = std::chrono::duration_cast<std::chrono::seconds>(
-                std::chrono::steady_clock::now() - start_time)
-                                             .count();
-            if (elapsed_seconds >= max_time_seconds)
+            if (!timeout_message_printed)
             {
                 std::cout << "Hard time limit reached. Stopping early." << std::endl;
-                break;
+                timeout_message_printed = true;
             }
+            break;
         }
 
         // Select two parents by tournament
@@ -312,14 +370,39 @@ std::vector<int> solve_undirected_MA(int n,
                       { return g.degree(a) > g.degree(b); });
             for (int v : order)
             {
+                if (deadline_reached(deadline))
+                {
+                    timed_out = true;
+                    break;
+                }
                 if (cycles_remaining(g, child) == 0)
                     break;
                 child[v] = 1;
             }
         }
 
+        if (timed_out)
+        {
+            if (!timeout_message_printed)
+            {
+                std::cout << "Hard time limit reached. Stopping early." << std::endl;
+                timeout_message_printed = true;
+            }
+            break;
+        }
+
         // Local search refinement
-        local_search(g, child);
+        local_search(g, child, deadline, &timed_out);
+
+        if (timed_out)
+        {
+            if (!timeout_message_printed)
+            {
+                std::cout << "Hard time limit reached. Stopping early." << std::endl;
+                timeout_message_printed = true;
+            }
+            break;
+        }
 
         // Replace worst individual in population
         int child_score = fitness(g, child);

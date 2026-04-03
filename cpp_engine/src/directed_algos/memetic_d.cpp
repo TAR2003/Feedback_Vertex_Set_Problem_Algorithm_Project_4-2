@@ -29,6 +29,13 @@
 
 using IndividualD = std::vector<int>; ///< Binary vector of length n
 
+using SteadyClock = std::chrono::steady_clock;
+
+static bool deadline_reached(const SteadyClock::time_point *deadline)
+{
+    return deadline != nullptr && SteadyClock::now() >= *deadline;
+}
+
 static int dfvs_size(const IndividualD &x)
 {
     return std::count(x.begin(), x.end(), 1);
@@ -60,7 +67,9 @@ static int dfitness(const DirectedGraph &g, const IndividualD &x)
  * a valid DFVS.  Use a randomised order to escape local optima.
  */
 static void directed_local_search(const DirectedGraph &g, IndividualD &x,
-                                  std::mt19937 &rng)
+                                  std::mt19937 &rng,
+                                  const SteadyClock::time_point *deadline,
+                                  bool *timed_out)
 {
     int n = g.n;
     std::vector<int> order(n);
@@ -70,9 +79,21 @@ static void directed_local_search(const DirectedGraph &g, IndividualD &x,
     bool improved = true;
     while (improved)
     {
+        if (deadline_reached(deadline))
+        {
+            if (timed_out != nullptr)
+                *timed_out = true;
+            return;
+        }
         improved = false;
         for (int v : order)
         {
+            if (deadline_reached(deadline))
+            {
+                if (timed_out != nullptr)
+                    *timed_out = true;
+                return;
+            }
             if (x[v] == 0)
                 continue;
             x[v] = 0;
@@ -131,7 +152,9 @@ static int d_tournament(const std::vector<int> &scores,
 // ─── Population initialisation ───────────────────────────────────────────────
 
 static std::vector<IndividualD> d_init_population(
-    const DirectedGraph &g, int pop_size, std::mt19937 &rng)
+    const DirectedGraph &g, int pop_size, std::mt19937 &rng,
+    const SteadyClock::time_point *deadline,
+    bool *timed_out)
 {
 
     int n = g.n;
@@ -148,22 +171,42 @@ static std::vector<IndividualD> d_init_population(
         DirectedGraph g_tmp = g.copy();
         for (int v : order)
         {
+            if (deadline_reached(deadline))
+            {
+                if (timed_out != nullptr)
+                    *timed_out = true;
+                break;
+            }
             if (!g_tmp.has_directed_cycle())
                 break;
             seed[v] = 1;
             std::vector<std::pair<int, int>> dummy;
             g_tmp.deactivate_full(v, dummy);
         }
-        directed_local_search(g, seed, rng);
+        directed_local_search(g, seed, rng, deadline, timed_out);
         pop.push_back(seed);
     }
 
     std::uniform_real_distribution<double> prob(0.0, 1.0);
     while (static_cast<int>(pop.size()) < pop_size)
     {
+        if (deadline_reached(deadline))
+        {
+            if (timed_out != nullptr)
+                *timed_out = true;
+            break;
+        }
         IndividualD ind(n, 0);
         for (int v = 0; v < n; ++v)
+        {
+            if (deadline_reached(deadline))
+            {
+                if (timed_out != nullptr)
+                    *timed_out = true;
+                break;
+            }
             ind[v] = (prob(rng) < 0.5) ? 1 : 0;
+        }
         // Repair
         if (dcycles_remaining(g, ind) > 0)
         {
@@ -172,12 +215,18 @@ static std::vector<IndividualD> d_init_population(
             std::shuffle(order.begin(), order.end(), rng);
             for (int v : order)
             {
+                if (deadline_reached(deadline))
+                {
+                    if (timed_out != nullptr)
+                        *timed_out = true;
+                    break;
+                }
                 if (dcycles_remaining(g, ind) == 0)
                     break;
                 ind[v] = 1;
             }
         }
-        directed_local_search(g, ind, rng);
+        directed_local_search(g, ind, rng, deadline, timed_out);
         pop.push_back(ind);
     }
     return pop;
@@ -207,9 +256,21 @@ std::vector<int> solve_directed_MA(int n,
 
     std::mt19937 rng(42);
 
-    auto pop = d_init_population(g, pop_size, rng);
-    std::vector<int> scores(pop_size);
-    for (int i = 0; i < pop_size; ++i)
+    const SteadyClock::time_point *deadline = nullptr;
+    SteadyClock::time_point absolute_deadline;
+    if (max_time_seconds > 0)
+    {
+        absolute_deadline = SteadyClock::now() + std::chrono::seconds(max_time_seconds);
+        deadline = &absolute_deadline;
+    }
+
+    bool timed_out = false;
+    auto pop = d_init_population(g, pop_size, rng, deadline, &timed_out);
+    if (pop.empty())
+        return {};
+
+    std::vector<int> scores(pop.size());
+    for (int i = 0; i < static_cast<int>(pop.size()); ++i)
         scores[i] = dfitness(g, pop[i]);
 
     int best_idx = static_cast<int>(
@@ -219,20 +280,18 @@ std::vector<int> solve_directed_MA(int n,
     int best_fitness_ever = INT_MAX;
     int gens_without_improvement = 0;
     int patience_limit = (patience > 0) ? patience : 20;
-    const auto start_time = std::chrono::steady_clock::now();
+    bool timeout_message_printed = false;
 
     for (int gen = 0; gen < max_gens; ++gen)
     {
-        if (max_time_seconds > 0)
+        if (deadline_reached(deadline) || timed_out)
         {
-            const auto elapsed_seconds = std::chrono::duration_cast<std::chrono::seconds>(
-                std::chrono::steady_clock::now() - start_time)
-                                             .count();
-            if (elapsed_seconds >= max_time_seconds)
+            if (!timeout_message_printed)
             {
                 std::cout << "Hard time limit reached. Stopping early." << std::endl;
-                break;
+                timeout_message_printed = true;
             }
+            break;
         }
 
         int p1 = d_tournament(scores, rng);
@@ -251,13 +310,38 @@ std::vector<int> solve_directed_MA(int n,
                                (g.in_degree(b) + g.out_degree(b)); });
             for (int v : order)
             {
+                if (deadline_reached(deadline))
+                {
+                    timed_out = true;
+                    break;
+                }
                 if (dcycles_remaining(g, child) == 0)
                     break;
                 child[v] = 1;
             }
         }
 
-        directed_local_search(g, child, rng);
+        if (timed_out)
+        {
+            if (!timeout_message_printed)
+            {
+                std::cout << "Hard time limit reached. Stopping early." << std::endl;
+                timeout_message_printed = true;
+            }
+            break;
+        }
+
+        directed_local_search(g, child, rng, deadline, &timed_out);
+
+        if (timed_out)
+        {
+            if (!timeout_message_printed)
+            {
+                std::cout << "Hard time limit reached. Stopping early." << std::endl;
+                timeout_message_printed = true;
+            }
+            break;
+        }
 
         int child_score = dfitness(g, child);
         int worst = static_cast<int>(
