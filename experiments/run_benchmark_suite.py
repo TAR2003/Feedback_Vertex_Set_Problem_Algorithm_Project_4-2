@@ -153,6 +153,7 @@ def run_single_file(
     pop: int,
     gens: int,
     timeout: int,
+    earlystop: int,
     quiet: bool,
     temp_csv: Path,
 ) -> Dict[str, str]:
@@ -173,6 +174,8 @@ def run_single_file(
         str(gens),
         "--timeout",
         str(timeout),
+        "--earlystop",
+        str(earlystop),
     ]
     if quiet:
         cmd.append("--quiet")
@@ -258,6 +261,7 @@ def run_task(
     pop: int,
     gens: int,
     timeout: int,
+    earlystop: int,
     quiet: bool,
     rerun: bool,
     max_files: int,
@@ -300,6 +304,7 @@ def run_task(
             pop=pop,
             gens=gens,
             timeout=timeout,
+            earlystop=earlystop,
             quiet=quiet,
             temp_csv=temp_csv,
         )
@@ -349,6 +354,7 @@ def main() -> None:
     parser.add_argument("--pop", type=int, default=20, help="Population size for MA/KMA/GNN-KMA variants")
     parser.add_argument("--gens", type=int, default=100, help="Max generations for MA/KMA/GNN-KMA variants")
     parser.add_argument("--timeout", type=int, default=600, help="Hard wall-clock timeout in seconds for MA/KMA/GNN-KMA variants")
+    parser.add_argument("--earlystop", type=int, default=20, help="Patience / early-stopping generations without improvement (default: 20)")
     parser.add_argument("--quiet", action="store_true", help="Forward quiet mode to benchmark scripts")
     parser.add_argument(
         "--rerun",
@@ -365,6 +371,8 @@ def main() -> None:
 
     if args.timeout <= 0:
         raise ValueError("--timeout must be a positive integer")
+    if args.earlystop <= 0:
+        raise ValueError("--earlystop must be a positive integer")
 
     RESULTS_ROOT.mkdir(parents=True, exist_ok=True)
     tasks = build_tasks(args.mode, args.profile)
@@ -379,6 +387,7 @@ def main() -> None:
             pop=args.pop,
             gens=args.gens,
             timeout=args.timeout,
+            earlystop=args.earlystop,
             quiet=args.quiet,
             rerun=args.rerun,
             max_files=args.max_files,

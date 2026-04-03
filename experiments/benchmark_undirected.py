@@ -347,20 +347,24 @@ def _undirected_worker_run(
     gnn_threshold: float,
     gnn_hidden: int | None,
     timeout_seconds: int,
+    early_stop: int,
     out_q: mp.Queue,
 ) -> None:
     """Child-process worker that runs one algorithm and returns via queue."""
     try:
         start = time.perf_counter()
         if algo == "MA":
-            fvs = cpp_engine.solve_undirected_MA(n, edges, pop_size, max_gens, 20, timeout_seconds)
+            fvs = cpp_engine.solve_undirected_MA(n, edges, pop_size, max_gens, early_stop, timeout_seconds)
         elif algo == "KMA":
-            if hasattr(cpp_engine, "solve_undirected_KMA"):
-                fvs = cpp_engine.solve_undirected_KMA(n, edges, pop_size, max_gens, 15, timeout_seconds)
-            elif hasattr(cpp_engine, "solve_undirected_KME"):
-                fvs = cpp_engine.solve_undirected_KME(n, edges, pop_size, max_gens, 15, timeout_seconds)
-            else:
-                fvs = cpp_engine.solve_undirected_MA(n, edges, pop_size, max_gens, 20, timeout_seconds)
+            from run_hybrid import kma_solve_undirected
+            fvs = kma_solve_undirected(
+                n,
+                edges,
+                pop_size,
+                max_gens,
+                max_time_seconds=timeout_seconds,
+                early_stop=early_stop,
+            )
         elif algo == "GNN-KMA":
             from run_hybrid import gnn_KMA_solve_undirected
             fvs = gnn_KMA_solve_undirected(
@@ -371,6 +375,7 @@ def _undirected_worker_run(
                 gnn_threshold=gnn_threshold,
                 gnn_hidden_dim=gnn_hidden,
                 max_time_seconds=timeout_seconds,
+                early_stop=early_stop,
             )
         elif algo == "GNN-KMA-2":
             from run_hybrid import gnn_KMA2_solve_undirected
@@ -382,6 +387,7 @@ def _undirected_worker_run(
                 gnn_threshold=gnn_threshold,
                 gnn_hidden_dim=gnn_hidden,
                 max_time_seconds=timeout_seconds,
+                early_stop=early_stop,
             )
         else:
             fvs = ALGO_MAP[algo](n, edges)
@@ -401,12 +407,13 @@ def run_algorithm_with_timeout(
     gnn_hidden: int | None,
     timeout_seconds: int,
     timeout_s: int,
-) -> Tuple[Optional[List[int]], Optional[float], Optional[str]]:
+    early_stop: int,
+) -> Tuple[Optional[List[int]], Optional[float], Optional[dict], Optional[str]]:
     """
     Run one undirected algorithm in a child process with timeout.
 
     Returns:
-      (fvs, elapsed_ms, error)
+    (fvs, elapsed_ms, stage_metrics, error)
       - on success: error is None
       - on timeout: error == "TIMEOUT"
       - on failure: error starts with "ERROR:"
@@ -416,7 +423,7 @@ def run_algorithm_with_timeout(
     # parent-level TIMEOUT without a candidate set.
     if algo in {"MA", "KMA", "GNN-KMA", "GNN-KMA-2"}:
         try:
-            fvs, elapsed_ms = run_algorithm(
+            fvs, elapsed_ms, stage_metrics = run_algorithm(
                 algo,
                 n,
                 edges,
@@ -425,15 +432,16 @@ def run_algorithm_with_timeout(
                 gnn_threshold,
                 gnn_hidden,
                 timeout_seconds,
+                early_stop,
             )
-            return fvs, elapsed_ms, None
+            return fvs, elapsed_ms, stage_metrics, None
         except Exception as ex:
-            return None, None, f"ERROR: {ex}"
+            return None, None, None, f"ERROR: {ex}"
 
     out_q: mp.Queue = mp.Queue()
     proc = mp.Process(
         target=_undirected_worker_run,
-        args=(algo, n, edges, pop_size, max_gens, gnn_threshold, gnn_hidden, timeout_seconds, out_q),
+        args=(algo, n, edges, pop_size, max_gens, gnn_threshold, gnn_hidden, timeout_seconds, early_stop, out_q),
     )
     proc.start()
     proc.join(timeout=timeout_s)
@@ -444,16 +452,16 @@ def run_algorithm_with_timeout(
         if proc.is_alive() and hasattr(proc, "kill"):
             proc.kill()
             proc.join(timeout=1.0)
-        return None, None, "TIMEOUT"
+        return None, None, None, "TIMEOUT"
 
     try:
         status, payload, elapsed = out_q.get_nowait()
     except queue.Empty:
-        return None, None, "ERROR: worker returned no result"
+        return None, None, None, "ERROR: worker returned no result"
 
     if status == "OK":
-        return payload, elapsed, None
-    return None, None, f"ERROR: {payload}"
+        return payload, elapsed, None, None
+    return None, None, None, f"ERROR: {payload}"
 
 def run_algorithm(
     algo: str,
@@ -464,24 +472,31 @@ def run_algorithm(
     gnn_threshold: float = 0.2,
     gnn_hidden: int | None = None,
     timeout_seconds: int = 600,
-) -> Tuple[List[int], float]:
+    early_stop: int = 20,
+) -> Tuple[List[int], float, dict]:
     """
     Run a single algorithm and return (fvs, elapsed_ms).
     """
     start = time.perf_counter()
 
+    stage_metrics = {"kernelization_ms": 0.0, "gnn_candidate_ms": 0.0, "ma_ms": 0.0}
+
     if algo == "MA":
-        fvs = cpp_engine.solve_undirected_MA(n, edges, pop_size, max_gens, 20, timeout_seconds)
+        fvs = cpp_engine.solve_undirected_MA(n, edges, pop_size, max_gens, early_stop, timeout_seconds)
     elif algo == "KMA":
-        if hasattr(cpp_engine, "solve_undirected_KMA"):
-            fvs = cpp_engine.solve_undirected_KMA(n, edges, pop_size, max_gens, 15, timeout_seconds)
-        elif hasattr(cpp_engine, "solve_undirected_KME"):
-            fvs = cpp_engine.solve_undirected_KME(n, edges, pop_size, max_gens, 15, timeout_seconds)
-        else:
-            fvs = cpp_engine.solve_undirected_MA(n, edges, pop_size, max_gens, 20, timeout_seconds)
+        from run_hybrid import kma_solve_undirected
+        fvs, stage_metrics = kma_solve_undirected(
+            n,
+            edges,
+            pop_size,
+            max_gens,
+            max_time_seconds=timeout_seconds,
+            early_stop=early_stop,
+            return_diagnostics=True,
+        )
     elif algo == "GNN-KMA":
         from run_hybrid import gnn_KMA_solve_undirected
-        fvs = gnn_KMA_solve_undirected(
+        fvs, stage_metrics = gnn_KMA_solve_undirected(
             n,
             edges,
             pop_size,
@@ -489,10 +504,12 @@ def run_algorithm(
             gnn_threshold=gnn_threshold,
             gnn_hidden_dim=gnn_hidden,
             max_time_seconds=timeout_seconds,
+            early_stop=early_stop,
+            return_diagnostics=True,
         )
     elif algo == "GNN-KMA-2":
         from run_hybrid import gnn_KMA2_solve_undirected
-        fvs = gnn_KMA2_solve_undirected(
+        fvs, stage_metrics = gnn_KMA2_solve_undirected(
             n,
             edges,
             pop_size,
@@ -500,13 +517,17 @@ def run_algorithm(
             gnn_threshold=gnn_threshold,
             gnn_hidden_dim=gnn_hidden,
             max_time_seconds=timeout_seconds,
+            early_stop=early_stop,
+            return_diagnostics=True,
         )
     else:
         fn = ALGO_MAP[algo]
         fvs = fn(n, edges)
 
     elapsed_ms = (time.perf_counter() - start) * 1000.0
-    return fvs, elapsed_ms
+    if algo == "MA":
+        stage_metrics["ma_ms"] = elapsed_ms
+    return fvs, elapsed_ms, stage_metrics
 
 
 def run_on_file(
@@ -517,6 +538,7 @@ def run_on_file(
     gnn_threshold: float = 0.2,
     gnn_hidden: int | None = None,
     timeout_seconds: int = 600,
+    early_stop: int = 20,
     results_dir: str = "results",
     result_tag: Optional[str] = None,
     verbose: bool = True,
@@ -574,8 +596,8 @@ def run_on_file(
         if verbose:
             print(f"  Running {alg:4s} (timeout={timeout_s}s) ... ", end="", flush=True)
 
-        fvs, elapsed_ms, error = run_algorithm_with_timeout(
-            alg, n, edges, pop_size, max_gens, gnn_threshold, gnn_hidden, timeout_seconds, timeout_s
+        fvs, elapsed_ms, stage_metrics, error = run_algorithm_with_timeout(
+            alg, n, edges, pop_size, max_gens, gnn_threshold, gnn_hidden, timeout_seconds, timeout_s, early_stop
         )
 
         # Build single-algorithm result row with unified schema.
@@ -587,6 +609,8 @@ def run_on_file(
             algo_result["FVS_size"] = "TIMEOUT"
             algo_result["runtime"] = timeout_s
             algo_result["validity"] = "TIMEOUT"
+            algo_result["kernelization_time"] = "TIMEOUT"
+            algo_result["gnn_candidate_time"] = "TIMEOUT"
             results[f"{alg}_size"] = "TIMEOUT"
             results[f"{alg}_ms"] = "TIMEOUT"
             results[f"{alg}_valid"] = "TIMEOUT"
@@ -596,6 +620,8 @@ def run_on_file(
             algo_result["FVS_size"] = "ERROR"
             algo_result["runtime"] = "ERROR"
             algo_result["validity"] = False
+            algo_result["kernelization_time"] = "ERROR"
+            algo_result["gnn_candidate_time"] = "ERROR"
             results[f"{alg}_size"] = "ERROR"
             results[f"{alg}_ms"] = "ERROR"
             results[f"{alg}_valid"] = False
@@ -608,10 +634,16 @@ def run_on_file(
             algo_result["FVS_size"] = len(fvs)
             algo_result["runtime"] = round(elapsed_ms / 1000.0, 6)
             algo_result["validity"] = valid
+            kernel_s = round((stage_metrics or {}).get("kernelization_ms", 0.0) / 1000.0, 6)
+            gnn_s = round((stage_metrics or {}).get("gnn_candidate_ms", 0.0) / 1000.0, 6)
+            algo_result["kernelization_time"] = kernel_s
+            algo_result["gnn_candidate_time"] = gnn_s
             
             results[f"{alg}_size"]  = len(fvs)
             results[f"{alg}_ms"]    = round(elapsed_ms, 2)
             results[f"{alg}_valid"] = valid
+            results[f"{alg}_kernel_ms"] = round((stage_metrics or {}).get("kernelization_ms", 0.0), 2)
+            results[f"{alg}_gnn_ms"] = round((stage_metrics or {}).get("gnn_candidate_ms", 0.0), 2)
         
         # Immediately save this algorithm's result to its CSV
         append_result_to_csv(csv_path, algo_result)
@@ -663,6 +695,10 @@ def main():
         help="Hard wall-clock timeout in seconds for MA/KMA/GNN-KMA solvers (default: 600)"
     )
     parser.add_argument(
+        "--earlystop", type=int, default=20,
+        help="Patience / early-stopping generations without improvement (default: 20)"
+    )
+    parser.add_argument(
         "--quiet", action="store_true",
         help="Suppress per-run output (only print summary / CSV)"
     )
@@ -682,6 +718,9 @@ def main():
         sys.exit(1)
     if args.timeout <= 0:
         print("ERROR: --timeout must be a positive integer")
+        sys.exit(1)
+    if args.earlystop <= 0:
+        print("ERROR: --earlystop must be a positive integer")
         sys.exit(1)
     if args.gnn_hidden is not None and args.gnn_hidden <= 0:
         print("ERROR: --gnn-hidden must be a positive integer")
@@ -714,6 +753,7 @@ def main():
             gnn_threshold=args.gnn_threshold,
             gnn_hidden=args.gnn_hidden,
             timeout_seconds=args.timeout,
+            early_stop=args.earlystop,
             results_dir=args.results_dir,
             result_tag=args.result_tag,
             verbose=not args.quiet,
