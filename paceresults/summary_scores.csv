@@ -1,0 +1,3 @@
+solver,mean_score,instance_count
+directed_MA_heuristic,71.7737,200
+directed_PACE2022winner_heuristic,99.639,200
