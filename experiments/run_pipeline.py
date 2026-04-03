@@ -162,13 +162,12 @@ def select_synthetic_subset(
 
         for track_name, track_root in track_roots:
             track_files = sorted(p for p in track_root.rglob("*.txt") if p.is_file())
+            actual_count = min(len(track_files), total)
             if len(track_files) < total:
-                raise RuntimeError(
-                    f"Not enough synthetic {family} files in {track_name}: "
-                    f"have {len(track_files)}, need {total}."
-                )
+                print(f"[WARN] Not enough synthetic {family} files in {track_name}: "
+                      f"have {len(track_files)}, requested {total}. Using {actual_count} files.")
 
-            for src in track_files[:total]:
+            for src in track_files[:actual_count]:
                 rel = src.relative_to(src_root)
                 dst = dst_root / rel
                 dst.parent.mkdir(parents=True, exist_ok=True)
@@ -176,12 +175,12 @@ def select_synthetic_subset(
                 copied += 1
     else:
         files = list_existing_txt_files(family)
+        actual_count = min(len(files), total)
         if len(files) < total:
-            raise RuntimeError(
-                f"Not enough existing synthetic {family} files: have {len(files)}, need {total}."
-            )
+            print(f"[WARN] Not enough existing synthetic {family} files: "
+                  f"have {len(files)}, requested {total}. Using {actual_count} files.")
 
-        for src in files[:total]:
+        for src in files[:actual_count]:
             rel = src.relative_to(src_root)
             dst = dst_root / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
@@ -199,27 +198,40 @@ def run_command(cmd: Sequence[str]) -> int:
 
 
 
-def validate_existing_datasets(mode: str, total_undirected: int, total_directed: int) -> None:
-    """Validate required synthetic file counts exist; never generate/download here."""
+def validate_existing_datasets(mode: str, total_undirected: int, total_directed: int) -> Tuple[int, int]:
+    """Validate available synthetic files and return adjusted counts.
+    
+    Clamps requested counts to available data with warnings.
+    Returns: (adjusted_total_undirected, adjusted_total_directed)
+    """
+    actual_undirected = total_undirected
+    actual_directed = total_directed
+    
     if mode in {"all", "undirected"}:
         existing_undirected = count_existing_txt_files("undirected")
         if existing_undirected < total_undirected:
             print(
-                f"[ERROR] Not enough undirected synthetic files: "
-                f"have {existing_undirected}, need {total_undirected}."
+                f"[WARN] Not enough undirected synthetic files: "
+                f"have {existing_undirected}, requested {total_undirected}. "
+                f"Using {existing_undirected} files."
             )
-            raise RuntimeError("Insufficient undirected datasets")
-        print(f"[OK] Undirected synthetic files: {existing_undirected} (requested {total_undirected})")
+            actual_undirected = existing_undirected
+        else:
+            print(f"[OK] Undirected synthetic files: {existing_undirected} (requested {total_undirected})")
 
     if mode in {"all", "directed"}:
         existing_directed = count_existing_txt_files("directed")
         if existing_directed < total_directed:
             print(
-                f"[ERROR] Not enough directed synthetic files: "
-                f"have {existing_directed}, need {total_directed}."
+                f"[WARN] Not enough directed synthetic files: "
+                f"have {existing_directed}, requested {total_directed}. "
+                f"Using {existing_directed} files."
             )
-            raise RuntimeError("Insufficient directed datasets")
-        print(f"[OK] Directed synthetic files: {existing_directed} (requested {total_directed})")
+            actual_directed = existing_directed
+        else:
+            print(f"[OK] Directed synthetic files: {existing_directed} (requested {total_directed})")
+    
+    return actual_undirected, actual_directed
 
 
 
@@ -510,7 +522,8 @@ def main() -> None:
     if args.gnn_hidden is not None and args.gnn_hidden <= 0:
         raise ValueError("--gnn-hidden must be a positive integer")
 
-    validate_existing_datasets(
+    # Validate and adjust counts to available data
+    args.total_undirected, args.total_directed = validate_existing_datasets(
         mode=args.mode,
         total_undirected=args.total_undirected,
         total_directed=args.total_directed,
