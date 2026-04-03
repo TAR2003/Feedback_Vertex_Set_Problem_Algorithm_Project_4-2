@@ -21,6 +21,8 @@
 #include <random>
 #include <functional>
 #include <numeric>
+#include <climits>
+#include <iostream>
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -212,9 +214,9 @@ std::vector<int> solve_directed_MA(int n,
         std::min_element(scores.begin(), scores.end()) - scores.begin());
     IndividualD best_ind = pop[best_idx];
     int best_score = scores[best_idx];
-    int best_fvs_size = dfvs_size(best_ind);
-    int no_improve_gens = 0;
-    int effective_patience = (patience > 0) ? patience : 50;
+    int best_fitness_ever = INT_MAX;
+    int gens_without_improvement = 0;
+    int patience_limit = (patience > 0) ? patience : 50;
 
     for (int gen = 0; gen < max_gens; ++gen)
     {
@@ -251,28 +253,39 @@ std::vector<int> solve_directed_MA(int n,
             scores[worst] = child_score;
         }
 
-        bool improved_fvs_size = false;
+        // Keep global best individual by objective score.
         if (child_score < best_score)
         {
             best_score = child_score;
             best_ind = child;
-            int child_fvs_size = dfvs_size(child);
-            if (child_fvs_size < best_fvs_size)
-            {
-                best_fvs_size = child_fvs_size;
-                improved_fvs_size = true;
-            }
         }
 
-        if (improved_fvs_size)
+        // Early stopping is based on generation-best FVS size.
+        int gen_best_idx = static_cast<int>(
+            std::min_element(scores.begin(), scores.end()) - scores.begin());
+        int gen_best_fvs_size = dfvs_size(pop[gen_best_idx]);
+
+        if (gen_best_fvs_size < best_fitness_ever)
         {
-            no_improve_gens = 0;
+            best_fitness_ever = gen_best_fvs_size;
+            gens_without_improvement = 0;
+
+            // Keep returned solution aligned with the generation-best FVS size.
+            if (scores[gen_best_idx] <= best_score)
+            {
+                best_score = scores[gen_best_idx];
+                best_ind = pop[gen_best_idx];
+            }
         }
         else
         {
-            ++no_improve_gens;
-            if (no_improve_gens >= effective_patience)
+            ++gens_without_improvement;
+            if (gens_without_improvement >= patience_limit)
+            {
+                std::cout << "Early stopping triggered at generation "
+                          << gen << std::endl;
                 break;
+            }
         }
     }
 
