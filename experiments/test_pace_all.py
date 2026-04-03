@@ -46,7 +46,7 @@ PROJECT_ROOT = SCRIPT_DIR.parent
 
 
 def run_algorithm_on_instance(algo: str, graph_file: str, graph_type: str = "directed",
-                               pop: int = 100, gens: int = 300) -> Dict:
+                               pop: int = 20, gens: int = 100, timeout: int = 600) -> Dict:
     """
     Run a single algorithm on a single graph file.
     Returns: dict with runtime, fvs_size, status, error info
@@ -70,6 +70,7 @@ def run_algorithm_on_instance(algo: str, graph_file: str, graph_type: str = "dir
                 "--type", graph_type,
                 "--pop", str(pop),
                 "--gens", str(gens),
+                "--timeout", str(timeout),
             ]
             if algo == "GNN-KMA-2":
                 cmd.extend(["--mode", "GNN-KMA-2"])
@@ -82,10 +83,10 @@ def run_algorithm_on_instance(algo: str, graph_file: str, graph_type: str = "dir
                 "--test", graph_file,
             ]
             if algo == "MA":
-                cmd.extend(["--pop", str(pop), "--gens", str(gens)])
+                cmd.extend(["--pop", str(pop), "--gens", str(gens), "--timeout", str(timeout)])
 
-        # Run with timeout (300 seconds = 5 minutes per instance)
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        # Run with timeout (defaults to 600s unless overridden).
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
 
         elapsed = time.time() - start
         result["runtime"] = elapsed
@@ -126,8 +127,9 @@ def main():
     parser.add_argument("--type", choices=["directed", "undirected"], default="directed",
                        help="Graph type")
     parser.add_argument("--filter", default="", help="Filter instances by name pattern")
-    parser.add_argument("--pop", type=int, default=100, help="Population size for MA/GNN-KMA variants")
-    parser.add_argument("--gens", type=int, default=300, help="Generations for MA/GNN-KMA variants")
+    parser.add_argument("--pop", type=int, default=20, help="Population size for MA/GNN-KMA variants")
+    parser.add_argument("--gens", type=int, default=100, help="Generations for MA/GNN-KMA variants")
+    parser.add_argument("--timeout", type=int, default=600, help="Hard wall-clock timeout in seconds")
     parser.add_argument("--algorithms", default="IC,BST,MA,GNN-KMA,GNN-KMA-2",
                        help="Comma-separated algorithms to test")
     args = parser.parse_args()
@@ -187,7 +189,7 @@ def main():
                 count += 1
                 print(f"  [{count:3d}/{total:3d}] {algo:8s} ... ", end="", flush=True)
 
-                result = run_algorithm_on_instance(algo, str(graph_file), args.type, args.pop, args.gens)
+                result = run_algorithm_on_instance(algo, str(graph_file), args.type, args.pop, args.gens, args.timeout)
 
                 status_str = f"{result['status']:10s}"
                 fvs_str = f"{result['fvs_size'] or 'N/A':>6s}"

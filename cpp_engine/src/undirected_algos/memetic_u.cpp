@@ -42,6 +42,7 @@
 #include <numeric>
 #include <climits>
 #include <iostream>
+#include <chrono>
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -239,7 +240,8 @@ static std::vector<Individual> init_population(
 std::vector<int> solve_undirected_MA(int n,
                                      const std::vector<std::pair<int, int>> &edges,
                                      int pop_size, int max_gens,
-                                     int patience)
+                                     int patience,
+                                     int max_time_seconds)
 {
 
     if (n == 0)
@@ -273,11 +275,23 @@ std::vector<int> solve_undirected_MA(int n,
     int best_score = scores[best_idx];
     int best_fitness_ever = INT_MAX;
     int gens_without_improvement = 0;
-    int patience_limit = (patience > 0) ? patience : 50;
+    int patience_limit = (patience > 0) ? patience : 20;
+    const auto start_time = std::chrono::steady_clock::now();
 
     // ── Main loop ────────────────────────────────────────────────────────────
     for (int gen = 0; gen < max_gens; ++gen)
     {
+        if (max_time_seconds > 0)
+        {
+            const auto elapsed_seconds = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now() - start_time)
+                                             .count();
+            if (elapsed_seconds >= max_time_seconds)
+            {
+                std::cout << "Hard time limit reached. Stopping early." << std::endl;
+                break;
+            }
+        }
 
         // Select two parents by tournament
         int p1 = tournament_select(scores, rng);
@@ -366,7 +380,8 @@ std::vector<int> solve_undirected_MA(int n,
 std::vector<int> solve_undirected_KMA(int n,
                                       const std::vector<std::pair<int, int>> &edges,
                                       int pop_size, int max_gens,
-                                      int patience)
+                                      int patience,
+                                      int max_time_seconds)
 {
     if (n == 0)
         return {};
@@ -416,7 +431,8 @@ std::vector<int> solve_undirected_KMA(int n,
             kernel_edges,
             pop_size,
             max_gens,
-            patience);
+            patience,
+            max_time_seconds);
     }
 
     std::vector<int> result = forced;
@@ -435,7 +451,8 @@ std::vector<int> solve_undirected_KMA(int n,
 std::vector<int> solve_undirected_KME(int n,
                                       const std::vector<std::pair<int, int>> &edges,
                                       int pop_size, int max_gens,
-                                      int patience)
+                                      int patience,
+                                      int max_time_seconds)
 {
-    return solve_undirected_KMA(n, edges, pop_size, max_gens, patience);
+    return solve_undirected_KMA(n, edges, pop_size, max_gens, patience, max_time_seconds);
 }

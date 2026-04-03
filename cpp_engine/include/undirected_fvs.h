@@ -123,8 +123,9 @@ std::vector<int> solve_undirected_IC(int n,
  */
 std::vector<int> solve_undirected_MA(int n,
                                      const std::vector<std::pair<int, int>> &edges,
-                                     int pop_size = 50, int max_gens = 200,
-                                     int patience = 50);
+                                     int pop_size = 20, int max_gens = 100,
+                                     int patience = 20,
+                                     int max_time_seconds = 600);
 
 /**
  * Kernelized Memetic Algorithm (KMA) for undirected FVS.
@@ -136,11 +137,13 @@ std::vector<int> solve_undirected_MA(int n,
  */
 std::vector<int> solve_undirected_KME(int n,
                                       const std::vector<std::pair<int, int>> &edges,
-                                      int pop_size = 50, int max_gens = 200,
-                                      int patience = 30);
+                                      int pop_size = 20, int max_gens = 100,
+                                      int patience = 15,
+                                      int max_time_seconds = 600);
 
 // Preferred KMA entry point (KME kept as backward-compatible alias).
 std::vector<int> solve_undirected_KMA(int n,
                                       const std::vector<std::pair<int, int>> &edges,
-                                      int pop_size = 50, int max_gens = 200,
-                                      int patience = 30);
+                                      int pop_size = 20, int max_gens = 100,
+                                      int patience = 15,
+                                      int max_time_seconds = 600);

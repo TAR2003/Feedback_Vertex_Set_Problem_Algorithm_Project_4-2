@@ -278,6 +278,7 @@ def run_undirected(
     algo: str,
     pop: int,
     gens: int,
+    timeout: int,
     gnn_threshold: float,
     gnn_hidden: int | None,
     quiet: bool,
@@ -317,6 +318,8 @@ def run_undirected(
                 str(pop),
                 "--gens",
                 str(gens),
+                "--timeout",
+                str(timeout),
                 "--gnn-threshold",
                 str(gnn_threshold),
             ]
@@ -341,6 +344,7 @@ def run_directed(
     algo: str,
     pop: int,
     gens: int,
+    timeout: int,
     gnn_threshold: float,
     gnn_hidden: int | None,
     quiet: bool,
@@ -383,6 +387,8 @@ def run_directed(
                 str(pop),
                 "--gens",
                 str(gens),
+                "--timeout",
+                str(timeout),
                 "--gnn-threshold",
                 str(gnn_threshold),
             ]
@@ -426,8 +432,9 @@ def main() -> None:
         default="ALL",
         help="Algorithm selection forwarded to benchmark scripts (PUREALGO: BST, IC, MA, KMA)",
     )
-    parser.add_argument("--pop", type=int, default=50, help="Population size for MA/KMA/GNN-KMA variants")
-    parser.add_argument("--gens", "--gen", type=int, default=200, help="Max generations for MA/KMA/GNN-KMA variants")
+    parser.add_argument("--pop", type=int, default=20, help="Population size for MA/KMA/GNN-KMA variants")
+    parser.add_argument("--gens", "--gen", type=int, default=100, help="Max generations for MA/KMA/GNN-KMA variants")
+    parser.add_argument("--timeout", type=int, default=600, help="Hard wall-clock timeout in seconds for MA/KMA/GNN-KMA variants")
     parser.add_argument(
         "--threshold",
         type=float,
@@ -525,6 +532,8 @@ def main() -> None:
 
     if not (0.0 <= args.threshold <= 1.0):
         raise ValueError("--threshold must be in [0.0, 1.0]")
+    if args.timeout <= 0:
+        raise ValueError("--timeout must be a positive integer")
     if args.gnn_hidden is not None and args.gnn_hidden <= 0:
         raise ValueError("--gnn-hidden must be a positive integer")
 
@@ -564,6 +573,7 @@ def main() -> None:
                 args.algo,
                 args.pop,
                 args.gens,
+                args.timeout,
                 args.threshold,
                 args.gnn_hidden,
                 args.quiet,
@@ -579,6 +589,7 @@ def main() -> None:
                 args.algo,
                 args.pop,
                 args.gens,
+                args.timeout,
                 args.threshold,
                 args.gnn_hidden,
                 args.quiet,

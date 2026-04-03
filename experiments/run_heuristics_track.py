@@ -36,7 +36,7 @@ def _run(cmd: Sequence[str]) -> int:
     return proc.returncode
 
 
-def _run_undirected(algos: Sequence[str], pop: int, gens: int, quiet: bool, stamp: str) -> List[Path]:
+def _run_undirected(algos: Sequence[str], pop: int, gens: int, timeout: int, quiet: bool, stamp: str) -> List[Path]:
     out_files: List[Path] = []
     target = DATA_DIR / "undirected" / "heuristic_track"
     if not target.exists():
@@ -58,6 +58,8 @@ def _run_undirected(algos: Sequence[str], pop: int, gens: int, quiet: bool, stam
             str(pop),
             "--gens",
             str(gens),
+            "--timeout",
+            str(timeout),
         ]
         if quiet:
             cmd.append("--quiet")
@@ -70,7 +72,7 @@ def _run_undirected(algos: Sequence[str], pop: int, gens: int, quiet: bool, stam
     return out_files
 
 
-def _run_directed(algos: Sequence[str], pop: int, gens: int, quiet: bool, stamp: str) -> List[Path]:
+def _run_directed(algos: Sequence[str], pop: int, gens: int, timeout: int, quiet: bool, stamp: str) -> List[Path]:
     out_files: List[Path] = []
     target = DATA_DIR / "directed" / "heuristic_track"
     if not target.exists():
@@ -92,6 +94,8 @@ def _run_directed(algos: Sequence[str], pop: int, gens: int, quiet: bool, stamp:
             str(pop),
             "--gens",
             str(gens),
+            "--timeout",
+            str(timeout),
         ]
         if quiet:
             cmd.append("--quiet")
@@ -127,10 +131,14 @@ def main() -> None:
         default=["MA", "KMA", "GNN-KMA", "GNN-KMA-2"],
         help="Heuristic algorithms to run (subset of: MA KMA GNN-KMA GNN-KMA-2)",
     )
-    parser.add_argument("--pop", type=int, default=50)
-    parser.add_argument("--gens", type=int, default=200)
+    parser.add_argument("--pop", type=int, default=20)
+    parser.add_argument("--gens", type=int, default=100)
+    parser.add_argument("--timeout", type=int, default=600)
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args()
+
+    if args.timeout <= 0:
+        raise ValueError("--timeout must be a positive integer")
 
     _validate_algos(args.algos)
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -139,10 +147,10 @@ def main() -> None:
     outputs: List[Path] = []
 
     if args.mode in {"all", "undirected"}:
-        outputs.extend(_run_undirected(args.algos, args.pop, args.gens, args.quiet, stamp))
+        outputs.extend(_run_undirected(args.algos, args.pop, args.gens, args.timeout, args.quiet, stamp))
 
     if args.mode in {"all", "directed"}:
-        outputs.extend(_run_directed(args.algos, args.pop, args.gens, args.quiet, stamp))
+        outputs.extend(_run_directed(args.algos, args.pop, args.gens, args.timeout, args.quiet, stamp))
 
     print("\nHeuristic-track summary")
     print("-----------------------")

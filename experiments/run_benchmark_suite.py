@@ -152,6 +152,7 @@ def run_single_file(
     file_path: Path,
     pop: int,
     gens: int,
+    timeout: int,
     quiet: bool,
     temp_csv: Path,
 ) -> Dict[str, str]:
@@ -170,6 +171,8 @@ def run_single_file(
         str(pop),
         "--gens",
         str(gens),
+        "--timeout",
+        str(timeout),
     ]
     if quiet:
         cmd.append("--quiet")
@@ -254,6 +257,7 @@ def run_task(
     task: Task,
     pop: int,
     gens: int,
+    timeout: int,
     quiet: bool,
     rerun: bool,
     max_files: int,
@@ -295,6 +299,7 @@ def run_task(
             file_path=fp,
             pop=pop,
             gens=gens,
+            timeout=timeout,
             quiet=quiet,
             temp_csv=temp_csv,
         )
@@ -341,8 +346,9 @@ def main() -> None:
         default="requested",
         help="Task profile: requested (directed exact all + undirected heuristic only) or full",
     )
-    parser.add_argument("--pop", type=int, default=50, help="Population size for MA/KMA/GNN-KMA variants")
-    parser.add_argument("--gens", type=int, default=200, help="Max generations for MA/KMA/GNN-KMA variants")
+    parser.add_argument("--pop", type=int, default=20, help="Population size for MA/KMA/GNN-KMA variants")
+    parser.add_argument("--gens", type=int, default=100, help="Max generations for MA/KMA/GNN-KMA variants")
+    parser.add_argument("--timeout", type=int, default=600, help="Hard wall-clock timeout in seconds for MA/KMA/GNN-KMA variants")
     parser.add_argument("--quiet", action="store_true", help="Forward quiet mode to benchmark scripts")
     parser.add_argument(
         "--rerun",
@@ -357,6 +363,9 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    if args.timeout <= 0:
+        raise ValueError("--timeout must be a positive integer")
+
     RESULTS_ROOT.mkdir(parents=True, exist_ok=True)
     tasks = build_tasks(args.mode, args.profile)
 
@@ -369,6 +378,7 @@ def main() -> None:
             task,
             pop=args.pop,
             gens=args.gens,
+            timeout=args.timeout,
             quiet=args.quiet,
             rerun=args.rerun,
             max_files=args.max_files,

@@ -730,8 +730,9 @@ def run_gnn_directed_v2(n, edges, threshold=0.2, hidden_dim=None):
 #  GNN-KMA Solver
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def gnn_KMA_solve_undirected(n, edges, pop_size=60, max_gens=300,
-                            gnn_threshold=0.2, gnn_hidden_dim=None):
+def gnn_KMA_solve_undirected(n, edges, pop_size=20, max_gens=100,
+                            gnn_threshold=0.2, gnn_hidden_dim=None,
+                            max_time_seconds=600):
     """
     GNN-KMA: kernelize → GNN on kernel → KMA refinement for undirected FVS.
 
@@ -782,11 +783,17 @@ def gnn_KMA_solve_undirected(n, edges, pop_size=60, max_gens=300,
     # Step 2: KMA refinement on the reduced kernel graph.
     if reduced_n > 0:
         if hasattr(cpp_engine, "solve_undirected_KMA"):
-            reduced_fvs = cpp_engine.solve_undirected_KMA(reduced_n, reduced_edges, pop_size, max_gens, 20)
+            reduced_fvs = cpp_engine.solve_undirected_KMA(
+                reduced_n, reduced_edges, pop_size, max_gens, 10, max_time_seconds
+            )
         elif hasattr(cpp_engine, "solve_undirected_KMA"):
-            reduced_fvs = cpp_engine.solve_undirected_KMA(reduced_n, reduced_edges, pop_size, max_gens, 20)
+            reduced_fvs = cpp_engine.solve_undirected_KMA(
+                reduced_n, reduced_edges, pop_size, max_gens, 10, max_time_seconds
+            )
         else:
-            reduced_fvs = cpp_engine.solve_undirected_MA(reduced_n, reduced_edges, pop_size, max_gens, 20)
+            reduced_fvs = cpp_engine.solve_undirected_MA(
+                reduced_n, reduced_edges, pop_size, max_gens, 10, max_time_seconds
+            )
     else:
         reduced_fvs = []
 
@@ -798,8 +805,9 @@ def gnn_KMA_solve_undirected(n, edges, pop_size=60, max_gens=300,
     return sorted(set(forced).union(mapped))
 
 
-def gnn_KMA_solve_directed(n, edges, pop_size=60, max_gens=300,
-                          gnn_threshold=0.2, gnn_hidden_dim=None):
+def gnn_KMA_solve_directed(n, edges, pop_size=20, max_gens=100,
+                          gnn_threshold=0.2, gnn_hidden_dim=None,
+                          max_time_seconds=600):
     """
     GNN-KMA: kernelize → GNN on kernel → KMA refinement for directed FVS.
     """
@@ -845,11 +853,17 @@ def gnn_KMA_solve_directed(n, edges, pop_size=60, max_gens=300,
 
     if reduced_n > 0:
         if hasattr(cpp_engine, "solve_directed_KMA"):
-            reduced_fvs = cpp_engine.solve_directed_KMA(reduced_n, reduced_edges, pop_size, max_gens, 20)
+            reduced_fvs = cpp_engine.solve_directed_KMA(
+                reduced_n, reduced_edges, pop_size, max_gens, 10, max_time_seconds
+            )
         elif hasattr(cpp_engine, "solve_directed_KMA"):
-            reduced_fvs = cpp_engine.solve_directed_KMA(reduced_n, reduced_edges, pop_size, max_gens, 20)
+            reduced_fvs = cpp_engine.solve_directed_KMA(
+                reduced_n, reduced_edges, pop_size, max_gens, 10, max_time_seconds
+            )
         else:
-            reduced_fvs = cpp_engine.solve_directed_MA(reduced_n, reduced_edges, pop_size, max_gens, 20)
+            reduced_fvs = cpp_engine.solve_directed_MA(
+                reduced_n, reduced_edges, pop_size, max_gens, 10, max_time_seconds
+            )
     else:
         reduced_fvs = []
 
@@ -861,8 +875,9 @@ def gnn_KMA_solve_directed(n, edges, pop_size=60, max_gens=300,
     return sorted(set(forced).union(mapped))
 
 
-def gnn_KMA2_solve_undirected(n, edges, pop_size=60, max_gens=300,
-                              gnn_threshold=0.2, gnn_hidden_dim=None):
+def gnn_KMA2_solve_undirected(n, edges, pop_size=20, max_gens=100,
+                              gnn_threshold=0.2, gnn_hidden_dim=None,
+                              max_time_seconds=600):
     """
     GNN-KMA-2: kernelize -> GNN-v2 on kernel -> KMA refinement for undirected FVS.
     """
@@ -907,11 +922,17 @@ def gnn_KMA2_solve_undirected(n, edges, pop_size=60, max_gens=300,
 
     if reduced_n > 0:
         if hasattr(cpp_engine, "solve_undirected_KMA"):
-            reduced_fvs = cpp_engine.solve_undirected_KMA(reduced_n, reduced_edges, pop_size, max_gens, 20)
+            reduced_fvs = cpp_engine.solve_undirected_KMA(
+                reduced_n, reduced_edges, pop_size, max_gens, 10, max_time_seconds
+            )
         elif hasattr(cpp_engine, "solve_undirected_KMA"):
-            reduced_fvs = cpp_engine.solve_undirected_KMA(reduced_n, reduced_edges, pop_size, max_gens, 20)
+            reduced_fvs = cpp_engine.solve_undirected_KMA(
+                reduced_n, reduced_edges, pop_size, max_gens, 10, max_time_seconds
+            )
         else:
-            reduced_fvs = cpp_engine.solve_undirected_MA(reduced_n, reduced_edges, pop_size, max_gens, 20)
+            reduced_fvs = cpp_engine.solve_undirected_MA(
+                reduced_n, reduced_edges, pop_size, max_gens, 10, max_time_seconds
+            )
     else:
         reduced_fvs = []
 
@@ -923,8 +944,9 @@ def gnn_KMA2_solve_undirected(n, edges, pop_size=60, max_gens=300,
     return sorted(set(forced).union(mapped))
 
 
-def gnn_KMA2_solve_directed(n, edges, pop_size=60, max_gens=300,
-                            gnn_threshold=0.2, gnn_hidden_dim=None):
+def gnn_KMA2_solve_directed(n, edges, pop_size=20, max_gens=100,
+                            gnn_threshold=0.2, gnn_hidden_dim=None,
+                            max_time_seconds=600):
     """
     GNN-KMA-2: kernelize -> GNN-v2 on kernel -> KMA refinement for directed FVS.
     """
@@ -969,11 +991,17 @@ def gnn_KMA2_solve_directed(n, edges, pop_size=60, max_gens=300,
 
     if reduced_n > 0:
         if hasattr(cpp_engine, "solve_directed_KMA"):
-            reduced_fvs = cpp_engine.solve_directed_KMA(reduced_n, reduced_edges, pop_size, max_gens, 20)
+            reduced_fvs = cpp_engine.solve_directed_KMA(
+                reduced_n, reduced_edges, pop_size, max_gens, 10, max_time_seconds
+            )
         elif hasattr(cpp_engine, "solve_directed_KMA"):
-            reduced_fvs = cpp_engine.solve_directed_KMA(reduced_n, reduced_edges, pop_size, max_gens, 20)
+            reduced_fvs = cpp_engine.solve_directed_KMA(
+                reduced_n, reduced_edges, pop_size, max_gens, 10, max_time_seconds
+            )
         else:
-            reduced_fvs = cpp_engine.solve_directed_MA(reduced_n, reduced_edges, pop_size, max_gens, 20)
+            reduced_fvs = cpp_engine.solve_directed_MA(
+                reduced_n, reduced_edges, pop_size, max_gens, 10, max_time_seconds
+            )
     else:
         reduced_fvs = []
 
@@ -1012,12 +1040,16 @@ def main():
         help="Graph type: undirected or directed (default: undirected)"
     )
     parser.add_argument(
-        "--pop", type=int, default=60,
-        help="KMA population size (default: 60)"
+        "--pop", type=int, default=20,
+        help="KMA population size (default: 20)"
     )
     parser.add_argument(
-        "--gens", type=int, default=300,
-        help="KMA maximum generations (default: 300)"
+        "--gens", type=int, default=100,
+        help="KMA maximum generations (default: 100)"
+    )
+    parser.add_argument(
+        "--timeout", type=int, default=600,
+        help="Hard wall-clock timeout in seconds for MA/KMA refinement (default: 600)"
     )
     parser.add_argument(
         "--threshold", type=float, default=0.2,
@@ -1039,6 +1071,10 @@ def main():
     )
 
     args = parser.parse_args()
+
+    if args.timeout <= 0:
+        print("ERROR: --timeout must be a positive integer")
+        sys.exit(1)
 
     # ── Local imports to avoid circular dependency ─────────────────────────────
     from experiments.benchmark_undirected import parse_graph_file, verify_fvs
@@ -1078,21 +1114,25 @@ def main():
     if args.type == "undirected":
         if args.mode == "GNN-KMA-2":
             fvs = gnn_KMA2_solve_undirected(
-                n, edges, args.pop, args.gens, args.threshold, args.gnn_hidden
+                n, edges, args.pop, args.gens, args.threshold, args.gnn_hidden,
+                max_time_seconds=args.timeout,
             )
         else:
             fvs = gnn_KMA_solve_undirected(
-                n, edges, args.pop, args.gens, args.threshold, args.gnn_hidden
+                n, edges, args.pop, args.gens, args.threshold, args.gnn_hidden,
+                max_time_seconds=args.timeout,
             )
         valid = verify_fvs(n, edges, fvs)
     else:
         if args.mode == "GNN-KMA-2":
             fvs = gnn_KMA2_solve_directed(
-                n, edges, args.pop, args.gens, args.threshold, args.gnn_hidden
+                n, edges, args.pop, args.gens, args.threshold, args.gnn_hidden,
+                max_time_seconds=args.timeout,
             )
         else:
             fvs = gnn_KMA_solve_directed(
-                n, edges, args.pop, args.gens, args.threshold, args.gnn_hidden
+                n, edges, args.pop, args.gens, args.threshold, args.gnn_hidden,
+                max_time_seconds=args.timeout,
             )
         valid = verify_dfvs(n, edges, fvs)
 
@@ -1107,19 +1147,19 @@ def main():
 
         if args.type == "undirected":
             if hasattr(cpp_engine, "solve_undirected_KMA"):
-                fvs_ma = cpp_engine.solve_undirected_KMA(n, edges, args.pop, args.gens)
+                fvs_ma = cpp_engine.solve_undirected_KMA(n, edges, args.pop, args.gens, 15, args.timeout)
             elif hasattr(cpp_engine, "solve_undirected_KMA"):
-                fvs_ma = cpp_engine.solve_undirected_KMA(n, edges, args.pop, args.gens)
+                fvs_ma = cpp_engine.solve_undirected_KMA(n, edges, args.pop, args.gens, 15, args.timeout)
             else:
-                fvs_ma = cpp_engine.solve_undirected_MA(n, edges, args.pop, args.gens)
+                fvs_ma = cpp_engine.solve_undirected_MA(n, edges, args.pop, args.gens, 20, args.timeout)
             valid_ma = verify_fvs(n, edges, fvs_ma)
         else:
             if hasattr(cpp_engine, "solve_directed_KMA"):
-                fvs_ma = cpp_engine.solve_directed_KMA(n, edges, args.pop, args.gens)
+                fvs_ma = cpp_engine.solve_directed_KMA(n, edges, args.pop, args.gens, 15, args.timeout)
             elif hasattr(cpp_engine, "solve_directed_KMA"):
-                fvs_ma = cpp_engine.solve_directed_KMA(n, edges, args.pop, args.gens)
+                fvs_ma = cpp_engine.solve_directed_KMA(n, edges, args.pop, args.gens, 15, args.timeout)
             else:
-                fvs_ma = cpp_engine.solve_directed_MA(n, edges, args.pop, args.gens)
+                fvs_ma = cpp_engine.solve_directed_MA(n, edges, args.pop, args.gens, 20, args.timeout)
             valid_ma = verify_dfvs(n, edges, fvs_ma)
 
         ms_ma   = (time.perf_counter() - start) * 1000.0
