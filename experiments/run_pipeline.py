@@ -478,14 +478,14 @@ def main() -> None:
     parser.add_argument(
         "--total-undirected",
         type=int,
-        default=100,
-        help="Target synthetic undirected dataset count (only generates missing files)",
+        default=None,
+        help="Target synthetic undirected dataset count (defaults to all available files)",
     )
     parser.add_argument(
         "--total-directed",
         type=int,
-        default=100,
-        help="Target synthetic directed dataset count (only generates missing files)",
+        default=None,
+        help="Target synthetic directed dataset count (defaults to all available files)",
     )
     parser.add_argument(
         "--exact-ratio",
@@ -502,6 +502,12 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+
+    # If totals not specified, use all available files
+    if args.total_undirected is None:
+        args.total_undirected = count_existing_txt_files("undirected")
+    if args.total_directed is None:
+        args.total_directed = count_existing_txt_files("directed")
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
