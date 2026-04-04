@@ -3,7 +3,8 @@ set -euo pipefail
 
 # 1. Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_Decho "--- [1DATASET_SLUG="tawkirazizrahman/fvs-synthetic-dataset-20k"
+cd "$SCRIPT_DIR"
+DATASET_SLUG="tawkirazizrahman/fvs-synthetic-dataset-20k"
 TARGET_DIR="./data/synthetic"
 
 PACE_URL="https://heibox.uni-heidelberg.de/f/97634323e3cb4aab8291/?dl=1"
