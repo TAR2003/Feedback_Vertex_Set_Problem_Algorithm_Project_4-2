@@ -36,7 +36,7 @@ print(f'✅ Dataset moved to {target}')
 # python data/setup_benchmark_inputs.py --total-undirected 100 --total-directed 100 --seed 7
 
 echo "--- [3/4] Running the default pipeline ---"
-python3 experiments/run_pipeline.py --mode all --algo ALL --total-undirected 100 --total-directed 100
+python3 experiments/run_pipeline.py --mode all --algo ALL --timeout 30
 
 echo "--- [4/4] Pipeline finished ---"
 
