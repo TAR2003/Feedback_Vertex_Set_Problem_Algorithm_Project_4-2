@@ -47,6 +47,25 @@ def _run(cmd: list[str], cwd: Path | None = None, fail_hint: str | None = None) 
         raise RuntimeError(f"Command failed with exit code {result.returncode}: {' '.join(cmd)}")
 
 
+REQUIREMENTS_FILE = PROJECT_ROOT / "requirements.txt"
+
+
+def _run_pip(cmd: list[str]) -> None:
+    pip_cmd = [sys.executable, "-m", "pip"] + cmd
+    print("$ " + " ".join(pip_cmd))
+    result = subprocess.run(pip_cmd, check=False)
+    if result.returncode != 0:
+        raise RuntimeError(f"pip install failed with exit code {result.returncode}: {' '.join(pip_cmd)}")
+
+
+def _install_requirements() -> None:
+    if not REQUIREMENTS_FILE.exists():
+        raise RuntimeError(f"Missing requirements file: {REQUIREMENTS_FILE}")
+    print("\n[0/2] Installing Python dependencies from requirements.txt")
+    _run_pip(["install", "--upgrade", "pip", "setuptools", "wheel"])
+    _run_pip(["install", "-r", str(REQUIREMENTS_FILE)])
+
+
 def _print_artifacts(build_dir: Path) -> None:
     build_artifacts = list(build_dir.glob("cpp_engine*.pyd")) + list(build_dir.glob("cpp_engine*.so"))
     exp_artifacts = list((PROJECT_ROOT / "experiments").glob("cpp_engine*.pyd")) + list(
@@ -86,7 +105,25 @@ def main() -> int:
         action="store_true",
         help="Run cmake --install (installs module to experiments/ as configured in CMakeLists)",
     )
+    parser.add_argument(
+        "--no-install",
+        action="store_true",
+        help="Skip cmake --install after building",
+    )
+    parser.add_argument(
+        "--no-install-deps",
+        action="store_true",
+        help="Skip installing requirements.txt before building",
+    )
     args = parser.parse_args()
+
+    if not args.no_install_deps:
+        _install_requirements()
+
+    install_module = not args.no_install
+    if args.install:
+        install_module = True
+
     build_dir = Path(args.build_dir).resolve() if args.build_dir else _default_build_dir()
 
     if not CPP_ENGINE_DIR.exists():
@@ -129,7 +166,7 @@ def main() -> int:
             build_cmd += ["--parallel", str(args.jobs)]
         _run(build_cmd)
 
-        if args.install:
+        if install_module:
             print("\n[3/3] Installing module")
             install_cmd = cmake + ["--install", str(build_dir), "--config", args.build_type]
             _run(install_cmd)
