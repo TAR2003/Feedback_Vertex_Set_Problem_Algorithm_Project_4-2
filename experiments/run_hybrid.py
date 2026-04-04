@@ -66,6 +66,9 @@ DirectedFVSNet = None
 HAS_GNN_V2 = None
 UndirectedFVSNetV2 = None
 DirectedFVSNetV2 = None
+HAS_PYG_LOADER = None
+NeighborLoader = None
+PygData = None
 
 try:
     import networkx as nx
@@ -124,6 +127,52 @@ def get_gnn_models_v2():
             UndirectedFVSNetV2 = None
             DirectedFVSNetV2 = None
     return HAS_GNN_V2, UndirectedFVSNetV2, DirectedFVSNetV2
+
+
+def get_pyg_loader():
+    """Lazy import for PyG NeighborLoader/Data used by mini-batch inference."""
+    global HAS_PYG_LOADER, NeighborLoader, PygData
+    if HAS_PYG_LOADER is None:
+        try:
+            from torch_geometric.loader import NeighborLoader as _NeighborLoader
+            from torch_geometric.data import Data as _PygData
+            NeighborLoader = _NeighborLoader
+            PygData = _PygData
+            HAS_PYG_LOADER = True
+        except ImportError:
+            HAS_PYG_LOADER = False
+            NeighborLoader = None
+            PygData = None
+    return HAS_PYG_LOADER, NeighborLoader, PygData
+
+
+def _gnn_phase_timed_out(gnn_start_time, gnn_timeout):
+    if gnn_start_time is None or gnn_timeout is None:
+        return False
+    return (time.time() - gnn_start_time) > float(gnn_timeout)
+
+
+def _warn_gnn_timeout(gnn_timeout):
+    print(f"GNN phase timed out (>{gnn_timeout} seconds). Bypassing GNN and proceeding with pure KMA.")
+
+
+def _neighbor_hops_for_model(model, default_hops=3):
+    layers = 0
+    for i in range(1, 11):
+        if hasattr(model, f"conv{i}"):
+            layers += 1
+    return [10] * (layers if layers > 0 else default_hops)
+
+
+def _extract_positive_probs(sigmoid_out):
+    """Return per-node positive-class probabilities from sigmoid outputs."""
+    if sigmoid_out.dim() == 1:
+        return sigmoid_out
+    if sigmoid_out.dim() == 2:
+        if sigmoid_out.size(1) == 1:
+            return sigmoid_out[:, 0]
+        return sigmoid_out[:, 1]
+    return sigmoid_out.reshape(sigmoid_out.size(0), -1)[:, 0]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -347,7 +396,7 @@ def kernelize_directed_graph(n, edges):
 #  Feature Extraction (mirrors gnn_model/dataset_gen.py)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def get_undirected_features(n, edges):
+def get_undirected_features(n, edges, gnn_start_time=None, gnn_timeout=None):
     """
     Compute per-node features for undirected graph.
     Returns list of [degree_norm, clustering_coeff, log_degree_norm].
@@ -367,6 +416,8 @@ def get_undirected_features(n, edges):
 
     features = []
     for v in range(n):
+        if _gnn_phase_timed_out(gnn_start_time, gnn_timeout):
+            return None
         d = degs.get(v, 0)
         features.append([
             d / max(n - 1, 1),
@@ -376,7 +427,7 @@ def get_undirected_features(n, edges):
     return features
 
 
-def get_directed_features(n, edges):
+def get_directed_features(n, edges, gnn_start_time=None, gnn_timeout=None):
     """
     Compute per-node features for directed graph.
     Returns list of [in_deg_norm, out_deg_norm, min_deg_norm].
@@ -389,6 +440,8 @@ def get_directed_features(n, edges):
 
     features = []
     for v in range(n):
+        if _gnn_phase_timed_out(gnn_start_time, gnn_timeout):
+            return None
         ind  = in_deg[v]
         outd = out_deg[v]
         features.append([
@@ -399,18 +452,36 @@ def get_directed_features(n, edges):
     return features
 
 
-def get_undirected_features_v2(n, edges):
+def get_undirected_features_v2(n, edges, gnn_start_time=None, gnn_timeout=None):
     """Advanced undirected structural features used by GNN-KMA-2."""
     if not HAS_NX:
-        return get_undirected_features(n, edges)
-    return compute_node_features_undirected_v2(n, edges)
+        return get_undirected_features(
+            n,
+            edges,
+            gnn_start_time=gnn_start_time,
+            gnn_timeout=gnn_timeout,
+        )
+    return compute_node_features_undirected_v2(
+        n,
+        edges,
+        should_abort=lambda: _gnn_phase_timed_out(gnn_start_time, gnn_timeout),
+    )
 
 
-def get_directed_features_v2(n, edges):
+def get_directed_features_v2(n, edges, gnn_start_time=None, gnn_timeout=None):
     """Advanced directed structural features used by GNN-KMA-2."""
     if not HAS_NX:
-        return get_directed_features(n, edges)
-    return compute_node_features_directed_v2(n, edges)
+        return get_directed_features(
+            n,
+            edges,
+            gnn_start_time=gnn_start_time,
+            gnn_timeout=gnn_timeout,
+        )
+    return compute_node_features_directed_v2(
+        n,
+        edges,
+        should_abort=lambda: _gnn_phase_timed_out(gnn_start_time, gnn_timeout),
+    )
 
 
 def make_edge_index(edges, n, bidirected=False):
@@ -534,17 +605,22 @@ def _pick_gnn_candidates_from_probs(
 #  GNN Inference
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def run_gnn_undirected(n, edges, threshold=0.2, hidden_dim=None):
+def run_gnn_undirected(n, edges, threshold=0.2, hidden_dim=None, gnn_timeout=60):
     """
     Run undirected GNN. Returns set of predicted FVS vertex indices.
     Returns None if GNN is unavailable.
     """
     torch = get_torch()
     has_gnn, UNet, _ = get_gnn_models()
+    has_loader, LoaderCls, DataCls = get_pyg_loader()
     weights_path = PROJECT_ROOT / "gnn_model" / "weights" / "undirected_fvs_gcn.pt"
 
     if not has_gnn or torch is None:
         print("  [GNN] PyTorch/GNN not available. Skipping GNN step.")
+        return None
+
+    if not has_loader:
+        print("  [GNN] torch_geometric NeighborLoader not available. Skipping GNN step.")
         return None
 
     if not weights_path.exists():
@@ -553,6 +629,7 @@ def run_gnn_undirected(n, edges, threshold=0.2, hidden_dim=None):
         return None
 
     try:
+        gnn_start_time = time.time()
         model, used_hidden = _load_model_with_checkpoint(
             UNet,
             weights_path,
@@ -561,13 +638,55 @@ def run_gnn_undirected(n, edges, threshold=0.2, hidden_dim=None):
         )
         model.eval()
 
-        feats = get_undirected_features(n, edges)
+        feats = get_undirected_features(
+            n,
+            edges,
+            gnn_start_time=gnn_start_time,
+            gnn_timeout=gnn_timeout,
+        )
+        if feats is None:
+            _warn_gnn_timeout(gnn_timeout)
+            return set()
+
+        if _gnn_phase_timed_out(gnn_start_time, gnn_timeout):
+            _warn_gnn_timeout(gnn_timeout)
+            return set()
+
         x = torch.tensor(feats, dtype=torch.float)
         ei = make_edge_index(edges, n, bidirected=True)
 
+        data = DataCls(x=x, edge_index=ei)
+        neighbor_loader = LoaderCls(
+            data,
+            input_nodes=torch.arange(n),
+            num_neighbors=_neighbor_hops_for_model(model, default_hops=3),
+            batch_size=2048,
+            shuffle=False,
+            directed=False,
+        )
+
+        batch_probs = []
         with torch.no_grad():
-            logits = model(x, ei)
-            pos_probs = logits.exp()[:, 1]
+            for batch in neighbor_loader:
+                if _gnn_phase_timed_out(gnn_start_time, gnn_timeout):
+                    _warn_gnn_timeout(gnn_timeout)
+                    return set()
+
+                out = model(batch.x, batch.edge_index)
+                probs = torch.sigmoid(out)
+                target_probs = _extract_positive_probs(probs[:batch.batch_size])
+                batch_probs.append(target_probs.cpu())
+
+        if not batch_probs:
+            return set()
+
+        pos_probs = torch.cat(batch_probs, dim=0)
+        if pos_probs.numel() < n:
+            print("  [GNN] Incomplete NeighborLoader predictions; skipping GNN hints.")
+            return set()
+        if pos_probs.numel() > n:
+            pos_probs = pos_probs[:n]
+
         gnn_candidates, selection_mode = _pick_gnn_candidates_from_probs(
             pos_probs,
             threshold=threshold,
@@ -584,17 +703,22 @@ def run_gnn_undirected(n, edges, threshold=0.2, hidden_dim=None):
         return None
 
 
-def run_gnn_directed(n, edges, threshold=0.2, hidden_dim=None):
+def run_gnn_directed(n, edges, threshold=0.2, hidden_dim=None, gnn_timeout=60):
     """
     Run directed GNN (DiGCN). Returns set of predicted DFVS vertex indices.
     Returns None if GNN is unavailable.
     """
     torch = get_torch()
     has_gnn, _, DNet = get_gnn_models()
+    has_loader, LoaderCls, DataCls = get_pyg_loader()
     weights_path = PROJECT_ROOT / "gnn_model" / "weights" / "directed_fvs_gcn.pt"
 
     if not has_gnn or torch is None:
         print("  [GNN] PyTorch/GNN not available. Skipping GNN step.")
+        return None
+
+    if not has_loader:
+        print("  [GNN] torch_geometric NeighborLoader not available. Skipping GNN step.")
         return None
 
     if not weights_path.exists():
@@ -603,6 +727,7 @@ def run_gnn_directed(n, edges, threshold=0.2, hidden_dim=None):
         return None
 
     try:
+        gnn_start_time = time.time()
         model, used_hidden = _load_model_with_checkpoint(
             DNet,
             weights_path,
@@ -611,13 +736,55 @@ def run_gnn_directed(n, edges, threshold=0.2, hidden_dim=None):
         )
         model.eval()
 
-        feats = get_directed_features(n, edges)
+        feats = get_directed_features(
+            n,
+            edges,
+            gnn_start_time=gnn_start_time,
+            gnn_timeout=gnn_timeout,
+        )
+        if feats is None:
+            _warn_gnn_timeout(gnn_timeout)
+            return set()
+
+        if _gnn_phase_timed_out(gnn_start_time, gnn_timeout):
+            _warn_gnn_timeout(gnn_timeout)
+            return set()
+
         x = torch.tensor(feats, dtype=torch.float)
         ei = make_edge_index(edges, n, bidirected=False)
 
+        data = DataCls(x=x, edge_index=ei)
+        neighbor_loader = LoaderCls(
+            data,
+            input_nodes=torch.arange(n),
+            num_neighbors=_neighbor_hops_for_model(model, default_hops=3),
+            batch_size=2048,
+            shuffle=False,
+            directed=True,
+        )
+
+        batch_probs = []
         with torch.no_grad():
-            logits = model(x, ei)
-            pos_probs = logits.exp()[:, 1]
+            for batch in neighbor_loader:
+                if _gnn_phase_timed_out(gnn_start_time, gnn_timeout):
+                    _warn_gnn_timeout(gnn_timeout)
+                    return set()
+
+                out = model(batch.x, batch.edge_index)
+                probs = torch.sigmoid(out)
+                target_probs = _extract_positive_probs(probs[:batch.batch_size])
+                batch_probs.append(target_probs.cpu())
+
+        if not batch_probs:
+            return set()
+
+        pos_probs = torch.cat(batch_probs, dim=0)
+        if pos_probs.numel() < n:
+            print("  [GNN] Incomplete NeighborLoader predictions; skipping GNN hints.")
+            return set()
+        if pos_probs.numel() > n:
+            pos_probs = pos_probs[:n]
+
         gnn_candidates, selection_mode = _pick_gnn_candidates_from_probs(
             pos_probs,
             threshold=threshold,
@@ -634,14 +801,19 @@ def run_gnn_directed(n, edges, threshold=0.2, hidden_dim=None):
         return None
 
 
-def run_gnn_undirected_v2(n, edges, threshold=0.2, hidden_dim=None):
+def run_gnn_undirected_v2(n, edges, threshold=0.2, hidden_dim=None, gnn_timeout=60):
     """Run undirected GNN-KMA-2 model with advanced structural features."""
     torch = get_torch()
     has_gnn_v2, UNetV2, _ = get_gnn_models_v2()
+    has_loader, LoaderCls, DataCls = get_pyg_loader()
     weights_path = PROJECT_ROOT / "gnn_model" / "weights" / "undirected_fvs_gcn_v2.pt"
 
     if not has_gnn_v2 or torch is None:
         print("  [GNN-2] PyTorch/GNN not available. Skipping GNN step.")
+        return None
+
+    if not has_loader:
+        print("  [GNN-2] torch_geometric NeighborLoader not available. Skipping GNN step.")
         return None
 
     if not weights_path.exists():
@@ -650,6 +822,7 @@ def run_gnn_undirected_v2(n, edges, threshold=0.2, hidden_dim=None):
         return None
 
     try:
+        gnn_start_time = time.time()
         model, used_hidden = _load_model_with_checkpoint(
             UNetV2,
             weights_path,
@@ -658,13 +831,55 @@ def run_gnn_undirected_v2(n, edges, threshold=0.2, hidden_dim=None):
         )
         model.eval()
 
-        feats = get_undirected_features_v2(n, edges)
+        feats = get_undirected_features_v2(
+            n,
+            edges,
+            gnn_start_time=gnn_start_time,
+            gnn_timeout=gnn_timeout,
+        )
+        if feats is None:
+            _warn_gnn_timeout(gnn_timeout)
+            return set()
+
+        if _gnn_phase_timed_out(gnn_start_time, gnn_timeout):
+            _warn_gnn_timeout(gnn_timeout)
+            return set()
+
         x = torch.tensor(feats, dtype=torch.float)
         ei = make_edge_index(edges, n, bidirected=True)
 
+        data = DataCls(x=x, edge_index=ei)
+        neighbor_loader = LoaderCls(
+            data,
+            input_nodes=torch.arange(n),
+            num_neighbors=_neighbor_hops_for_model(model, default_hops=3),
+            batch_size=2048,
+            shuffle=False,
+            directed=False,
+        )
+
+        batch_probs = []
         with torch.no_grad():
-            logits = model(x, ei)
-            pos_probs = logits.exp()[:, 1]
+            for batch in neighbor_loader:
+                if _gnn_phase_timed_out(gnn_start_time, gnn_timeout):
+                    _warn_gnn_timeout(gnn_timeout)
+                    return set()
+
+                out = model(batch.x, batch.edge_index)
+                probs = torch.sigmoid(out)
+                target_probs = _extract_positive_probs(probs[:batch.batch_size])
+                batch_probs.append(target_probs.cpu())
+
+        if not batch_probs:
+            return set()
+
+        pos_probs = torch.cat(batch_probs, dim=0)
+        if pos_probs.numel() < n:
+            print("  [GNN-2] Incomplete NeighborLoader predictions; skipping GNN hints.")
+            return set()
+        if pos_probs.numel() > n:
+            pos_probs = pos_probs[:n]
+
         gnn_candidates, selection_mode = _pick_gnn_candidates_from_probs(
             pos_probs,
             threshold=threshold,
@@ -680,14 +895,19 @@ def run_gnn_undirected_v2(n, edges, threshold=0.2, hidden_dim=None):
         return None
 
 
-def run_gnn_directed_v2(n, edges, threshold=0.2, hidden_dim=None):
+def run_gnn_directed_v2(n, edges, threshold=0.2, hidden_dim=None, gnn_timeout=60):
     """Run directed GNN-KMA-2 model with advanced structural features."""
     torch = get_torch()
     has_gnn_v2, _, DNetV2 = get_gnn_models_v2()
+    has_loader, LoaderCls, DataCls = get_pyg_loader()
     weights_path = PROJECT_ROOT / "gnn_model" / "weights" / "directed_fvs_gcn_v2.pt"
 
     if not has_gnn_v2 or torch is None:
         print("  [GNN-2] PyTorch/GNN not available. Skipping GNN step.")
+        return None
+
+    if not has_loader:
+        print("  [GNN-2] torch_geometric NeighborLoader not available. Skipping GNN step.")
         return None
 
     if not weights_path.exists():
@@ -696,6 +916,7 @@ def run_gnn_directed_v2(n, edges, threshold=0.2, hidden_dim=None):
         return None
 
     try:
+        gnn_start_time = time.time()
         model, used_hidden = _load_model_with_checkpoint(
             DNetV2,
             weights_path,
@@ -704,13 +925,55 @@ def run_gnn_directed_v2(n, edges, threshold=0.2, hidden_dim=None):
         )
         model.eval()
 
-        feats = get_directed_features_v2(n, edges)
+        feats = get_directed_features_v2(
+            n,
+            edges,
+            gnn_start_time=gnn_start_time,
+            gnn_timeout=gnn_timeout,
+        )
+        if feats is None:
+            _warn_gnn_timeout(gnn_timeout)
+            return set()
+
+        if _gnn_phase_timed_out(gnn_start_time, gnn_timeout):
+            _warn_gnn_timeout(gnn_timeout)
+            return set()
+
         x = torch.tensor(feats, dtype=torch.float)
         ei = make_edge_index(edges, n, bidirected=False)
 
+        data = DataCls(x=x, edge_index=ei)
+        neighbor_loader = LoaderCls(
+            data,
+            input_nodes=torch.arange(n),
+            num_neighbors=_neighbor_hops_for_model(model, default_hops=3),
+            batch_size=2048,
+            shuffle=False,
+            directed=True,
+        )
+
+        batch_probs = []
         with torch.no_grad():
-            logits = model(x, ei)
-            pos_probs = logits.exp()[:, 1]
+            for batch in neighbor_loader:
+                if _gnn_phase_timed_out(gnn_start_time, gnn_timeout):
+                    _warn_gnn_timeout(gnn_timeout)
+                    return set()
+
+                out = model(batch.x, batch.edge_index)
+                probs = torch.sigmoid(out)
+                target_probs = _extract_positive_probs(probs[:batch.batch_size])
+                batch_probs.append(target_probs.cpu())
+
+        if not batch_probs:
+            return set()
+
+        pos_probs = torch.cat(batch_probs, dim=0)
+        if pos_probs.numel() < n:
+            print("  [GNN-2] Incomplete NeighborLoader predictions; skipping GNN hints.")
+            return set()
+        if pos_probs.numel() > n:
+            pos_probs = pos_probs[:n]
+
         gnn_candidates, selection_mode = _pick_gnn_candidates_from_probs(
             pos_probs,
             threshold=threshold,
@@ -872,6 +1135,7 @@ def kma_solve_directed(
 
 def gnn_KMA_solve_undirected(n, edges, pop_size=20, max_gens=100,
                             gnn_threshold=0.2, gnn_hidden_dim=None,
+                            gnn_timeout=60,
                             max_time_seconds=600, early_stop=20,
                             return_diagnostics=False):
     """
@@ -897,7 +1161,11 @@ def gnn_KMA_solve_undirected(n, edges, pop_size=20, max_gens=100,
 
     gnn_start = time.perf_counter()
     gnn_candidates = run_gnn_undirected(
-        k_n, k_edges, threshold=gnn_threshold, hidden_dim=gnn_hidden_dim
+        k_n,
+        k_edges,
+        threshold=gnn_threshold,
+        hidden_dim=gnn_hidden_dim,
+        gnn_timeout=gnn_timeout,
     )
     gnn_ms = (time.perf_counter() - gnn_start) * 1000.0
 
@@ -967,6 +1235,7 @@ def gnn_KMA_solve_undirected(n, edges, pop_size=20, max_gens=100,
 
 def gnn_KMA_solve_directed(n, edges, pop_size=20, max_gens=100,
                           gnn_threshold=0.2, gnn_hidden_dim=None,
+                          gnn_timeout=60,
                           max_time_seconds=600, early_stop=20,
                           return_diagnostics=False):
     """
@@ -988,7 +1257,11 @@ def gnn_KMA_solve_directed(n, edges, pop_size=20, max_gens=100,
 
     gnn_start = time.perf_counter()
     gnn_candidates = run_gnn_directed(
-        k_n, k_edges, threshold=gnn_threshold, hidden_dim=gnn_hidden_dim
+        k_n,
+        k_edges,
+        threshold=gnn_threshold,
+        hidden_dim=gnn_hidden_dim,
+        gnn_timeout=gnn_timeout,
     )
     gnn_ms = (time.perf_counter() - gnn_start) * 1000.0
 
@@ -1057,6 +1330,7 @@ def gnn_KMA_solve_directed(n, edges, pop_size=20, max_gens=100,
 
 def gnn_KMA2_solve_undirected(n, edges, pop_size=20, max_gens=100,
                               gnn_threshold=0.2, gnn_hidden_dim=None,
+                              gnn_timeout=60,
                               max_time_seconds=600, early_stop=20,
                               return_diagnostics=False):
     """
@@ -1077,7 +1351,11 @@ def gnn_KMA2_solve_undirected(n, edges, pop_size=20, max_gens=100,
 
     gnn_start = time.perf_counter()
     gnn_candidates = run_gnn_undirected_v2(
-        k_n, k_edges, threshold=gnn_threshold, hidden_dim=gnn_hidden_dim
+        k_n,
+        k_edges,
+        threshold=gnn_threshold,
+        hidden_dim=gnn_hidden_dim,
+        gnn_timeout=gnn_timeout,
     )
     gnn_ms = (time.perf_counter() - gnn_start) * 1000.0
 
@@ -1146,6 +1424,7 @@ def gnn_KMA2_solve_undirected(n, edges, pop_size=20, max_gens=100,
 
 def gnn_KMA2_solve_directed(n, edges, pop_size=20, max_gens=100,
                             gnn_threshold=0.2, gnn_hidden_dim=None,
+                            gnn_timeout=60,
                             max_time_seconds=600, early_stop=20,
                             return_diagnostics=False):
     """
@@ -1166,7 +1445,11 @@ def gnn_KMA2_solve_directed(n, edges, pop_size=20, max_gens=100,
 
     gnn_start = time.perf_counter()
     gnn_candidates = run_gnn_directed_v2(
-        k_n, k_edges, threshold=gnn_threshold, hidden_dim=gnn_hidden_dim
+        k_n,
+        k_edges,
+        threshold=gnn_threshold,
+        hidden_dim=gnn_hidden_dim,
+        gnn_timeout=gnn_timeout,
     )
     gnn_ms = (time.perf_counter() - gnn_start) * 1000.0
 
@@ -1286,6 +1569,10 @@ def main():
         help="Optional hidden dimension override for loading GNN weights (default: auto-detect)"
     )
     parser.add_argument(
+        "--gnn-timeout", type=int, default=60,
+        help="Hard wall-clock timeout in seconds for the GNN phase only (default: 60)"
+    )
+    parser.add_argument(
         "--compare", action="store_true",
         help="Also run pure KMA for comparison (shows GNN benefit)"
     )
@@ -1303,6 +1590,9 @@ def main():
         sys.exit(1)
     if args.earlystop <= 0:
         print("ERROR: --earlystop must be a positive integer")
+        sys.exit(1)
+    if args.gnn_timeout <= 0:
+        print("ERROR: --gnn-timeout must be a positive integer")
         sys.exit(1)
 
     # ── Local imports to avoid circular dependency ─────────────────────────────
@@ -1344,11 +1634,13 @@ def main():
         if args.mode == "GNN-KMA-2":
             fvs = gnn_KMA2_solve_undirected(
                 n, edges, args.pop, args.gens, args.threshold, args.gnn_hidden,
+                gnn_timeout=args.gnn_timeout,
                 max_time_seconds=args.timeout, early_stop=args.earlystop,
             )
         else:
             fvs = gnn_KMA_solve_undirected(
                 n, edges, args.pop, args.gens, args.threshold, args.gnn_hidden,
+                gnn_timeout=args.gnn_timeout,
                 max_time_seconds=args.timeout, early_stop=args.earlystop,
             )
         valid = verify_fvs(n, edges, fvs)
@@ -1356,11 +1648,13 @@ def main():
         if args.mode == "GNN-KMA-2":
             fvs = gnn_KMA2_solve_directed(
                 n, edges, args.pop, args.gens, args.threshold, args.gnn_hidden,
+                gnn_timeout=args.gnn_timeout,
                 max_time_seconds=args.timeout, early_stop=args.earlystop,
             )
         else:
             fvs = gnn_KMA_solve_directed(
                 n, edges, args.pop, args.gens, args.threshold, args.gnn_hidden,
+                gnn_timeout=args.gnn_timeout,
                 max_time_seconds=args.timeout, early_stop=args.earlystop,
             )
         valid = verify_dfvs(n, edges, fvs)
