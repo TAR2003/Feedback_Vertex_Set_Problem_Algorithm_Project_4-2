@@ -81,13 +81,13 @@ rm -f directed_results/*.csv
 
 mv results/directed_* directed_results/
 
-python directed_results/evaluate_fvs_scores.py
+python3 directed_results/evaluate_fvs_scores.py
 
 rm -f undirected_results/*.csv
 
 mv results/undirected_* undirected_results/
 
-python undirected_results/evaluate_fvs_scores.py
+python3 undirected_results/evaluate_fvs_scores.py
 
 
 
