@@ -191,6 +191,29 @@ def load_pt_dataset(data_dir: Path) -> list:
     return dataset
 
 
+def log_dataset_breakdown(dataset: list) -> None:
+    """Print a concise track/category breakdown for loaded PT graphs."""
+    if not dataset:
+        return
+
+    by_track: dict[str, int] = {}
+    by_track_category: dict[tuple[str, str], int] = {}
+    for g in dataset:
+        track = str(getattr(g, "track", "unknown"))
+        category = str(getattr(g, "category", "unknown"))
+        by_track[track] = by_track.get(track, 0) + 1
+        key = (track, category)
+        by_track_category[key] = by_track_category.get(key, 0) + 1
+
+    track_summary = ", ".join(f"{k}:{v}" for k, v in sorted(by_track.items()))
+    _log(f"  Track mix: {track_summary}")
+
+    top_pairs = sorted(by_track_category.items(), key=lambda kv: (-kv[1], kv[0]))[:8]
+    if top_pairs:
+        pair_summary = ", ".join(f"{t}/{c}:{n}" for (t, c), n in top_pairs)
+        _log(f"  Top track/category buckets: {pair_summary}")
+
+
 def stratified_split(
     dataset: list,
     val_ratio: float = 0.2,
@@ -566,6 +589,7 @@ def main():
         if not dataset:
             _log("  No data found. Run dataset_gen.py first.")
         else:
+            log_dataset_breakdown(dataset)
             train_set, val_set = stratified_split(
                 dataset, val_ratio=args.val_ratio, seed=args.seed
             )
@@ -592,6 +616,7 @@ def main():
         if not dataset:
             _log("  No data found. Run dataset_gen.py first.")
         else:
+            log_dataset_breakdown(dataset)
             train_set, val_set = stratified_split(
                 dataset, val_ratio=args.val_ratio, seed=args.seed
             )

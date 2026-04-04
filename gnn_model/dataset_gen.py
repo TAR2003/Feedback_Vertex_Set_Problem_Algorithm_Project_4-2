@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-Generate exact-track PT datasets for GNN training.
+Generate PT datasets for GNN training from exact and/or heuristic tracks.
 
-Exact-track behavior:
-- Reuse all existing graph files from data/synthetic/<family>/exact_track/<category>/*.txt
-- Label them with the IC solver and save as .pt
-- Do this for both undirected and directed families
+Track behavior:
+- exact_track: label with IC solver
+- heuristic_track: label with KMA solver using a 60-second MA-stage timeout
+    (KMA returns best-so-far at timeout)
 
 Output layout:
-    gnn_model/datasets/pt/<family>/exact_track/<category>/*.pt
+        gnn_model/datasets/pt/<family>/<track>/<category>/*.pt
 
 Each .pt file is a torch_geometric Data object with:
-  data.x, data.edge_index, data.y, data.fvs_size
+    data.x, data.edge_index, data.y, data.fvs_size
 """
 
 from __future__ import annotations
@@ -76,6 +76,8 @@ SYNTHETIC_ROOT = PROJECT_ROOT / "data" / "synthetic"
 CSV_ROOT = PROJECT_ROOT / "gnn_model" / "datasets"
 
 EXACT_TRACK = "exact_track"
+HEURISTIC_TRACK = "heuristic_track"
+TRACK_CHOICES = (EXACT_TRACK, HEURISTIC_TRACK)
 UNDIRECTED_WEIGHTS: Dict[str, float] = {
     "real_world": 0.20,
     "scale_free": 0.20,
@@ -93,10 +95,53 @@ DIRECTED_WEIGHTS: Dict[str, float] = {
 }
 
 SOLVER_TIMEOUT_SECONDS = 60
+KMA_POP_SIZE = 20
+KMA_MAX_GENS = 100
+KMA_EARLY_STOP = 20
 
 
 class SolverTimeoutError(RuntimeError):
     """Raised when a single graph solve exceeds the configured timeout."""
+
+
+class InvalidFVSResultError(RuntimeError):
+    """Raised when a solver returns an invalid FVS set."""
+
+
+class AggregateProgress:
+    """Track-level progress with a spinner-like status line."""
+
+    _frames = ("|", "/", "-", "\\")
+
+    def __init__(self, totals_by_track: Dict[str, int]):
+        self.totals_by_track = {
+            EXACT_TRACK: int(totals_by_track.get(EXACT_TRACK, 0)),
+            HEURISTIC_TRACK: int(totals_by_track.get(HEURISTIC_TRACK, 0)),
+        }
+        self.done_by_track = {EXACT_TRACK: 0, HEURISTIC_TRACK: 0}
+        self._frame_idx = 0
+
+    def advance(self, track: str, count: int = 1) -> None:
+        if track not in self.done_by_track:
+            return
+        self.done_by_track[track] += int(count)
+        self.print_status()
+
+    def print_status(self) -> None:
+        frame = self._frames[self._frame_idx % len(self._frames)]
+        self._frame_idx += 1
+
+        exact_done = self.done_by_track[EXACT_TRACK]
+        exact_total = self.totals_by_track[EXACT_TRACK]
+        heuristic_done = self.done_by_track[HEURISTIC_TRACK]
+        heuristic_total = self.totals_by_track[HEURISTIC_TRACK]
+        remaining = max((exact_total + heuristic_total) - (exact_done + heuristic_done), 0)
+
+        print(
+            f"[{frame}] Progress | Exact {exact_done}/{exact_total} | "
+            f"Heuristic {heuristic_done}/{heuristic_total} | Remaining {remaining}",
+            flush=True,
+        )
 
 
 def _solver_worker(
@@ -122,7 +167,8 @@ def _solve_with_timeout(
     timeout_seconds: int,
 ) -> List[int]:
     # Use a subprocess so hung/native solver calls can be forcefully terminated.
-    ctx = mp.get_context("fork")
+    start_method = "fork" if "fork" in mp.get_all_start_methods() else "spawn"
+    ctx = mp.get_context(start_method)
     out_q: mp.Queue = ctx.Queue(maxsize=1)
     proc = ctx.Process(
         target=_solver_worker,
@@ -512,12 +558,151 @@ def solve_directed(n: int, edges: List[Tuple[int, int]]) -> List[int]:
     return fvs
 
 
+def solve_undirected_kma(
+    n: int,
+    edges: List[Tuple[int, int]],
+    timeout_seconds: int = SOLVER_TIMEOUT_SECONDS,
+    pop_size: int = KMA_POP_SIZE,
+    max_gens: int = KMA_MAX_GENS,
+    early_stop: int = KMA_EARLY_STOP,
+) -> List[int]:
+    if HAS_ENGINE:
+        if hasattr(cpp_engine, "solve_undirected_KMA"):
+            return cpp_engine.solve_undirected_KMA(
+                n, edges, pop_size, max_gens, early_stop, timeout_seconds
+            )
+        if hasattr(cpp_engine, "solve_undirected_KME"):
+            return cpp_engine.solve_undirected_KME(
+                n, edges, pop_size, max_gens, early_stop, timeout_seconds
+            )
+        return cpp_engine.solve_undirected_MA(
+            n, edges, pop_size, max_gens, early_stop, timeout_seconds
+        )
+
+    # Python fallback (no cpp_engine): use the exact fallback heuristic.
+    return solve_undirected(n, edges)
+
+
+def solve_directed_kma(
+    n: int,
+    edges: List[Tuple[int, int]],
+    timeout_seconds: int = SOLVER_TIMEOUT_SECONDS,
+    pop_size: int = KMA_POP_SIZE,
+    max_gens: int = KMA_MAX_GENS,
+    early_stop: int = KMA_EARLY_STOP,
+) -> List[int]:
+    if HAS_ENGINE:
+        if hasattr(cpp_engine, "solve_directed_KMA"):
+            return cpp_engine.solve_directed_KMA(
+                n, edges, pop_size, max_gens, early_stop, timeout_seconds
+            )
+        if hasattr(cpp_engine, "solve_directed_KME"):
+            return cpp_engine.solve_directed_KME(
+                n, edges, pop_size, max_gens, early_stop, timeout_seconds
+            )
+        return cpp_engine.solve_directed_MA(
+            n, edges, pop_size, max_gens, early_stop, timeout_seconds
+        )
+
+    # Python fallback (no cpp_engine): use the exact fallback heuristic.
+    return solve_directed(n, edges)
+
+
+def _is_acyclic_undirected_after_removal(
+    n: int,
+    edges: List[Tuple[int, int]],
+    removed: Set[int],
+) -> bool:
+    adj: List[List[int]] = [[] for _ in range(n)]
+    for u, v in edges:
+        if u in removed or v in removed or u == v:
+            continue
+        adj[u].append(v)
+        adj[v].append(u)
+
+    visited = [False] * n
+
+    for start in range(n):
+        if start in removed or visited[start]:
+            continue
+
+        stack: List[Tuple[int, int]] = [(start, -1)]
+        visited[start] = True
+
+        while stack:
+            cur, parent = stack.pop()
+            for nb in adj[cur]:
+                if nb == parent:
+                    continue
+                if visited[nb]:
+                    return False
+                visited[nb] = True
+                stack.append((nb, cur))
+
+    return True
+
+
+def _is_acyclic_directed_after_removal(
+    n: int,
+    edges: List[Tuple[int, int]],
+    removed: Set[int],
+) -> bool:
+    indeg = [0] * n
+    out_adj: List[List[int]] = [[] for _ in range(n)]
+    active_count = 0
+
+    for v in range(n):
+        if v not in removed:
+            active_count += 1
+
+    for u, v in edges:
+        if u in removed or v in removed:
+            continue
+        out_adj[u].append(v)
+        indeg[v] += 1
+
+    q = [v for v in range(n) if v not in removed and indeg[v] == 0]
+    head = 0
+    seen = 0
+    while head < len(q):
+        cur = q[head]
+        head += 1
+        seen += 1
+        for nb in out_adj[cur]:
+            indeg[nb] -= 1
+            if indeg[nb] == 0:
+                q.append(nb)
+
+    return seen == active_count
+
+
+def validate_fvs_solution(
+    graph_type: str,
+    n: int,
+    edges: List[Tuple[int, int]],
+    fvs: List[int],
+) -> bool:
+    removed = set(int(v) for v in fvs)
+    if len(removed) != len(fvs):
+        return False
+    if any(v < 0 or v >= n for v in removed):
+        return False
+
+    if graph_type == "undirected":
+        return _is_acyclic_undirected_after_removal(n, edges, removed)
+    return _is_acyclic_directed_after_removal(n, edges, removed)
+
+
 def _build_pt_sample(
     graph_type: str,
     n: int,
     edges: List[Tuple[int, int]],
     variant: str = "v1",
     solver_timeout_seconds: int = SOLVER_TIMEOUT_SECONDS,
+    track: str = EXACT_TRACK,
+    kma_pop_size: int = KMA_POP_SIZE,
+    kma_max_gens: int = KMA_MAX_GENS,
+    kma_early_stop: int = KMA_EARLY_STOP,
     family: str = "unknown",
     category: str = "unknown",
 ) -> Data:
@@ -542,7 +727,32 @@ def _build_pt_sample(
         else:
             feats = compute_node_features_directed(n, edges)
 
-    fvs = _solve_with_timeout(graph_type, n, edges, solver_timeout_seconds)
+    if track == HEURISTIC_TRACK:
+        if graph_type == "undirected":
+            fvs = solve_undirected_kma(
+                n,
+                edges,
+                timeout_seconds=solver_timeout_seconds,
+                pop_size=kma_pop_size,
+                max_gens=kma_max_gens,
+                early_stop=kma_early_stop,
+            )
+        else:
+            fvs = solve_directed_kma(
+                n,
+                edges,
+                timeout_seconds=solver_timeout_seconds,
+                pop_size=kma_pop_size,
+                max_gens=kma_max_gens,
+                early_stop=kma_early_stop,
+            )
+    else:
+        fvs = _solve_with_timeout(graph_type, n, edges, solver_timeout_seconds)
+
+    if not validate_fvs_solution(graph_type, n, edges, fvs):
+        raise InvalidFVSResultError(
+            f"invalid FVS produced by {'kma' if track == HEURISTIC_TRACK else 'ic'} solver"
+        )
 
     x = torch.tensor(feats, dtype=torch.float)
     y = torch.zeros(n, dtype=torch.long)
@@ -582,8 +792,10 @@ def _csv_headers() -> List[str]:
     return [
         "source_file",
         "family",
+        "track",
         "category",
-        "status",  # 'completed' or 'timeout'
+        "solver",
+        "status",  # 'completed' or 'timeout' or 'invalid'
         "fvs_size",
         "timestamp",
         "feature_set",
@@ -591,7 +803,7 @@ def _csv_headers() -> List[str]:
 
 
 def _load_csv_records(variant: str) -> Dict[str, Dict[str, str]]:
-    """Load existing CSV records. Key is (family, category, source_file) tuple as string."""
+    """Load existing CSV records keyed by family/track/category/source_file."""
     csv_path = _get_csv_path(variant)
     records: Dict[str, Dict[str, str]] = {}
     
@@ -605,8 +817,13 @@ def _load_csv_records(variant: str) -> Dict[str, Dict[str, str]]:
                 return records
             for row in reader:
                 if row:
-                    # Key combines family, category, and source_file for uniqueness
-                    key = f"{row.get('family', '')}/{row.get('category', '')}/{row.get('source_file', '')}"
+                    # Track-aware key prevents collisions across exact/heuristic data.
+                    key = (
+                        f"{row.get('family', '')}/"
+                        f"{row.get('track', EXACT_TRACK)}/"
+                        f"{row.get('category', '')}/"
+                        f"{row.get('source_file', '')}"
+                    )
                     records[key] = row
     except Exception as e:
         _log(f"[WARN] Failed to read CSV {csv_path}: {e}")
@@ -617,18 +834,21 @@ def _load_csv_records(variant: str) -> Dict[str, Dict[str, str]]:
 def _record_exists(
     records: Dict[str, Dict[str, str]],
     family: str,
+    track: str,
     category: str,
     source_file: str,
 ) -> bool:
     """Check if a record exists for this file."""
-    key = f"{family}/{category}/{source_file}"
+    key = f"{family}/{track}/{category}/{source_file}"
     return key in records
 
 
 def _save_csv_record(
     variant: str,
     family: str,
+    track: str,
     category: str,
+    solver: str,
     source_file: str,
     status: str,
     fvs_size: int = 0,
@@ -650,7 +870,9 @@ def _save_csv_record(
             writer.writerow({
                 "source_file": source_file,
                 "family": family,
+                "track": track,
                 "category": category,
+                "solver": solver,
                 "status": status,
                 "fvs_size": fvs_size if status == "completed" else "",
                 "timestamp": timestamp,
@@ -669,21 +891,27 @@ def _trim_non_source_pt(folder: Path, source_stems: Set[str]) -> int:
     return removed
 
 
-def _generate_exact_bucket_from_sources(
+def _generate_bucket_from_sources(
     family: str,
+    track: str,
     category: str,
     output_root: Path,
     variant: str,
     force: bool,
     progress_every: int,
+    solver_timeout_seconds: int,
+    kma_pop_size: int,
+    kma_max_gens: int,
+    kma_early_stop: int,
+    progress: AggregateProgress,
 ) -> Tuple[int, int]:
-    src_dir = SYNTHETIC_ROOT / family / EXACT_TRACK / category
+    src_dir = SYNTHETIC_ROOT / family / track / category
     src_files = _list_existing_txt(src_dir)
     if not src_files:
-        _log(f"[WARN] No exact source graphs found in {src_dir}")
+        _log(f"[WARN] No source graphs found in {src_dir}")
         return 0, 0
 
-    out_dir = output_root / family / EXACT_TRACK / category
+    out_dir = output_root / family / track / category
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Load CSV records for this variant
@@ -694,12 +922,12 @@ def _generate_exact_bucket_from_sources(
         for p in removed:
             p.unlink()
         if removed:
-            _log(f"[CLEAN] {family}/{EXACT_TRACK}/{category}: removed {len(removed)} old .pt files")
+            _log(f"[CLEAN] {family}/{track}/{category}: removed {len(removed)} old .pt files")
 
     source_stems = {p.stem for p in src_files}
     trimmed = _trim_non_source_pt(out_dir, source_stems)
     if trimmed:
-        _log(f"[TRIM] {family}/{EXACT_TRACK}/{category}: removed {trimmed} non-source .pt files")
+        _log(f"[TRIM] {family}/{track}/{category}: removed {trimmed} non-source .pt files")
 
     created = 0
     existing_used = 0
@@ -710,51 +938,85 @@ def _generate_exact_bucket_from_sources(
         out_path = out_dir / f"{src_path.stem}.pt"
         
         # Check CSV first: if record exists, skip
-        if _record_exists(csv_records, family, category, src_path.name):
-            record = csv_records[f"{family}/{category}/{src_path.name}"]
+        if _record_exists(csv_records, family, track, category, src_path.name):
+            record = csv_records[f"{family}/{track}/{category}/{src_path.name}"]
             status = record.get("status", "unknown")
             _log(
-                f"  [{family}/{EXACT_TRACK}/{category}] graph {idx}/{total} "
+                f"  [{family}/{track}/{category}] graph {idx}/{total} "
                 f"skip | source={src_path.name} (already {status})"
             )
             existing_used += 1
+            progress.advance(track)
             continue
 
         # Fallback: if .pt file exists but not in CSV, use it
         if out_path.exists():
             existing_used += 1
+            progress.advance(track)
             continue
 
         n, edges = _parse_edge_list_txt(src_path)
         edges = _normalize_edges(edges, directed=(graph_type == "directed"))
 
+        solver_name = "kma" if track == HEURISTIC_TRACK else "ic"
         _log(
-            f"  [{family}/{EXACT_TRACK}/{category}] graph {idx}/{total} "
-            f"start | n={n} m={len(edges)} solver=ic source={src_path.name}"
+            f"  [{family}/{track}/{category}] graph {idx}/{total} "
+            f"start | n={n} m={len(edges)} solver={solver_name} source={src_path.name}"
         )
         t0 = time.perf_counter()
         try:
-            data = _build_pt_sample(graph_type, n, edges, variant=variant)
+            data = _build_pt_sample(
+                graph_type,
+                n,
+                edges,
+                variant=variant,
+                solver_timeout_seconds=solver_timeout_seconds,
+                track=track,
+                kma_pop_size=kma_pop_size,
+                kma_max_gens=kma_max_gens,
+                kma_early_stop=kma_early_stop,
+                family=family,
+                category=category,
+            )
         except SolverTimeoutError:
             dt = time.perf_counter() - t0
             _log(
                 f"    [TIMEOUT] {dt:.2f}s "
-                f"(limit={SOLVER_TIMEOUT_SECONDS}s) | source={src_path.name}"
+                f"(limit={solver_timeout_seconds}s) | source={src_path.name}"
             )
             # Record the timeout in CSV
             _save_csv_record(
                 variant=variant,
                 family=family,
+                track=track,
                 category=category,
+                solver=solver_name,
                 source_file=src_path.name,
                 status="timeout",
                 fvs_size=0,
             )
             existing_used += 1
+            progress.advance(track)
+            continue
+        except InvalidFVSResultError as exc:
+            dt = time.perf_counter() - t0
+            _log(f"    [INVALID] {dt:.2f}s | source={src_path.name} | reason={exc}")
+            _save_csv_record(
+                variant=variant,
+                family=family,
+                track=track,
+                category=category,
+                solver=solver_name,
+                source_file=src_path.name,
+                status="invalid",
+                fvs_size=0,
+            )
+            existing_used += 1
+            progress.advance(track)
             continue
         dt = time.perf_counter() - t0
         data.family = family
-        data.track = EXACT_TRACK
+        data.track = track
         data.category = category
         data.source_file = src_path.name
         data.feature_set = variant
@@ -765,17 +1027,21 @@ def _generate_exact_bucket_from_sources(
         _save_csv_record(
             variant=variant,
             family=family,
+            track=track,
             category=category,
+            solver=solver_name,
             source_file=src_path.name,
             status="completed",
             fvs_size=int(data.fvs_size),
         )
 
+        progress.advance(track)
+
         _log(f"    done in {dt:.2f}s | fvs_size={int(data.fvs_size)} | saved={out_path.name}")
         if (created % progress_every) == 0 or (created + existing_used) == total:
             done = created + existing_used
             pct = 100.0 * done / max(total, 1)
-            _log(f"  [{family}/{EXACT_TRACK}/{category}] ready {done}/{total} ({pct:.1f}%)")
+            _log(f"  [{family}/{track}/{category}] ready {done}/{total} ({pct:.1f}%)")
 
     return created, existing_used
 
@@ -784,45 +1050,64 @@ def _run_family(
     family: str,
     output_root: Path,
     variant: str,
+    tracks: Sequence[str],
     force: bool,
     progress_every: int,
+    solver_timeout_seconds: int,
+    kma_pop_size: int,
+    kma_max_gens: int,
+    kma_early_stop: int,
+    progress: AggregateProgress,
 ) -> Tuple[int, int]:
     weights = UNDIRECTED_WEIGHTS if family == "undirected" else DIRECTED_WEIGHTS
     categories = list(weights.keys())
 
-    _log(f"\n{family.upper()} PT plan (exact-only)")
+    _log(f"\n{family.upper()} PT plan")
     _log("-" * 76)
-    for category in categories:
-        src_dir = SYNTHETIC_ROOT / family / EXACT_TRACK / category
-        count = len(_list_existing_txt(src_dir))
-        _log(f"{category:<18} source-exact-files={count:>8}")
+    for track in tracks:
+        for category in categories:
+            src_dir = SYNTHETIC_ROOT / family / track / category
+            count = len(_list_existing_txt(src_dir))
+            _log(f"{track:<16} {category:<18} source-files={count:>8}")
 
     created = 0
     skipped = 0
-    for category in categories:
-        c, s = _generate_exact_bucket_from_sources(
-            family=family,
-            category=category,
-            output_root=output_root,
-            variant=variant,
-            force=force,
-            progress_every=progress_every,
-        )
-        created += c
-        skipped += s
-        _log(f"[DONE] {family}/{EXACT_TRACK}/{category}: created={c}, existing-used={s}")
+    for track in tracks:
+        for category in categories:
+            c, s = _generate_bucket_from_sources(
+                family=family,
+                track=track,
+                category=category,
+                output_root=output_root,
+                variant=variant,
+                force=force,
+                progress_every=progress_every,
+                solver_timeout_seconds=solver_timeout_seconds,
+                kma_pop_size=kma_pop_size,
+                kma_max_gens=kma_max_gens,
+                kma_early_stop=kma_early_stop,
+                progress=progress,
+            )
+            created += c
+            skipped += s
+            _log(f"[DONE] {family}/{track}/{category}: created={c}, existing-used={s}")
     return created, skipped
 
 
-def _remove_heuristic_outputs(families: Sequence[str], output_root: Path) -> int:
-    removed = 0
+def _build_track_totals(
+    families: Sequence[str],
+    tracks: Sequence[str],
+) -> Dict[str, int]:
+    totals = {EXACT_TRACK: 0, HEURISTIC_TRACK: 0}
     for family in families:
-        path = output_root / family / "heuristic_track"
-        if path.exists():
-            shutil.rmtree(path)
-            removed += 1
-            _log(f"[CLEAN] removed stale heuristic outputs at {path}")
-    return removed
+        categories = (
+            list(UNDIRECTED_WEIGHTS.keys()) if family == "undirected" else list(DIRECTED_WEIGHTS.keys())
+        )
+        for track in tracks:
+            for category in categories:
+                src_dir = SYNTHETIC_ROOT / family / track / category
+                totals[track] += len(_list_existing_txt(src_dir))
+    return totals
 
 
 def _get_output_root(variant: str) -> Path:
@@ -836,12 +1121,18 @@ def _get_output_root(variant: str) -> Path:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate exact-track PT datasets for GNN training")
+    parser = argparse.ArgumentParser(description="Generate exact/heuristic-track PT datasets for GNN training")
     parser.add_argument("--family", choices=["all", "undirected", "directed"], default="all")
+    parser.add_argument(
+        "--track",
+        choices=["exact", "heuristic", "both"],
+        default="both",
+        help="Source tracks to generate labels for",
+    )
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Regenerate exact-track buckets by deleting existing PT files before generation",
+        help="Regenerate selected track buckets by deleting existing PT files before generation",
     )
     parser.add_argument(
         "--clean-root",
@@ -860,6 +1151,30 @@ def main() -> None:
         default="v1",
         help="Feature pipeline variant: v1 (legacy), v2 (RWSE+motifs+coreness), or v3",
     )
+    parser.add_argument(
+        "--solver-timeout",
+        type=int,
+        default=SOLVER_TIMEOUT_SECONDS,
+        help="Solver timeout in seconds. For heuristic track, passed to KMA as MA-stage timeout.",
+    )
+    parser.add_argument(
+        "--kma-pop",
+        type=int,
+        default=KMA_POP_SIZE,
+        help="KMA population size for heuristic track labels",
+    )
+    parser.add_argument(
+        "--kma-gens",
+        type=int,
+        default=KMA_MAX_GENS,
+        help="KMA max generations for heuristic track labels",
+    )
+    parser.add_argument(
+        "--kma-early-stop",
+        type=int,
+        default=KMA_EARLY_STOP,
+        help="KMA early-stop generations for heuristic track labels",
+    )
     args = parser.parse_args()
 
     if not HAS_TORCH:
@@ -874,9 +1189,25 @@ def main() -> None:
     output_root.mkdir(parents=True, exist_ok=True)
 
     progress_every = max(1, args.progress_every)
+    solver_timeout_seconds = max(1, args.solver_timeout)
+    if args.kma_pop <= 0:
+        raise ValueError("--kma-pop must be > 0")
+    if args.kma_gens <= 0:
+        raise ValueError("--kma-gens must be > 0")
+    if args.kma_early_stop < 0:
+        raise ValueError("--kma-early-stop must be >= 0")
+
+    if args.track == "exact":
+        tracks: Sequence[str] = (EXACT_TRACK,)
+    elif args.track == "heuristic":
+        tracks = (HEURISTIC_TRACK,)
+    else:
+        tracks = TRACK_CHOICES
 
     families: Sequence[str] = ("undirected", "directed") if args.family == "all" else (args.family,)
-    _remove_heuristic_outputs(families, output_root)
+    totals = _build_track_totals(families, tracks)
+    progress = AggregateProgress(totals)
+    progress.print_status()
 
     total_created = 0
     total_existing_used = 0
@@ -885,14 +1216,21 @@ def main() -> None:
             family,
             output_root,
             args.variant,
+            tracks,
             args.force,
             progress_every,
+            solver_timeout_seconds,
+            args.kma_pop,
+            args.kma_gens,
+            args.kma_early_stop,
+            progress,
         )
         total_created += c
         total_existing_used += s
 
     _log("\nSummary")
     _log("-------")
+    _log(f"Track(s):      {', '.join(tracks)}")
     _log(f"Created:       {total_created}")
     _log(f"Existing-used: {total_existing_used}")
     _log(f"Output root:   {output_root}")
