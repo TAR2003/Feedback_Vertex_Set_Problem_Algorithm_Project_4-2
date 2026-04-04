@@ -565,6 +565,16 @@ def _infer_hidden_dim(state_dict, directed=False):
     if not isinstance(state_dict, dict):
         return None
 
+    # v3 checkpoints expose hidden dim in the input projection.
+    key = "input_proj.weight"
+    if key in state_dict and hasattr(state_dict[key], "shape") and len(state_dict[key].shape) >= 1:
+        return int(state_dict[key].shape[0])
+
+    # Directed v3 also carries 3*hidden -> hidden fusion projections.
+    key = "fusion_projs.0.weight"
+    if key in state_dict and hasattr(state_dict[key], "shape") and len(state_dict[key].shape) >= 1:
+        return int(state_dict[key].shape[0])
+
     # Directed checkpoints store a direct bias tensor on conv1.
     if directed and "conv1.bias" in state_dict:
         return int(state_dict["conv1.bias"].shape[0])

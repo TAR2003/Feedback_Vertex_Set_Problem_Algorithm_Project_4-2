@@ -336,7 +336,7 @@ def get_results_csv_path(
         # Fallback to algorithm family for backwards compatibility.
         if algo in ["BST", "IC"]:
             algo_type = "exact"
-        elif algo in ["MA", "KMA", "GNN-KMA", "GNN-KMA-2"]:
+        elif algo in ["MA", "KMA", "GNN-KMA", "GNN-KMA-2", "GNN-KMA-3"]:
             algo_type = "heuristic"
         else:
             algo_type = "unknown"
@@ -479,6 +479,18 @@ def _directed_worker_run(algo: str, n: int, edges: List[Tuple[int, int]],
                 max_time_seconds=timeout_seconds,
                 early_stop=early_stop,
             )
+        elif algo == "GNN-KMA-3":
+            from run_hybrid import gnn_KMA3_solve_directed
+            fvs = gnn_KMA3_solve_directed(
+                n,
+                edges,
+                pop_size,
+                max_gens,
+                gnn_threshold=gnn_threshold,
+                gnn_hidden_dim=gnn_hidden,
+                max_time_seconds=timeout_seconds,
+                early_stop=early_stop,
+            )
         else:
             fvs = ALGO_MAP_D[algo](n, edges)
         elapsed_ms = (time.perf_counter() - start) * 1000.0
@@ -511,7 +523,7 @@ def run_directed_algorithm_with_timeout(
     # Heuristic solvers return best-so-far at their own timeout boundary.
     # Keep them in-process so we can always receive that solution instead of
     # parent-level TIMEOUT without a candidate set.
-    if algo in {"MA", "KMA", "GNN-KMA", "GNN-KMA-2"}:
+    if algo in {"MA", "KMA", "GNN-KMA", "GNN-KMA-2", "GNN-KMA-3"}:
         try:
             fvs, elapsed_ms, stage_metrics = run_directed_algorithm(
                 algo,
@@ -594,6 +606,19 @@ def run_directed_algorithm(algo: str, n: int, edges: List[Tuple[int, int]],
     elif algo == "GNN-KMA-2":
         from run_hybrid import gnn_KMA2_solve_directed
         fvs, stage_metrics = gnn_KMA2_solve_directed(
+            n,
+            edges,
+            pop_size,
+            max_gens,
+            gnn_threshold=gnn_threshold,
+            gnn_hidden_dim=gnn_hidden,
+            max_time_seconds=timeout_seconds,
+            early_stop=early_stop,
+            return_diagnostics=True,
+        )
+    elif algo == "GNN-KMA-3":
+        from run_hybrid import gnn_KMA3_solve_directed
+        fvs, stage_metrics = gnn_KMA3_solve_directed(
             n,
             edges,
             pop_size,
@@ -740,8 +765,8 @@ def main():
     )
     parser.add_argument(
         "--algo", required=True,
-        choices=["BST", "IC", "MA", "KMA", "GNN-KMA", "GNN-KMA-2", "ALL", "PUREALGO"],
-        help="Algorithm: BST (exact), IC (exact), MA (heuristic), KMA (kernelized MA), GNN-KMA (GNN+KMA), GNN-KMA-2 (advanced features), ALL (compare), PUREALGO (BST+IC+MA+KMA)"
+        choices=["BST", "IC", "MA", "KMA", "GNN-KMA", "GNN-KMA-2", "GNN-KMA-3", "ALL", "PUREALGO"],
+        help="Algorithm: BST (exact), IC (exact), MA (heuristic), KMA (kernelized MA), GNN-KMA (GNN+KMA), GNN-KMA-2 (advanced features), GNN-KMA-3 (research-grade GNN-KMA), ALL (compare), PUREALGO (BST+IC+MA+KMA)"
     )
     parser.add_argument(
         "--test", required=True,
@@ -769,7 +794,7 @@ def main():
     )
     parser.add_argument(
         "--timeout", type=int, default=600,
-        help="Hard wall-clock timeout in seconds for MA/KMA/GNN-KMA solvers (default: 600)"
+        help="Hard wall-clock timeout in seconds for MA/KMA/GNN-KMA/GNN-KMA-2/GNN-KMA-3 solvers (default: 600)"
     )
     parser.add_argument(
         "--earlystop", type=int, default=20,
@@ -781,11 +806,11 @@ def main():
     )
     parser.add_argument(
         "--gnn-threshold", type=float, default=0.2,
-        help="[GNN-KMA/GNN-KMA-2 only] Probability threshold for GNN candidate selection (default: 0.2)"
+        help="[GNN-KMA/GNN-KMA-2/GNN-KMA-3 only] Probability threshold for GNN candidate selection (default: 0.2)"
     )
     parser.add_argument(
         "--gnn-hidden", type=int, default=None,
-        help="[GNN-KMA/GNN-KMA-2 only] Optional hidden dimension override for loading GNN weights"
+        help="[GNN-KMA/GNN-KMA-2/GNN-KMA-3 only] Optional hidden dimension override for loading GNN weights"
     )
 
     args = parser.parse_args()
