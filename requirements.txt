@@ -1,25 +1,22 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 # ─── Core (required for C++ engine + benchmarks) ──────────────────────────────
-pybind11>=2.10.0          # C++/Python bridge — MUST be installed before cmake
+cmake>=3.26.0
+pybind11>=2.10.0          # C++/Python bridge — MUST be installed before CMake
 networkx>=2.8             # Graph utilities: used in dataset_gen.py + verification
 pandas>=1.5.0             # CSV output processing
-matplotlib>=3.5.0         # Plotting benchmark results (optional but recommended)
+matplotlib>=3.5.0         # Plotting benchmark results
+numpy>=1.24.0             # Numerical arrays for data processing and ML
 
-# ─── GNN Training Pipeline (optional — only needed for Phase 3) ───────────────
-# Install PyTorch first from https://pytorch.org/get-started/locally/
-# then install torch-geometric.
-#
-# CPU-only install (works on all machines):
-#   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-#
-# CUDA install (for GPU training, replace cu121 with your CUDA version):
-#   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-#
-# After torch is installed, install torch-geometric:
-#   pip install torch-geometric
-#
+# ─── GNN Training Pipeline and optional ML dependencies ───────────────────────
 torch>=1.12.0
+torchvision>=0.13.0
+torchaudio>=0.12.0
 torch-geometric>=2.0.0
-ogb>=1.3.6               # Optional: Open Graph Benchmark dataset downloader
+ogb>=1.3.6               # Open Graph Benchmark dataset downloader
 
-# ─── Development / Testing (optional) ─────────────────────────────────────────
+# ─── Kaggle data download support ──────────────────────────────────────────
+kaggle>=1.5.16           # Kaggle API client for dataset download and competition access
+
+# ─── Development / Testing ───────────────────────────────────────────────────
 pytest>=7.0.0             # Run unit tests
