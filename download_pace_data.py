@@ -32,7 +32,7 @@ ssl_context.check_hostname = False
 ssl_context.verify_mode = ssl.CERT_NONE
 
 # PACE 2022 heuristic track download link
-PACE_URL = "https://heibox.uni-heidelberg.de/seafhttp/files/abe81dc1-652d-44eb-bcd2-375f71061e55/heuristic_track_final_instances_all.tar.gz"
+PACE_URL = "https://heibox.uni-heidelberg.de/f/97634323e3cb4aab8291/?dl=1"
 DOWNLOAD_PATH = DATA_DIR / "heuristic_track_final_instances_all.tar.gz"
 
 

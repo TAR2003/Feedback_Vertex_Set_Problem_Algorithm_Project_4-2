@@ -8,7 +8,7 @@ cd "$SCRIPT_DIR"
 DATASET_SLUG="tawkirazizrahman/fvs-synthetic-dataset-20k"
 TARGET_DIR="./data/synthetic"
 
-PACE_URL="https://heibox.uni-heidelberg.de/seafhttp/files/abe81dc1-652d-44eb-bcd2-375f71061e55/heuristic_track_final_instances_all.tar.gz"
+PACE_URL="https://heibox.uni-heidelberg.de/f/97634323e3cb4aab8291/?dl=1"
 PACE_TAR="pace_temp.tar.gz"
 PACE_TARGET_DIR="./data/pace2022"
 PACE_EXTRACTED_FOLDER="./data/heuristic_track_final_instances_all"
