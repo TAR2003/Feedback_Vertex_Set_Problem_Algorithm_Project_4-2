@@ -47,6 +47,33 @@ def _run(cmd: list[str], cwd: Path | None = None, fail_hint: str | None = None) 
         raise RuntimeError(f"Command failed with exit code {result.returncode}: {' '.join(cmd)}")
 
 
+REQUIREMENTS_FILE = PROJECT_ROOT / "requirements.txt"
+
+
+def _run_pip(cmd: list[str]) -> None:
+    pip_cmd = [sys.executable, "-m", "pip"] + cmd
+    print("$ " + " ".join(pip_cmd))
+    result = subprocess.run(pip_cmd, check=False)
+    if result.returncode != 0:
+        raise RuntimeError(f"pip install failed with exit code {result.returncode}: {' '.join(pip_cmd)}")
+
+
+def _install_requirements() -> None:
+    if not REQUIREMENTS_FILE.exists():
+        raise RuntimeError(f"Missing requirements file: {REQUIREMENTS_FILE}")
+
+    print("\n[0/1] Installing Python dependencies from requirements.txt")
+    _run_pip(["install", "--upgrade", "pip", "setuptools", "wheel"])
+    _run_pip(["install", "-r", str(REQUIREMENTS_FILE)])
+
+
+def _install_pytorch_cpu() -> None:
+    print("\n[0/2] Installing CPU PyTorch and related packages")
+    _run_pip(["install", "torch", "kagglehub", "torchvision", "torchaudio", "--index-url", "https://download.pytorch.org/whl/cpu"])
+    print("\n[0/3] Installing torch-geometric and ogb")
+    _run_pip(["install", "torch-geometric", "ogb"])  # may require additional backend wheels on some platforms
+
+
 def _print_artifacts(build_dir: Path) -> None:
     build_artifacts = list(build_dir.glob("cpp_engine*.pyd")) + list(build_dir.glob("cpp_engine*.so"))
     exp_artifacts = list((PROJECT_ROOT / "experiments").glob("cpp_engine*.pyd")) + list(
@@ -86,7 +113,40 @@ def main() -> int:
         action="store_true",
         help="Run cmake --install (installs module to experiments/ as configured in CMakeLists)",
     )
+    parser.add_argument(
+        "--no-install",
+        action="store_true",
+        help="Skip cmake --install after building",
+    )
+    parser.add_argument(
+        "--install-deps",
+        action="store_true",
+        help="Install Python dependencies from requirements.txt before building",
+    )
+    parser.add_argument(
+        "--install-pytorch-cpu",
+        action="store_true",
+        help="Install CPU-only PyTorch, torchvision, torchaudio, torch-geometric, and ogb",
+    )
+    parser.add_argument(
+        "--install-all",
+        action="store_true",
+        help="Install requirements.txt plus CPU PyTorch and torch-geometric/ogb",
+    )
     args = parser.parse_args()
+    if args.install_all:
+        args.install_deps = True
+        args.install_pytorch_cpu = True
+        args.install = True
+
+    if not args.install_deps and not args.install_all:
+        args.install_deps = True
+
+    if not args.no_install and not args.install:
+        args.install = True
+    if args.no_install:
+        args.install = False
+
     build_dir = Path(args.build_dir).resolve() if args.build_dir else _default_build_dir()
 
     if not CPP_ENGINE_DIR.exists():
@@ -104,6 +164,12 @@ def main() -> int:
             )
 
     try:
+        if args.install_deps or args.install_all:
+            _install_requirements()
+
+        if args.install_pytorch_cpu or args.install_all:
+            _install_pytorch_cpu()
+
         cmake = _find_cmake_command()
 
         if args.clean and build_dir.exists():
