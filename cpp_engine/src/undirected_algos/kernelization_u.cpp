@@ -31,7 +31,8 @@
  */
 bool kernelize_undirected(UndirectedGraph &g,
                           std::vector<int> &forced,
-                          int &k)
+                          int &k,
+                          const std::unordered_set<int> *forbidden)
 {
     bool changed = true;
     while (changed)
@@ -74,6 +75,11 @@ bool kernelize_undirected(UndirectedGraph &g,
             // Rule 2: degree-2 contraction (only when a-b not adjacent)
             if (deg == 2)
             {
+                // In restricted BST, keep degree-2 vertices to avoid creating
+                // cycles entirely inside forbidden vertices after contraction.
+                if (forbidden)
+                    continue;
+
                 int a = nbrs[0], b = nbrs[1];
                 if (!g.adj[a].count(b))
                 {

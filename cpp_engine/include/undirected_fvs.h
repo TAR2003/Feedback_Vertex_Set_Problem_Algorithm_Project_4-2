@@ -14,6 +14,7 @@
 
 #include "graph_base.h"
 #include <set>
+#include <unordered_set>
 #include <vector>
 #include <utility>
 
@@ -21,7 +22,8 @@ struct UndirectedGraph;
 
 bool kernelize_undirected(UndirectedGraph &g,
                           std::vector<int> &forced,
-                          int &k);
+                          int &k,
+                          const std::unordered_set<int> *forbidden = nullptr);
 
 // ─── Graph class ─────────────────────────────────────────────────────────────
 

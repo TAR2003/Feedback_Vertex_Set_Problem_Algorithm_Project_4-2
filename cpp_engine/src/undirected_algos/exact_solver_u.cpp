@@ -293,7 +293,7 @@ static bool restricted_bst(UndirectedGraph g,
     // In practice, after removing Z from G, forbidden vertices have no self-loops.
     std::vector<int> forced;
     int k = budget;
-    if (!kernelize_undirected(g, forced, k))
+    if (!kernelize_undirected(g, forced, k, &forbidden))
         return false;
 
     // Check: all forced vertices must not be forbidden
@@ -457,7 +457,13 @@ std::vector<int> solve_undirected_IC(int n,
         }
     }
 
-    // G_curr = induced subgraph on {v_0, …, v_i} built incrementally
+    // Process higher-degree vertices earlier to stabilize compression quality.
+    std::vector<int> order(n);
+    std::iota(order.begin(), order.end(), 0);
+    std::sort(order.begin(), order.end(), [&](int a, int b)
+              { return adj_full[a].size() > adj_full[b].size(); });
+
+    // G_curr = induced subgraph on active vertices built incrementally
     UndirectedGraph G_curr(n);
     // Start with all vertices inactive; activate as we go
     for (int v = 0; v < n; ++v)
@@ -465,7 +471,7 @@ std::vector<int> solve_undirected_IC(int n,
 
     std::vector<int> X; // current FVS for G_curr
 
-    for (int i = 0; i < n; ++i)
+    for (int i : order)
     {
         // ── Activate vertex i and add its edges to already-active vertices ──
         G_curr.active[i] = true;
@@ -480,18 +486,18 @@ std::vector<int> solve_undirected_IC(int n,
         //        (X was FVS for G_{i-1}).
         X.push_back(i);
 
-        // ── Try to compress X from size |X| down to |X|–1 ─────────────────
-        int target_k = (int)X.size() - 1;
-
-        // For exact IC we must always attempt compression when target_k is valid.
-        if (target_k >= 0)
+        // Repeatedly compress until no further shrink is possible.
+        while (true)
         {
+            int target_k = (int)X.size() - 1;
+            if (target_k < 0)
+                break;
+
             std::vector<int> compressed = compress(G_curr, X, target_k);
             if (!compressed.empty())
-            {
                 X = compressed;
-            }
-            // If compression fails, X stays at size target_k+1 (i.e., size |X|)
+            else
+                break;
         }
     }
 

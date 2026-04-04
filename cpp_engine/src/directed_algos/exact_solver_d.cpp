@@ -369,10 +369,22 @@ std::vector<int> solve_directed_IC(int n,
         return {};
 
     // Build adjacency lists indexed per-vertex for incremental construction
-    std::vector<std::vector<int>> out_full(n);
+    std::vector<std::vector<int>> out_full(n), in_full(n);
     for (auto &[u, v] : edges)
         if (u >= 0 && u < n && v >= 0 && v < n)
+        {
             out_full[u].push_back(v);
+            in_full[v].push_back(u);
+        }
+
+    // Process high-total-degree vertices first for better early compression.
+    std::vector<int> order(n);
+    std::iota(order.begin(), order.end(), 0);
+    std::sort(order.begin(), order.end(), [&](int a, int b)
+              {
+                  return (out_full[a].size() + in_full[a].size()) >
+                         (out_full[b].size() + in_full[b].size());
+              });
 
     DirectedGraph G_curr(n);
     for (int v = 0; v < n; ++v)
@@ -380,7 +392,7 @@ std::vector<int> solve_directed_IC(int n,
 
     std::vector<int> X; // current DFVS
 
-    for (int i = 0; i < n; ++i)
+    for (int i : order)
     {
         // Activate vertex i and add its outgoing edges to already-active vertices
         G_curr.active[i] = true;
@@ -388,28 +400,25 @@ std::vector<int> solve_directed_IC(int n,
             if (G_curr.is_active(nb))
                 G_curr.add_edge(i, nb);
         // Also add incoming edges from already-active vertices
-        for (int u = 0; u < i; ++u)
-        {
-            if (!G_curr.is_active(u))
-                continue;
-            for (int nb : out_full[u])
-                if (nb == i)
-                {
-                    G_curr.add_edge(u, i);
-                    break;
-                }
-        }
+        for (int u : in_full[i])
+            if (G_curr.is_active(u))
+                G_curr.add_edge(u, i);
 
         // X ∪ {i} is trivially a valid DFVS for G_curr
         X.push_back(i);
 
-        // Try to compress X from size |X| to |X|–1
-        int target_k = (int)X.size() - 1;
-        if (target_k >= 0)
+        // Repeatedly compress until no further shrink is possible.
+        while (true)
         {
+            int target_k = (int)X.size() - 1;
+            if (target_k < 0)
+                break;
+
             std::vector<int> compressed = compress_directed(G_curr, X, target_k);
             if (!compressed.empty())
                 X = compressed;
+            else
+                break;
         }
     }
 
