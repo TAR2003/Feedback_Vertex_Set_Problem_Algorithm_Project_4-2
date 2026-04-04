@@ -12,6 +12,7 @@ PACE_URL="https://heibox.uni-heidelberg.de/f/97634323e3cb4aab8291/?dl=1"
 PACE_TAR="pace_temp.tar.gz"
 PACE_TARGET_DIR="./data/pace2022"
 PACE_EXTRACTED_FOLDER="./data/heuristic_track_final_instances_all"
+PACE_TIMEOUT=60
 
 echo "--- [1/5] Installing dependencies and building the C++ engine ---"
 # Ensure your build_engine.py is executable or run via python
@@ -54,10 +55,10 @@ rm -f ./results/*.csv
 
 echo "--- [4/5] Running the PACE benchmark pipeline ---"
 # Run PACE benchmark experiments on the downloaded PACE 2022 test instances.
-python3 experiments/benchmark_directed.py --algo MA --test data/pace2022/ --pop 20 --gens 100 --timeout 60
-python3 experiments/benchmark_directed.py --algo KMA --test data/pace2022/ --pop 20 --gens 100 --timeout 60
-python3 experiments/benchmark_directed.py --algo GNN-KMA --test data/pace2022/ --pop 20 --gens 100 --timeout 60
-python3 experiments/benchmark_directed.py --algo GNN-KMA-2 --test data/pace2022/ --pop 20 --gens 100 --timeout 60
+python3 experiments/benchmark_directed.py --algo MA --test data/pace2022/ --pop 20 --gens 100 --timeout $PACE_TIMEOUT
+python3 experiments/benchmark_directed.py --algo KMA --test data/pace2022/ --pop 20 --gens 100 --timeout $PACE_TIMEOUT
+python3 experiments/benchmark_directed.py --algo GNN-KMA --test data/pace2022/ --pop 20 --gens 100 --timeout $PACE_TIMEOUT
+python3 experiments/benchmark_directed.py --algo GNN-KMA-2 --test data/pace2022/ --pop 20 --gens 100 --timeout $PACE_TIMEOUT
 
 echo "--- [5/5] Preparing and evaluating PACE results ---"
 # Ensure the PACE results directory exists, then move new results into it.
