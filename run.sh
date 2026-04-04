@@ -10,6 +10,7 @@ PACE_URL="https://heibox.uni-heidelberg.de/f/97634323e3cb4aab8291/?dl=1"
 PACE_TAR="pace_temp.tar.gz"
 PACE_TARGET_DIR="./data/pace2022"
 PACE_EXTRACTED_FOLDER="./data/heuristic_track_final_instances_all"
+PACE_TIMEOUT=60
 
 echo "--- [1/5] Installing dependencies and building the C++ engine ---"
 # Ensure your build_engine.py is executable or run via python
@@ -76,18 +77,25 @@ python3 experiments/brute_force.py
 
 python3 experiments/fvs_checker.py
 
-rm -f normal_results/*.csv
+rm -f directed_results/*.csv
 
-mv results/* normal_results/
+mv results/directed_* directed_results/
 
-python normal_results/evaluate_fvs_scores.py
+python directed_results/evaluate_fvs_scores.py
+
+rm -f undirected_results/*.csv
+
+mv results/undirected_* undirected_results/
+
+python undirected_results/evaluate_fvs_scores.py
+
 
 
 echo "--- running the pace pipeline ---"
-python3 experiments/benchmark_directed.py --algo MA --test data/pace2022/ --pop 20 --gens 100 --timeout 60
-python3 experiments/benchmark_directed.py --algo KMA --test data/pace2022/ --pop 20 --gens 100 --timeout 60
-python3 experiments/benchmark_directed.py --algo GNN-KMA --test data/pace2022/ --pop 20 --gens 100 --timeout 60
-python3 experiments/benchmark_directed.py --algo GNN-KMA-2 --test data/pace2022/ --pop 20 --gens 100 --timeout 60
+python3 experiments/benchmark_directed.py --algo MA --test data/pace2022/ --pop 20 --gens 100 --timeout $PACE_TIMEOUT
+python3 experiments/benchmark_directed.py --algo KMA --test data/pace2022/ --pop 20 --gens 100 --timeout $PACE_TIMEOUT
+python3 experiments/benchmark_directed.py --algo GNN-KMA --test data/pace2022/ --pop 20 --gens 100 --timeout $PACE_TIMEOUT
+python3 experiments/benchmark_directed.py --algo GNN-KMA-2 --test data/pace2022/ --pop 20 --gens 100 --timeout $PACE_TIMEOUT
 
 rm -f ./paceresults/*.csv
 cp pace2022_winner.csv paceresults/
