@@ -68,7 +68,8 @@ rm -f "$PACE_TAR"
 
 # You can also generate a new synthetic benchmark dataset locally with:
 # python data/setup_benchmark_inputs.py --total-undirected 100 --total-directed 100 --seed 7
-
+echo "--- Remove all the previous csv files the results folder ---"
+rm -f ./results/*.csv
 echo "--- [4/5] Running the default pipeline ---"
 python3 experiments/run_pipeline.py --mode all --algo ALL --timeout 30
 
