@@ -166,7 +166,7 @@ env/
 ENV/
 
 # ─── PyTorch / GNN Weights ────────────────────────────────────────────────────
-gnn_model/weights/*.pt
+# gnn_model/weights/*.pt
 # Keep the weights directory itself
 !gnn_model/weights/.gitkeep
 
