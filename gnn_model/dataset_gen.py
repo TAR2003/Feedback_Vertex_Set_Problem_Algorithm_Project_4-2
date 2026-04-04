@@ -34,6 +34,16 @@ from feature_engineering_v2 import (
     compute_node_features_directed_v2,
     compute_node_features_undirected_v2,
 )
+try:
+    from feature_engineering_v3 import (
+        compute_node_features_directed_v3,
+        compute_node_features_undirected_v3,
+    )
+    HAS_FEAT_V3 = True
+except ImportError:
+    HAS_FEAT_V3 = False
+    compute_node_features_directed_v3 = None
+    compute_node_features_undirected_v3 = None
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 for candidate in ("build-linux", "build-macos", "build-win", "build"):
@@ -508,11 +518,20 @@ def _build_pt_sample(
     edges: List[Tuple[int, int]],
     variant: str = "v1",
     solver_timeout_seconds: int = SOLVER_TIMEOUT_SECONDS,
+    family: str = "unknown",
+    category: str = "unknown",
 ) -> Data:
     if not HAS_TORCH:
         raise RuntimeError("torch and torch_geometric are required for PT generation")
 
-    if variant == "v2":
+    if variant == "v3":
+        if not HAS_FEAT_V3:
+            raise ImportError("feature_engineering_v3.py not found; run from gnn_model/ directory")
+        if graph_type == "undirected":
+            feats = compute_node_features_undirected_v3(n, edges)
+        else:
+            feats = compute_node_features_directed_v3(n, edges)
+    elif variant == "v2":
         if graph_type == "undirected":
             feats = compute_node_features_undirected_v2(n, edges)
         else:
@@ -540,6 +559,9 @@ def _build_pt_sample(
 
     data = Data(x=x, edge_index=ei, y=y)
     data.fvs_size = len(fvs)
+    # Store family/category for stratified train/val splitting in train.py
+    data.family = family
+    data.category = category
     return data
 
 
@@ -804,7 +826,13 @@ def _remove_heuristic_outputs(families: Sequence[str], output_root: Path) -> int
 
 
 def _get_output_root(variant: str) -> Path:
-    return OUTPUT_ROOT if variant == "v1" else (PROJECT_ROOT / "gnn_model" / "datasets" / "pt_v2")
+    if variant == "v1":
+        return OUTPUT_ROOT
+    if variant == "v2":
+        return PROJECT_ROOT / "gnn_model" / "datasets" / "pt_v2"
+    if variant == "v3":
+        return PROJECT_ROOT / "gnn_model" / "datasets" / "pt_v3"
+    raise ValueError(f"Unsupported variant: {variant}")
 
 
 def main() -> None:
@@ -828,9 +856,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--variant",
-        choices=["v1", "v2"],
+        choices=["v1", "v2", "v3"],
         default="v1",
-        help="Feature pipeline variant: v1 (legacy) or v2 (RWSE+motifs+coreness)",
+        help="Feature pipeline variant: v1 (legacy), v2 (RWSE+motifs+coreness), or v3",
     )
     args = parser.parse_args()
 

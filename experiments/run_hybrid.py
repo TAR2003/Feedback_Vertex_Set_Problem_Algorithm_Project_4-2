@@ -66,6 +66,9 @@ DirectedFVSNet = None
 HAS_GNN_V2 = None
 UndirectedFVSNetV2 = None
 DirectedFVSNetV2 = None
+HAS_GNN_V3 = None
+UndirectedFVSNetV3 = None
+DirectedFVSNetV3 = None
 HAS_PYG_LOADER = None
 NeighborLoader = None
 PygData = None
@@ -127,6 +130,23 @@ def get_gnn_models_v2():
             UndirectedFVSNetV2 = None
             DirectedFVSNetV2 = None
     return HAS_GNN_V2, UndirectedFVSNetV2, DirectedFVSNetV2
+
+
+def get_gnn_models_v3():
+    """Lazy import of v3 GNN models (GAT + residual) for GNN-KMA-3."""
+    global HAS_GNN_V3, UndirectedFVSNetV3, DirectedFVSNetV3
+    if HAS_GNN_V3 is None:
+        try:
+            from gnn_model.model_directed_v3 import DirectedFVSNetV3 as DNetV3
+            from gnn_model.model_directed_v3 import UndirectedFVSNetV3 as UNetV3
+            DirectedFVSNetV3 = DNetV3
+            UndirectedFVSNetV3 = UNetV3
+            HAS_GNN_V3 = True
+        except (ImportError, ModuleNotFoundError):
+            HAS_GNN_V3 = False
+            DirectedFVSNetV3 = None
+            UndirectedFVSNetV3 = None
+    return HAS_GNN_V3, UndirectedFVSNetV3, DirectedFVSNetV3
 
 
 def get_pyg_loader():
@@ -484,6 +504,33 @@ def get_directed_features_v2(n, edges, gnn_start_time=None, gnn_timeout=None):
     )
 
 
+def get_directed_features_v3(n, edges, gnn_start_time=None, gnn_timeout=None):
+    """16-channel directed structural features for GNN-KMA-3 (SCC + RWSE steps 2-16)."""
+    try:
+        from gnn_model.feature_engineering_v3 import compute_node_features_directed_v3
+        return compute_node_features_directed_v3(
+            n,
+            edges,
+            should_abort=lambda: _gnn_phase_timed_out(gnn_start_time, gnn_timeout),
+        )
+    except (ImportError, ModuleNotFoundError):
+        # Fallback to v2 if v3 not yet generated
+        return get_directed_features_v2(n, edges, gnn_start_time, gnn_timeout)
+
+
+def get_undirected_features_v3(n, edges, gnn_start_time=None, gnn_timeout=None):
+    """16-channel undirected structural features for GNN-KMA-3."""
+    try:
+        from gnn_model.feature_engineering_v3 import compute_node_features_undirected_v3
+        return compute_node_features_undirected_v3(
+            n,
+            edges,
+            should_abort=lambda: _gnn_phase_timed_out(gnn_start_time, gnn_timeout),
+        )
+    except (ImportError, ModuleNotFoundError):
+        return get_undirected_features_v2(n, edges, gnn_start_time, gnn_timeout)
+
+
 def make_edge_index(edges, n, bidirected=False):
     """
     Convert edge list to PyTorch edge_index tensor.
@@ -559,18 +606,26 @@ def _load_model_with_checkpoint(model_cls, weights_path, directed=False, hidden_
 
 def _pick_gnn_candidates_from_probs(
     positive_probs,
-    threshold=0.2,
-    min_fraction=0.01,
-    max_fraction=0.15,
+    threshold=0.65,
+    min_fraction=0.005,
+    max_fraction=0.08,
 ):
     """
-    Select robust GNN candidates from per-vertex positive probabilities.
+    Precision-first GNN candidate selection for hard-fixing in GNN-KMA.
 
     Strategy:
-      1) Primary: vertices with p >= threshold.
-      2) Fallback: if empty, take top-k by probability (k ~= min_fraction * n).
-      3) Safety cap: if too many pass, keep only top-k by probability
-         (k ~= max_fraction * n).
+      1) Select vertices with probability >= threshold (default 0.65).
+      2) Safety cap: never hard-fix more than max_fraction of kernel.
+      3) CRITICALLY: if nothing exceeds threshold, return EMPTY SET →
+         falls through to pure KMA. It is ALWAYS better to use no GNN
+         hints than to hard-fix uncertain vertices.
+
+    Unlike the legacy approach, there is NO topk-fallback for hard-fixing.
+    The topk-fallback silently included uncertain vertices and was the
+    primary cause of GNN-KMA performing worse than pure KMA.
+
+    Reference: Ben-Baruch et al. (2021) Asymmetric Loss — FP cost >> FN cost
+               when false-positive predictions are permanently locked in.
 
     Returns:
       (candidate_set, mode_string)
@@ -583,20 +638,20 @@ def _pick_gnn_candidates_from_probs(
     if n == 0:
         return set(), "empty-graph"
 
+    max_k = max(1, int(math.ceil(n * max(0.0, max_fraction))))
     min_k = max(1, int(math.ceil(n * max(0.0, min_fraction))))
-    max_k = max(min_k, int(math.ceil(n * max(0.0, max_fraction))))
 
     selected = (positive_probs >= threshold).nonzero(as_tuple=True)[0]
-    mode = "threshold"
+    mode = "high_conf"
 
-    if selected.numel() == 0:
-        k = min(min_k, n)
-        selected = torch.topk(positive_probs, k).indices
-        mode = "topk-fallback"
-    elif selected.numel() > max_k:
-        k = min(max_k, n)
-        selected = torch.topk(positive_probs, k).indices
-        mode = "threshold-capped"
+    if selected.numel() > max_k:
+        # Sort by confidence descending, cap at max_k
+        selected = torch.topk(positive_probs, max_k).indices
+        mode = "high_conf_capped"
+    elif selected.numel() < min_k:
+        # DO NOT use topk-fallback for hard-fixing.
+        # Return empty set → fall through to pure KMA for this graph.
+        return set(), "no_fix_insufficient_confidence"
 
     return set(selected.tolist()), mode
 
@@ -989,6 +1044,226 @@ def run_gnn_directed_v2(n, edges, threshold=0.2, hidden_dim=None, gnn_timeout=60
         return None
 
 
+def _run_gnn_full_inference(
+    model, feat_fn, n, edges, bidirected, label, gnn_timeout=60
+):
+    """
+    Shared GNN inference engine returning raw float probs (numpy ndarray or None).
+
+    Args:
+        model: loaded GNN model (eval mode)
+        feat_fn: callable(n, edges, gnn_start_time, gnn_timeout) -> feature list
+        n: number of vertices in the graph
+        edges: edge list
+        bidirected: whether to add reverse edges (undirected graphs)
+        label: log prefix e.g. "[GNN]", "[GNN-2]", "[GNN-3]"
+        gnn_timeout: max seconds for GNN phase
+
+    Returns:
+        numpy.ndarray of shape (n,) with float32 probs, or None on failure.
+    """
+    import numpy as np
+    torch = get_torch()
+    has_loader, LoaderCls, DataCls = get_pyg_loader()
+    if torch is None or not has_loader:
+        return None
+
+    try:
+        gnn_start_time = time.time()
+        feats = feat_fn(n, edges, gnn_start_time=gnn_start_time, gnn_timeout=gnn_timeout)
+        if feats is None:
+            _warn_gnn_timeout(gnn_timeout)
+            return None
+
+        if _gnn_phase_timed_out(gnn_start_time, gnn_timeout):
+            _warn_gnn_timeout(gnn_timeout)
+            return None
+
+        x = torch.tensor(feats, dtype=torch.float)
+        ei = make_edge_index(edges, n, bidirected=bidirected)
+
+        data = DataCls(x=x, edge_index=ei)
+        neighbor_loader = LoaderCls(
+            data,
+            input_nodes=torch.arange(n),
+            num_neighbors=_neighbor_hops_for_model(model, default_hops=3),
+            batch_size=2048,
+            shuffle=False,
+            directed=(not bidirected),
+        )
+
+        batch_probs = []
+        with torch.no_grad():
+            for batch in neighbor_loader:
+                if _gnn_phase_timed_out(gnn_start_time, gnn_timeout):
+                    _warn_gnn_timeout(gnn_timeout)
+                    return None
+                out = model(batch.x, batch.edge_index)
+                probs = torch.sigmoid(out)
+                target_probs = _extract_positive_probs(probs[:batch.batch_size])
+                batch_probs.append(target_probs.cpu())
+
+        if not batch_probs:
+            return None
+
+        pos_probs = torch.cat(batch_probs, dim=0)
+        if pos_probs.numel() < n:
+            print(f"  {label} Incomplete NeighborLoader predictions; skipping GNN hints.")
+            return None
+        if pos_probs.numel() > n:
+            pos_probs = pos_probs[:n]
+
+        return pos_probs.numpy().astype("float32")
+
+    except Exception as ex:
+        print(f"  {label} Error during inference: {ex}. Skipping GNN step.")
+        return None
+
+
+def run_gnn_directed_probs(n, edges, hidden_dim=None, gnn_timeout=60):
+    """
+    Run directed GNN (v1) and return raw per-vertex FVS probabilities.
+
+    Returns:
+        numpy.ndarray of shape (n,) with float32 values in [0, 1], or None.
+
+    Reference: Soft-hint coupling design — GNN probabilities guide KMA
+        without permanently locking in false positives.
+        See Part 1 of the GNN-KMA research-grade overhaul.
+    """
+    torch = get_torch()
+    has_gnn, _, DNet = get_gnn_models()
+    weights_path = PROJECT_ROOT / "gnn_model" / "weights" / "directed_fvs_gcn.pt"
+
+    if not has_gnn or torch is None:
+        return None
+    if not weights_path.exists():
+        return None
+
+    model, _ = _load_model_with_checkpoint(
+        DNet, weights_path, directed=True, hidden_dim_override=hidden_dim
+    )
+    model.eval()
+    return _run_gnn_full_inference(
+        model, get_directed_features, n, edges,
+        bidirected=False, label="[GNN]", gnn_timeout=gnn_timeout
+    )
+
+
+def run_gnn_directed_v2_probs(n, edges, hidden_dim=None, gnn_timeout=60):
+    """
+    Run directed GNN v2 and return raw per-vertex FVS probabilities.
+
+    Returns:
+        numpy.ndarray of shape (n,) with float32 values in [0, 1], or None.
+    """
+    torch = get_torch()
+    has_gnn_v2, _, DNetV2 = get_gnn_models_v2()
+    weights_path = PROJECT_ROOT / "gnn_model" / "weights" / "directed_fvs_gcn_v2.pt"
+
+    if not has_gnn_v2 or torch is None:
+        return None
+    if not weights_path.exists():
+        return None
+
+    model, _ = _load_model_with_checkpoint(
+        DNetV2, weights_path, directed=True, hidden_dim_override=hidden_dim
+    )
+    model.eval()
+    return _run_gnn_full_inference(
+        model, get_directed_features_v2, n, edges,
+        bidirected=False, label="[GNN-2]", gnn_timeout=gnn_timeout
+    )
+
+
+def run_gnn_directed_v3_probs(n, edges, hidden_dim=None, gnn_timeout=60):
+    """
+    Run directed GNN v3 (GAT + residual, 16-channel features) and return
+    raw per-vertex FVS probabilities.
+
+    Returns:
+        numpy.ndarray of shape (n,) with float32 values in [0, 1], or None.
+
+    Reference: DirectedFVSNetV3 — Veličković et al. (2018) GAT +
+        He et al. (2016) Deep Residual Learning.
+    """
+    torch = get_torch()
+    has_gnn_v3, _, DNetV3 = get_gnn_models_v3()
+    weights_path = PROJECT_ROOT / "gnn_model" / "weights" / "directed_fvs_gcn_v3.pt"
+
+    if not has_gnn_v3 or torch is None:
+        return None
+    if not weights_path.exists():
+        print(f"  [GNN-3] Weights not found at {weights_path}. Skipping GNN step.")
+        print("          Run: python gnn_model/train.py --type directed --v3")
+        return None
+
+    try:
+        model, _ = _load_model_with_checkpoint(
+            DNetV3, weights_path, directed=True, hidden_dim_override=hidden_dim
+        )
+        model.eval()
+        return _run_gnn_full_inference(
+            model, get_directed_features_v3, n, edges,
+            bidirected=False, label="[GNN-3]", gnn_timeout=gnn_timeout
+        )
+    except Exception as ex:
+        print(f"  [GNN-3] Failed to load or run v3 model: {ex}")
+        return None
+
+
+def run_gnn_undirected_probs(n, edges, hidden_dim=None, gnn_timeout=60):
+    """
+    Run undirected GNN (v1) and return raw per-vertex FVS probabilities.
+
+    Returns:
+        numpy.ndarray of shape (n,) with float32 values in [0, 1], or None.
+    """
+    torch = get_torch()
+    has_gnn, UNet, _ = get_gnn_models()
+    weights_path = PROJECT_ROOT / "gnn_model" / "weights" / "undirected_fvs_gcn.pt"
+
+    if not has_gnn or torch is None:
+        return None
+    if not weights_path.exists():
+        return None
+
+    model, _ = _load_model_with_checkpoint(
+        UNet, weights_path, directed=False, hidden_dim_override=hidden_dim
+    )
+    model.eval()
+    return _run_gnn_full_inference(
+        model, get_undirected_features, n, edges,
+        bidirected=True, label="[GNN]", gnn_timeout=gnn_timeout
+    )
+
+
+def run_gnn_undirected_v2_probs(n, edges, hidden_dim=None, gnn_timeout=60):
+    """
+    Run undirected GNN v2 and return raw per-vertex FVS probabilities.
+
+    Returns:
+        numpy.ndarray of shape (n,) with float32 values in [0, 1], or None.
+    """
+    torch = get_torch()
+    has_gnn_v2, UNetV2, _ = get_gnn_models_v2()
+    weights_path = PROJECT_ROOT / "gnn_model" / "weights" / "undirected_fvs_gcn_v2.pt"
+
+    if not has_gnn_v2 or torch is None:
+        return None
+    if not weights_path.exists():
+        return None
+
+    model, _ = _load_model_with_checkpoint(
+        UNetV2, weights_path, directed=False, hidden_dim_override=hidden_dim
+    )
+    model.eval()
+    return _run_gnn_full_inference(
+        model, get_undirected_features_v2, n, edges,
+        bidirected=True, label="[GNN-2]", gnn_timeout=gnn_timeout
+    )
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  KMA / GNN-KMA Solvers
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1133,113 +1408,193 @@ def kma_solve_directed(
     )
 
 
-def gnn_KMA_solve_undirected(n, edges, pop_size=20, max_gens=100,
-                            gnn_threshold=0.2, gnn_hidden_dim=None,
-                            gnn_timeout=60,
-                            max_time_seconds=600, early_stop=20,
-                            return_diagnostics=False):
-    """
-    GNN-KMA: kernelize → GNN on kernel → KMA refinement for undirected FVS.
 
-    GNN predictions are used as a warm-start hint to MA.  If GNN is
-    unavailable, falls back to pure MA.
+def _kma_run_directed(n, edges, pop_size, max_gens, early_stop, max_time_seconds):
+    """Dispatch to available directed KMA solver (KMA > KME > MA fallback)."""
+    if hasattr(cpp_engine, "solve_directed_KMA"):
+        return cpp_engine.solve_directed_KMA(n, edges, pop_size, max_gens, early_stop, max_time_seconds)
+    elif hasattr(cpp_engine, "solve_directed_KME"):
+        return cpp_engine.solve_directed_KME(n, edges, pop_size, max_gens, early_stop, max_time_seconds)
+    else:
+        return cpp_engine.solve_directed_MA(n, edges, pop_size, max_gens, early_stop, max_time_seconds)
+
+
+def _kma_run_undirected(n, edges, pop_size, max_gens, early_stop, max_time_seconds):
+    """Dispatch to available undirected KMA solver (KMA > KME > MA fallback)."""
+    if hasattr(cpp_engine, "solve_undirected_KMA"):
+        return cpp_engine.solve_undirected_KMA(n, edges, pop_size, max_gens, early_stop, max_time_seconds)
+    elif hasattr(cpp_engine, "solve_undirected_KME"):
+        return cpp_engine.solve_undirected_KME(n, edges, pop_size, max_gens, early_stop, max_time_seconds)
+    else:
+        return cpp_engine.solve_undirected_MA(n, edges, pop_size, max_gens, early_stop, max_time_seconds)
+
+
+def _soft_hint_gnn_kernel_solve(
+    k_n, k_edges, gnn_probs_np, pop_size, max_gens, early_stop, max_time_seconds,
+    gnn_threshold, max_fix_fraction, label, directed, run_kma_fn
+):
+    """
+    Soft-hint GNN-KMA core: high-confidence hard-fix + KMA on remainder.
+
+    This is the fundamental fix for the GNN-KMA coupling problem.
+    GNN probability scores are used in two ways:
+      1. Hard-fix: ONLY vertices with prob >= gnn_threshold (AND <= max_fix_fraction)
+         are removed from the kernel before KMA. This precision guard ensures
+         that locked-in vertices are almost certainly in the true FVS.
+      2. No-fix fallback: If NO vertex meets the threshold, skip GNN entirely
+         and run pure KMA on the full kernel. Better safe than sorry.
+
+    Reference: Ben-Baruch et al. (2021) Asymmetric Loss — the cost of a false
+        positive (FP locked into solution) greatly exceeds the cost of a
+        false negative (KMA can still find it).
+
+    Args:
+        k_n: kernel vertex count
+        k_edges: kernel edge list
+        gnn_probs_np: numpy float32 array shape (k_n,), or None for no-GNN mode
+        gnn_threshold: high-confidence fix threshold (default 0.65)
+        max_fix_fraction: max fraction of kernel to hard-fix (default 0.08)
+        label: logging prefix e.g. "[KMA]"
+        directed: whether kernel is directed
+        run_kma_fn: callable(n, edges, pop, gens, early_stop, time) -> fvs list
+
+    Returns:
+        (kernel_fvs set, gnn_applied_bool)
+    """
+    import numpy as np
+
+    # Determine high-confidence hard-fix set
+    if gnn_probs_np is not None:
+        torch_mod = get_torch()
+        if torch_mod is not None:
+            prob_tensor = torch_mod.tensor(gnn_probs_np, dtype=torch_mod.float)
+            fixed_kernel, sel_mode = _pick_gnn_candidates_from_probs(
+                prob_tensor,
+                threshold=gnn_threshold,
+                min_fraction=0.005,
+                max_fraction=max_fix_fraction,
+            )
+            gnn_applied = (len(fixed_kernel) > 0)
+            n_conf = (gnn_probs_np >= gnn_threshold).sum()
+            print(
+                f"  {label} GNN probs: {n_conf}/{k_n} vertices above threshold={gnn_threshold:.2f}, "
+                f"hard-fixed={len(fixed_kernel)} (mode={sel_mode})"
+            )
+        else:
+            fixed_kernel = set()
+            gnn_applied = False
+    else:
+        print(f"  {label} GNN unavailable, running pure KMA (pop={pop_size}, gens={max_gens})")
+        fixed_kernel = set()
+        gnn_applied = False
+
+    # Build reduced kernel (minus hard-fixed vertices)
+    if fixed_kernel:
+        keep_kernel = [v for v in range(k_n) if v not in fixed_kernel]
+        kernel_to_reduced = {old: i for i, old in enumerate(keep_kernel)}
+        reduced_edges = [
+            (kernel_to_reduced[u], kernel_to_reduced[v])
+            for u, v in k_edges
+            if u in kernel_to_reduced and v in kernel_to_reduced
+        ]
+        reduced_n = len(keep_kernel)
+        reduced_to_kernel = keep_kernel
+    else:
+        reduced_n = k_n
+        reduced_edges = k_edges
+        reduced_to_kernel = list(range(k_n))
+
+    # Run KMA on reduced kernel
+    if reduced_n > 0:
+        reduced_fvs = run_kma_fn(
+            reduced_n, reduced_edges, pop_size, max_gens, early_stop, max_time_seconds
+        )
+    else:
+        reduced_fvs = []
+
+    # Reconstruct kernel FVS
+    kernel_fvs = set(fixed_kernel)
+    kernel_fvs.update(
+        reduced_to_kernel[v] for v in reduced_fvs if 0 <= v < len(reduced_to_kernel)
+    )
+    return kernel_fvs, gnn_applied
+
+
+def gnn_KMA_solve_undirected(n, edges, pop_size=20, max_gens=100,
+                              gnn_threshold=0.65, gnn_hidden_dim=None,
+                              gnn_timeout=60,
+                              max_time_seconds=600, early_stop=20,
+                              return_diagnostics=False):
+    """
+    GNN-KMA (soft-hint): kernelize → GNN probability scores → precision-guarded
+    hard-fix → KMA refinement for undirected FVS.
+
+    Unlike the legacy hard-fix design, this version:
+      1. Gets raw GNN probabilities (not binary candidates)
+      2. Hard-fixes ONLY vertices with prob >= gnn_threshold (default 0.65)
+         and only up to 8% of the kernel
+      3. Falls through to pure KMA if no vertex is confident enough
+      4. KMA can override any GNN prediction in the unfixed region
+
+    This eliminates the catastrophic false-positive problem of the legacy design.
+
+    Reference: Precision-first coupling — Part 1 of the GNN-KMA research-grade
+        overhaul. Ben-Baruch et al. (2021) Asymmetric Loss motivation.
     """
     if not HAS_CPP_ENGINE:
         raise RuntimeError("cpp_engine not available. Please compile it first.")
 
-    # Step 1: Kernelization first, then run GNN on the irreducible core.
     kernel_start = time.perf_counter()
     k_n, k_edges, forced, k_new_to_old = kernelize_undirected_graph(n, edges)
     kernel_ms = (time.perf_counter() - kernel_start) * 1000.0
 
     if k_n == 0:
         return _maybe_with_metrics(
-            forced,
+            sorted(forced),
             _stage_metrics(kernelization_ms=kernel_ms),
             return_diagnostics,
         )
 
     gnn_start = time.perf_counter()
-    gnn_candidates = run_gnn_undirected(
-        k_n,
-        k_edges,
-        threshold=gnn_threshold,
-        hidden_dim=gnn_hidden_dim,
-        gnn_timeout=gnn_timeout,
+    gnn_probs_np = run_gnn_undirected_probs(
+        k_n, k_edges, hidden_dim=gnn_hidden_dim, gnn_timeout=gnn_timeout
     )
     gnn_ms = (time.perf_counter() - gnn_start) * 1000.0
 
-    if gnn_candidates is None:
-        print(f"  [KMA] GNN unavailable, running pure KMA (pop={pop_size}, gens={max_gens})")
-        fixed_kernel = set()
-        reduced_n = k_n
-        reduced_edges = k_edges
-        reduced_to_kernel = list(range(k_n))
-    else:
-        fixed_kernel = {v for v in gnn_candidates if 0 <= v < k_n}
-        if fixed_kernel:
-            print(
-                f"  [KMA] Using GNN-guided kernel core "
-                f"(fixed={len(fixed_kernel)}, pop={pop_size}, gens={max_gens})"
-            )
-            keep_kernel = [v for v in range(k_n) if v not in fixed_kernel]
-            kernel_to_reduced = {old: i for i, old in enumerate(keep_kernel)}
-            reduced_edges = [
-                (kernel_to_reduced[u], kernel_to_reduced[v])
-                for u, v in k_edges
-                if u in kernel_to_reduced and v in kernel_to_reduced
-            ]
-            reduced_n = len(keep_kernel)
-            reduced_to_kernel = keep_kernel
-        else:
-            print(f"  [KMA] GNN produced no fixed hints, running standard KMA (pop={pop_size}, gens={max_gens})")
-            reduced_n = k_n
-            reduced_edges = k_edges
-            reduced_to_kernel = list(range(k_n))
-
-    # Step 2: KMA refinement on the reduced kernel graph.
     ma_start = time.perf_counter()
-    if reduced_n > 0:
-        if hasattr(cpp_engine, "solve_undirected_KMA"):
-            reduced_fvs = cpp_engine.solve_undirected_KMA(
-                reduced_n, reduced_edges, pop_size, max_gens, early_stop, max_time_seconds
-            )
-        elif hasattr(cpp_engine, "solve_undirected_KME"):
-            reduced_fvs = cpp_engine.solve_undirected_KME(
-                reduced_n, reduced_edges, pop_size, max_gens, early_stop, max_time_seconds
-            )
-        else:
-            reduced_fvs = cpp_engine.solve_undirected_MA(
-                reduced_n, reduced_edges, pop_size, max_gens, early_stop, max_time_seconds
-            )
-    else:
-        reduced_fvs = []
+    kernel_fvs, _ = _soft_hint_gnn_kernel_solve(
+        k_n, k_edges, gnn_probs_np, pop_size, max_gens, early_stop, max_time_seconds,
+        gnn_threshold=gnn_threshold, max_fix_fraction=0.08,
+        label="[KMA]", directed=False, run_kma_fn=_kma_run_undirected,
+    )
     ma_ms = (time.perf_counter() - ma_start) * 1000.0
 
-    kernel_fvs = set(fixed_kernel)
-    kernel_fvs.update(
-        reduced_to_kernel[v] for v in reduced_fvs if 0 <= v < len(reduced_to_kernel)
-    )
     mapped = [k_new_to_old[v] for v in kernel_fvs if 0 <= v < len(k_new_to_old)]
     solution = sorted(set(forced).union(mapped))
     return _maybe_with_metrics(
         solution,
-        _stage_metrics(
-            kernelization_ms=kernel_ms,
-            gnn_candidate_ms=gnn_ms,
-            ma_ms=ma_ms,
-        ),
+        _stage_metrics(kernelization_ms=kernel_ms, gnn_candidate_ms=gnn_ms, ma_ms=ma_ms),
         return_diagnostics,
     )
 
 
 def gnn_KMA_solve_directed(n, edges, pop_size=20, max_gens=100,
-                          gnn_threshold=0.2, gnn_hidden_dim=None,
-                          gnn_timeout=60,
-                          max_time_seconds=600, early_stop=20,
-                          return_diagnostics=False):
+                            gnn_threshold=0.65, gnn_hidden_dim=None,
+                            gnn_timeout=60,
+                            max_time_seconds=600, early_stop=20,
+                            return_diagnostics=False):
     """
-    GNN-KMA: kernelize → GNN on kernel → KMA refinement for directed FVS.
+    GNN-KMA (soft-hint): kernelize → GNN probability scores → precision-guarded
+    hard-fix → KMA refinement for directed FVS.
+
+    Unlike the legacy hard-fix design, this version:
+      1. Gets raw GNN probabilities (not binary candidates)
+      2. Hard-fixes ONLY vertices with prob >= gnn_threshold (default 0.65)
+         and only up to 8% of the kernel
+      3. Falls through to pure KMA if no vertex is confident enough
+      4. Eliminates catastrophic false-positive inflation of legacy design
+
+    Reference: Part 1 of GNN-KMA research-grade overhaul.
     """
     if not HAS_CPP_ENGINE:
         raise RuntimeError("cpp_engine not available. Please compile it first.")
@@ -1250,91 +1605,44 @@ def gnn_KMA_solve_directed(n, edges, pop_size=20, max_gens=100,
 
     if k_n == 0:
         return _maybe_with_metrics(
-            forced,
+            sorted(forced),
             _stage_metrics(kernelization_ms=kernel_ms),
             return_diagnostics,
         )
 
     gnn_start = time.perf_counter()
-    gnn_candidates = run_gnn_directed(
-        k_n,
-        k_edges,
-        threshold=gnn_threshold,
-        hidden_dim=gnn_hidden_dim,
-        gnn_timeout=gnn_timeout,
+    gnn_probs_np = run_gnn_directed_probs(
+        k_n, k_edges, hidden_dim=gnn_hidden_dim, gnn_timeout=gnn_timeout
     )
     gnn_ms = (time.perf_counter() - gnn_start) * 1000.0
 
-    if gnn_candidates is None:
-        print(f"  [KMA] GNN unavailable, running pure KMA (pop={pop_size}, gens={max_gens})")
-        fixed_kernel = set()
-        reduced_n = k_n
-        reduced_edges = k_edges
-        reduced_to_kernel = list(range(k_n))
-    else:
-        fixed_kernel = {v for v in gnn_candidates if 0 <= v < k_n}
-        if fixed_kernel:
-            print(
-                f"  [KMA] Using GNN-guided kernel core "
-                f"(fixed={len(fixed_kernel)}, pop={pop_size}, gens={max_gens})"
-            )
-            keep_kernel = [v for v in range(k_n) if v not in fixed_kernel]
-            kernel_to_reduced = {old: i for i, old in enumerate(keep_kernel)}
-            reduced_edges = [
-                (kernel_to_reduced[u], kernel_to_reduced[v])
-                for u, v in k_edges
-                if u in kernel_to_reduced and v in kernel_to_reduced
-            ]
-            reduced_n = len(keep_kernel)
-            reduced_to_kernel = keep_kernel
-        else:
-            print(f"  [KMA] GNN produced no fixed hints, running standard KMA (pop={pop_size}, gens={max_gens})")
-            reduced_n = k_n
-            reduced_edges = k_edges
-            reduced_to_kernel = list(range(k_n))
-
     ma_start = time.perf_counter()
-    if reduced_n > 0:
-        if hasattr(cpp_engine, "solve_directed_KMA"):
-            reduced_fvs = cpp_engine.solve_directed_KMA(
-                reduced_n, reduced_edges, pop_size, max_gens, early_stop, max_time_seconds
-            )
-        elif hasattr(cpp_engine, "solve_directed_KME"):
-            reduced_fvs = cpp_engine.solve_directed_KME(
-                reduced_n, reduced_edges, pop_size, max_gens, early_stop, max_time_seconds
-            )
-        else:
-            reduced_fvs = cpp_engine.solve_directed_MA(
-                reduced_n, reduced_edges, pop_size, max_gens, early_stop, max_time_seconds
-            )
-    else:
-        reduced_fvs = []
+    kernel_fvs, _ = _soft_hint_gnn_kernel_solve(
+        k_n, k_edges, gnn_probs_np, pop_size, max_gens, early_stop, max_time_seconds,
+        gnn_threshold=gnn_threshold, max_fix_fraction=0.08,
+        label="[KMA]", directed=True, run_kma_fn=_kma_run_directed,
+    )
     ma_ms = (time.perf_counter() - ma_start) * 1000.0
 
-    kernel_fvs = set(fixed_kernel)
-    kernel_fvs.update(
-        reduced_to_kernel[v] for v in reduced_fvs if 0 <= v < len(reduced_to_kernel)
-    )
     mapped = [k_new_to_old[v] for v in kernel_fvs if 0 <= v < len(k_new_to_old)]
     solution = sorted(set(forced).union(mapped))
     return _maybe_with_metrics(
         solution,
-        _stage_metrics(
-            kernelization_ms=kernel_ms,
-            gnn_candidate_ms=gnn_ms,
-            ma_ms=ma_ms,
-        ),
+        _stage_metrics(kernelization_ms=kernel_ms, gnn_candidate_ms=gnn_ms, ma_ms=ma_ms),
         return_diagnostics,
     )
 
 
 def gnn_KMA2_solve_undirected(n, edges, pop_size=20, max_gens=100,
-                              gnn_threshold=0.2, gnn_hidden_dim=None,
-                              gnn_timeout=60,
-                              max_time_seconds=600, early_stop=20,
-                              return_diagnostics=False):
+                               gnn_threshold=0.65, gnn_hidden_dim=None,
+                               gnn_timeout=60,
+                               max_time_seconds=600, early_stop=20,
+                               return_diagnostics=False):
     """
-    GNN-KMA-2: kernelize -> GNN-v2 on kernel -> KMA refinement for undirected FVS.
+    GNN-KMA-2 (soft-hint): same as gnn_KMA_solve_undirected but uses the
+    v2 GNN model with enriched structural features (RWSE, motif counts, k-core).
+
+    Reference: Part 1+2 of the GNN-KMA research-grade overhaul.
     """
     if not HAS_CPP_ENGINE:
         raise RuntimeError("cpp_engine not available. Please compile it first.")
@@ -1342,93 +1650,47 @@ def gnn_KMA2_solve_undirected(n, edges, pop_size=20, max_gens=100,
     kernel_start = time.perf_counter()
     k_n, k_edges, forced, k_new_to_old = kernelize_undirected_graph(n, edges)
     kernel_ms = (time.perf_counter() - kernel_start) * 1000.0
+
     if k_n == 0:
         return _maybe_with_metrics(
-            forced,
+            sorted(forced),
             _stage_metrics(kernelization_ms=kernel_ms),
             return_diagnostics,
         )
 
     gnn_start = time.perf_counter()
-    gnn_candidates = run_gnn_undirected_v2(
-        k_n,
-        k_edges,
-        threshold=gnn_threshold,
-        hidden_dim=gnn_hidden_dim,
-        gnn_timeout=gnn_timeout,
+    gnn_probs_np = run_gnn_undirected_v2_probs(
+        k_n, k_edges, hidden_dim=gnn_hidden_dim, gnn_timeout=gnn_timeout
     )
     gnn_ms = (time.perf_counter() - gnn_start) * 1000.0
 
-    if gnn_candidates is None:
-        print(f"  [KMA-2] GNN unavailable, running pure KMA (pop={pop_size}, gens={max_gens})")
-        fixed_kernel = set()
-        reduced_n = k_n
-        reduced_edges = k_edges
-        reduced_to_kernel = list(range(k_n))
-    else:
-        fixed_kernel = {v for v in gnn_candidates if 0 <= v < k_n}
-        if fixed_kernel:
-            print(
-                f"  [KMA-2] Using GNN-guided kernel core "
-                f"(fixed={len(fixed_kernel)}, pop={pop_size}, gens={max_gens})"
-            )
-            keep_kernel = [v for v in range(k_n) if v not in fixed_kernel]
-            kernel_to_reduced = {old: i for i, old in enumerate(keep_kernel)}
-            reduced_edges = [
-                (kernel_to_reduced[u], kernel_to_reduced[v])
-                for u, v in k_edges
-                if u in kernel_to_reduced and v in kernel_to_reduced
-            ]
-            reduced_n = len(keep_kernel)
-            reduced_to_kernel = keep_kernel
-        else:
-            print(f"  [KMA-2] GNN produced no fixed hints, running standard KMA (pop={pop_size}, gens={max_gens})")
-            reduced_n = k_n
-            reduced_edges = k_edges
-            reduced_to_kernel = list(range(k_n))
-
     ma_start = time.perf_counter()
-    if reduced_n > 0:
-        if hasattr(cpp_engine, "solve_undirected_KMA"):
-            reduced_fvs = cpp_engine.solve_undirected_KMA(
-                reduced_n, reduced_edges, pop_size, max_gens, early_stop, max_time_seconds
-            )
-        elif hasattr(cpp_engine, "solve_undirected_KME"):
-            reduced_fvs = cpp_engine.solve_undirected_KME(
-                reduced_n, reduced_edges, pop_size, max_gens, early_stop, max_time_seconds
-            )
-        else:
-            reduced_fvs = cpp_engine.solve_undirected_MA(
-                reduced_n, reduced_edges, pop_size, max_gens, early_stop, max_time_seconds
-            )
-    else:
-        reduced_fvs = []
+    kernel_fvs, _ = _soft_hint_gnn_kernel_solve(
+        k_n, k_edges, gnn_probs_np, pop_size, max_gens, early_stop, max_time_seconds,
+        gnn_threshold=gnn_threshold, max_fix_fraction=0.08,
+        label="[KMA-2]", directed=False, run_kma_fn=_kma_run_undirected,
+    )
     ma_ms = (time.perf_counter() - ma_start) * 1000.0
 
-    kernel_fvs = set(fixed_kernel)
-    kernel_fvs.update(
-        reduced_to_kernel[v] for v in reduced_fvs if 0 <= v < len(reduced_to_kernel)
-    )
     mapped = [k_new_to_old[v] for v in kernel_fvs if 0 <= v < len(k_new_to_old)]
     solution = sorted(set(forced).union(mapped))
     return _maybe_with_metrics(
         solution,
-        _stage_metrics(
-            kernelization_ms=kernel_ms,
-            gnn_candidate_ms=gnn_ms,
-            ma_ms=ma_ms,
-        ),
+        _stage_metrics(kernelization_ms=kernel_ms, gnn_candidate_ms=gnn_ms, ma_ms=ma_ms),
         return_diagnostics,
     )
 
 
 def gnn_KMA2_solve_directed(n, edges, pop_size=20, max_gens=100,
-                            gnn_threshold=0.2, gnn_hidden_dim=None,
-                            gnn_timeout=60,
-                            max_time_seconds=600, early_stop=20,
-                            return_diagnostics=False):
+                             gnn_threshold=0.65, gnn_hidden_dim=None,
+                             gnn_timeout=60,
+                             max_time_seconds=600, early_stop=20,
+                             return_diagnostics=False):
     """
-    GNN-KMA-2: kernelize -> GNN-v2 on kernel -> KMA refinement for directed FVS.
+    GNN-KMA-2 (soft-hint): same as gnn_KMA_solve_directed but uses the v2 GNN
+    model with enriched structural features (RWSE, motif counts, k-core).
+
+    Reference: Part 1+2 of the GNN-KMA research-grade overhaul.
     """
     if not HAS_CPP_ENGINE:
         raise RuntimeError("cpp_engine not available. Please compile it first.")
@@ -1436,92 +1698,169 @@ def gnn_KMA2_solve_directed(n, edges, pop_size=20, max_gens=100,
     kernel_start = time.perf_counter()
     k_n, k_edges, forced, k_new_to_old = kernelize_directed_graph(n, edges)
     kernel_ms = (time.perf_counter() - kernel_start) * 1000.0
+
     if k_n == 0:
         return _maybe_with_metrics(
-            forced,
+            sorted(forced),
             _stage_metrics(kernelization_ms=kernel_ms),
             return_diagnostics,
         )
 
     gnn_start = time.perf_counter()
-    gnn_candidates = run_gnn_directed_v2(
-        k_n,
-        k_edges,
-        threshold=gnn_threshold,
-        hidden_dim=gnn_hidden_dim,
-        gnn_timeout=gnn_timeout,
+    gnn_probs_np = run_gnn_directed_v2_probs(
+        k_n, k_edges, hidden_dim=gnn_hidden_dim, gnn_timeout=gnn_timeout
     )
     gnn_ms = (time.perf_counter() - gnn_start) * 1000.0
 
-    if gnn_candidates is None:
-        print(f"  [KMA-2] GNN unavailable, running pure KMA (pop={pop_size}, gens={max_gens})")
-        fixed_kernel = set()
-        reduced_n = k_n
-        reduced_edges = k_edges
-        reduced_to_kernel = list(range(k_n))
-    else:
-        fixed_kernel = {v for v in gnn_candidates if 0 <= v < k_n}
-        if fixed_kernel:
-            print(
-                f"  [KMA-2] Using GNN-guided kernel core "
-                f"(fixed={len(fixed_kernel)}, pop={pop_size}, gens={max_gens})"
-            )
-            keep_kernel = [v for v in range(k_n) if v not in fixed_kernel]
-            kernel_to_reduced = {old: i for i, old in enumerate(keep_kernel)}
-            reduced_edges = [
-                (kernel_to_reduced[u], kernel_to_reduced[v])
-                for u, v in k_edges
-                if u in kernel_to_reduced and v in kernel_to_reduced
-            ]
-            reduced_n = len(keep_kernel)
-            reduced_to_kernel = keep_kernel
-        else:
-            print(f"  [KMA-2] GNN produced no fixed hints, running standard KMA (pop={pop_size}, gens={max_gens})")
-            reduced_n = k_n
-            reduced_edges = k_edges
-            reduced_to_kernel = list(range(k_n))
-
     ma_start = time.perf_counter()
-    if reduced_n > 0:
-        if hasattr(cpp_engine, "solve_directed_KMA"):
-            reduced_fvs = cpp_engine.solve_directed_KMA(
-                reduced_n, reduced_edges, pop_size, max_gens, early_stop, max_time_seconds
-            )
-        elif hasattr(cpp_engine, "solve_directed_KME"):
-            reduced_fvs = cpp_engine.solve_directed_KME(
-                reduced_n, reduced_edges, pop_size, max_gens, early_stop, max_time_seconds
-            )
-        else:
-            reduced_fvs = cpp_engine.solve_directed_MA(
-                reduced_n, reduced_edges, pop_size, max_gens, early_stop, max_time_seconds
-            )
-    else:
-        reduced_fvs = []
+    kernel_fvs, _ = _soft_hint_gnn_kernel_solve(
+        k_n, k_edges, gnn_probs_np, pop_size, max_gens, early_stop, max_time_seconds,
+        gnn_threshold=gnn_threshold, max_fix_fraction=0.08,
+        label="[KMA-2]", directed=True, run_kma_fn=_kma_run_directed,
+    )
     ma_ms = (time.perf_counter() - ma_start) * 1000.0
 
-    kernel_fvs = set(fixed_kernel)
-    kernel_fvs.update(
-        reduced_to_kernel[v] for v in reduced_fvs if 0 <= v < len(reduced_to_kernel)
-    )
     mapped = [k_new_to_old[v] for v in kernel_fvs if 0 <= v < len(k_new_to_old)]
     solution = sorted(set(forced).union(mapped))
     return _maybe_with_metrics(
         solution,
-        _stage_metrics(
-            kernelization_ms=kernel_ms,
-            gnn_candidate_ms=gnn_ms,
-            ma_ms=ma_ms,
-        ),
+        _stage_metrics(kernelization_ms=kernel_ms, gnn_candidate_ms=gnn_ms, ma_ms=ma_ms),
+        return_diagnostics,
+    )
+
+
+def gnn_KMA3_solve_directed(n, edges, pop_size=20, max_gens=100,
+                             gnn_threshold=0.65, gnn_hidden_dim=None,
+                             gnn_timeout=60,
+                             max_time_seconds=600, early_stop=20,
+                             return_diagnostics=False):
+    """
+    GNN-KMA-3: research-grade directed FVS solver.
+
+    Uses the v3 model (GAT + residual connections, 5 layers, 16-channel features
+    with RWSE steps 2-16, SCC membership, cycle betweenness) with precision-first
+    soft-hint coupling (threshold=0.65, max 8% hard-fixed).
+
+    References:
+    - Veličković et al. (2018) Graph Attention Networks (GAT)
+    - He et al. (2016) Deep Residual Learning
+    - Rampasek et al. (2022) Recipe for a General, Powerful, Scalable Graph
+      Transformer (RWSE)
+    - Ben-Baruch et al. (2021) Asymmetric Loss (FP >> FN cost design)
+    """
+    if not HAS_CPP_ENGINE:
+        raise RuntimeError("cpp_engine not available. Please compile it first.")
+
+    kernel_start = time.perf_counter()
+    k_n, k_edges, forced, k_new_to_old = kernelize_directed_graph(n, edges)
+    kernel_ms = (time.perf_counter() - kernel_start) * 1000.0
+
+    if k_n == 0:
+        return _maybe_with_metrics(
+            sorted(forced),
+            _stage_metrics(kernelization_ms=kernel_ms),
+            return_diagnostics,
+        )
+
+    gnn_start = time.perf_counter()
+    gnn_probs_np = run_gnn_directed_v3_probs(
+        k_n, k_edges, hidden_dim=gnn_hidden_dim, gnn_timeout=gnn_timeout
+    )
+    gnn_ms = (time.perf_counter() - gnn_start) * 1000.0
+
+    ma_start = time.perf_counter()
+    kernel_fvs, _ = _soft_hint_gnn_kernel_solve(
+        k_n, k_edges, gnn_probs_np, pop_size, max_gens, early_stop, max_time_seconds,
+        gnn_threshold=gnn_threshold, max_fix_fraction=0.08,
+        label="[KMA-3]", directed=True, run_kma_fn=_kma_run_directed,
+    )
+    ma_ms = (time.perf_counter() - ma_start) * 1000.0
+
+    mapped = [k_new_to_old[v] for v in kernel_fvs if 0 <= v < len(k_new_to_old)]
+    solution = sorted(set(forced).union(mapped))
+    return _maybe_with_metrics(
+        solution,
+        _stage_metrics(kernelization_ms=kernel_ms, gnn_candidate_ms=gnn_ms, ma_ms=ma_ms),
+        return_diagnostics,
+    )
+
+
+def gnn_KMA3_solve_undirected(n, edges, pop_size=20, max_gens=100,
+                               gnn_threshold=0.65, gnn_hidden_dim=None,
+                               gnn_timeout=60,
+                               max_time_seconds=600, early_stop=20,
+                               return_diagnostics=False):
+    """
+    GNN-KMA-3: research-grade undirected FVS solver.
+
+    Uses the v3 model with 16-channel features and precision-first soft-hint coupling.
+    Falls through to pure KMA if v3 weights are not yet trained.
+    """
+    if not HAS_CPP_ENGINE:
+        raise RuntimeError("cpp_engine not available. Please compile it first.")
+
+    kernel_start = time.perf_counter()
+    k_n, k_edges, forced, k_new_to_old = kernelize_undirected_graph(n, edges)
+    kernel_ms = (time.perf_counter() - kernel_start) * 1000.0
+
+    if k_n == 0:
+        return _maybe_with_metrics(
+            sorted(forced),
+            _stage_metrics(kernelization_ms=kernel_ms),
+            return_diagnostics,
+        )
+
+    # For undirected v3 we fall back to v2 undirected probs (same features concept)
+    gnn_start = time.perf_counter()
+    has_gnn_v3, UNetV3, _ = get_gnn_models_v3()
+    weights_v3 = PROJECT_ROOT / "gnn_model" / "weights" / "undirected_fvs_gcn_v3.pt"
+
+    if has_gnn_v3 and get_torch() is not None and weights_v3.exists():
+        torch_mod = get_torch()
+        try:
+            model, _ = _load_model_with_checkpoint(
+                UNetV3, weights_v3, directed=False, hidden_dim_override=gnn_hidden_dim
+            )
+            model.eval()
+            gnn_probs_np = _run_gnn_full_inference(
+                model, get_undirected_features_v3, k_n, k_edges,
+                bidirected=True, label="[GNN-3]", gnn_timeout=gnn_timeout
+            )
+        except Exception as ex:
+            print(f"  [GNN-3] Failed to run v3 model: {ex}. Falling back to v2.")
+            gnn_probs_np = run_gnn_undirected_v2_probs(
+                k_n, k_edges, hidden_dim=gnn_hidden_dim, gnn_timeout=gnn_timeout
+            )
+    else:
+        gnn_probs_np = run_gnn_undirected_v2_probs(
+            k_n, k_edges, hidden_dim=gnn_hidden_dim, gnn_timeout=gnn_timeout
+        )
+    gnn_ms = (time.perf_counter() - gnn_start) * 1000.0
+
+    ma_start = time.perf_counter()
+    kernel_fvs, _ = _soft_hint_gnn_kernel_solve(
+        k_n, k_edges, gnn_probs_np, pop_size, max_gens, early_stop, max_time_seconds,
+        gnn_threshold=gnn_threshold, max_fix_fraction=0.08,
+        label="[KMA-3]", directed=False, run_kma_fn=_kma_run_undirected,
+    )
+    ma_ms = (time.perf_counter() - ma_start) * 1000.0
+
+    mapped = [k_new_to_old[v] for v in kernel_fvs if 0 <= v < len(k_new_to_old)]
+    solution = sorted(set(forced).union(mapped))
+    return _maybe_with_metrics(
+        solution,
+        _stage_metrics(kernelization_ms=kernel_ms, gnn_candidate_ms=gnn_ms, ma_ms=ma_ms),
         return_diagnostics,
     )
 
 
 # Backward-compatible alias names for legacy imports
-# (existing code used gnn_kme_solve_* while implementation is gnn_KMA_solve_*)
-gnn_kme_solve_undirected = gnn_KMA_solve_undirected
+# (existing code used gnn_kme_solve_* while implementation is gnn_KMA_solve_*)\ngnn_kme_solve_undirected = gnn_KMA_solve_undirected
 gnn_kme_solve_directed = gnn_KMA_solve_directed
 gnn_kma2_solve_undirected = gnn_KMA2_solve_undirected
 gnn_kma2_solve_directed = gnn_KMA2_solve_directed
+gnn_kma3_solve_directed = gnn_KMA3_solve_directed
+gnn_kma3_solve_undirected = gnn_KMA3_solve_undirected
 kma_solve_undirected_legacy = kma_solve_undirected
 kma_solve_directed_legacy = kma_solve_directed
 
@@ -1561,8 +1900,8 @@ def main():
         help="Patience / early-stopping generations without improvement (default: 20)"
     )
     parser.add_argument(
-        "--threshold", type=float, default=0.2,
-        help="GNN probability threshold for FVS candidate selection (default: 0.2)"
+        "--threshold", type=float, default=0.65,
+        help="GNN probability threshold for FVS candidate selection (default: 0.65, precision-first)"
     )
     parser.add_argument(
         "--gnn-hidden", type=int, default=None,
@@ -1578,9 +1917,9 @@ def main():
     )
     parser.add_argument(
         "--mode",
-        choices=["GNN-KMA", "GNN-KMA-2"],
+        choices=["GNN-KMA", "GNN-KMA-2", "GNN-KMA-3"],
         default="GNN-KMA",
-        help="Hybrid mode: legacy GNN-KMA or advanced GNN-KMA-2",
+        help="Hybrid mode: legacy GNN-KMA, advanced GNN-KMA-2, or research-grade GNN-KMA-3",
     )
 
     args = parser.parse_args()
@@ -1631,7 +1970,13 @@ def main():
     start = time.perf_counter()
 
     if args.type == "undirected":
-        if args.mode == "GNN-KMA-2":
+        if args.mode == "GNN-KMA-3":
+            fvs = gnn_KMA3_solve_undirected(
+                n, edges, args.pop, args.gens, args.threshold, args.gnn_hidden,
+                gnn_timeout=args.gnn_timeout,
+                max_time_seconds=args.timeout, early_stop=args.earlystop,
+            )
+        elif args.mode == "GNN-KMA-2":
             fvs = gnn_KMA2_solve_undirected(
                 n, edges, args.pop, args.gens, args.threshold, args.gnn_hidden,
                 gnn_timeout=args.gnn_timeout,
@@ -1645,7 +1990,13 @@ def main():
             )
         valid = verify_fvs(n, edges, fvs)
     else:
-        if args.mode == "GNN-KMA-2":
+        if args.mode == "GNN-KMA-3":
+            fvs = gnn_KMA3_solve_directed(
+                n, edges, args.pop, args.gens, args.threshold, args.gnn_hidden,
+                gnn_timeout=args.gnn_timeout,
+                max_time_seconds=args.timeout, early_stop=args.earlystop,
+            )
+        elif args.mode == "GNN-KMA-2":
             fvs = gnn_KMA2_solve_directed(
                 n, edges, args.pop, args.gens, args.threshold, args.gnn_hidden,
                 gnn_timeout=args.gnn_timeout,
