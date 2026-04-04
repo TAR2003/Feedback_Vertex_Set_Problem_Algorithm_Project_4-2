@@ -8,7 +8,11 @@ cd "$SCRIPT_DIR"
 DATASET_SLUG="tawkirazizrahman/fvs-synthetic-dataset-20k"
 TARGET_DIR="./data/synthetic"
 
-echo "--- [1/4] Downloading Kaggle Dataset (Public) ---"
+echo "--- [1/4] Installing dependencies and building the C++ engine ---"
+# Ensure your build_engine.py is executable or run via python
+python3 build_engine.py
+
+echo "--- [2/4] Downloading Kaggle Dataset (Public) ---"
 # Install kagglehub if missing, then download and move data
 python3 -m pip install -q kagglehub
 python3 -c "
@@ -28,9 +32,8 @@ shutil.copytree(path, target)
 print(f'✅ Dataset moved to {target}')
 "
 
-echo "--- [2/4] Installing dependencies and building the C++ engine ---"
-# Ensure your build_engine.py is executable or run via python
-python3 build_engine.py
+# You can also generate a new synthetic benchmark dataset locally with:
+# python data/setup_benchmark_inputs.py --total-undirected 100 --total-directed 100 --seed 7
 
 echo "--- [3/4] Running the default pipeline ---"
 python3 experiments/run_pipeline.py --mode all --algo ALL --total-undirected 100 --total-directed 100
