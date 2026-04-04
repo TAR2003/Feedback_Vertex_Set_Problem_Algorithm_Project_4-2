@@ -81,6 +81,12 @@ def parse_validity(raw: str):
 
 
 def main() -> int:
+    detailed_csv = os.path.join(DATA_DIR, "detailed_scores.csv")
+    summary_csv = os.path.join(DATA_DIR, "summary_scores.csv")
+    for old_csv in (detailed_csv, summary_csv):
+        if os.path.exists(old_csv):
+            os.remove(old_csv)
+
     csv_files = sorted(glob.glob(CSV_GLOB))
     csv_files = [f for f in csv_files if os.path.basename(f) not in {"detailed_scores.csv", "summary_scores.csv"}]
     if not csv_files:
