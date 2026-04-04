@@ -54,8 +54,8 @@ def compare_to_bruteforce(brute_val: Optional[int], ref_val: Optional[int]) -> s
 
 def build_rows_for_family(results_dir: Path, family: str) -> List[dict]:
     brute_map = read_csv_map(results_dir / f"{family}_brute_force.csv")
-    ic_map = read_csv_map(results_dir / f"{family}_IC.csv")
-    bst_map = read_csv_map(results_dir / f"{family}_BST.csv")
+    ic_map = read_csv_map(results_dir / f"{family}_IC_exact.csv")
+    bst_map = read_csv_map(results_dir / f"{family}_BST_exact.csv")
 
     rows: List[dict] = []
     if not brute_map:
