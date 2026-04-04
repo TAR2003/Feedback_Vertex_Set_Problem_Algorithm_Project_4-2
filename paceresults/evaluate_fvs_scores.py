@@ -55,8 +55,34 @@ def parse_fvs_size(raw: str):
         return None
 
 
+def parse_node_count(raw: str):
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if s == "" or s.upper() in {"N/A", "UNKNOWN", "NONE"}:
+        return None
+    try:
+        return int(float(s))
+    except ValueError:
+        return None
+
+
+def parse_validity(raw: str):
+    if raw is None:
+        return None
+    s = str(raw).strip().lower()
+    if s == "":
+        return None
+    if s in {"true", "yes", "ok", "1", "success", "succ"}:
+        return True
+    if s in {"false", "no", "fail", "failed", "0", "error", "invalid"}:
+        return False
+    return None
+
+
 def main() -> int:
     csv_files = sorted(glob.glob(CSV_GLOB))
+    csv_files = [f for f in csv_files if os.path.basename(f) not in {"detailed_scores.csv", "summary_scores.csv"}]
     if not csv_files:
         print(f"No CSV files found under {DATA_DIR}")
         return 1
@@ -87,14 +113,52 @@ def main() -> int:
             if size_key is None:
                 raise ValueError(f"No fvs_size/FVS_size column in {csv_file}")
 
+            node_key = None
+            for candidate in ["nodes_n", "n", "nodes", "vertices", "num_vertices", "node_count"]:
+                if candidate in reader.fieldnames:
+                    node_key = candidate
+                    break
+
+            status_key = None
+            exit_code_key = None
+            validity_key = None
+            for candidate in ["status", "validity", "valid", "is_valid"]:
+                if candidate in reader.fieldnames:
+                    status_key = candidate
+                    break
+            for candidate in ["exit_code", "exitcode", "code"]:
+                if candidate in reader.fieldnames:
+                    exit_code_key = candidate
+                    break
+
             for row in reader:
                 instance = str(row.get(instance_key, "")).strip()
                 if not instance or not is_instance_of_interest(instance):
                     continue
+
                 fvs_raw = row.get(size_key, "")
                 fvs_size = parse_fvs_size(fvs_raw)
+                node_count = parse_node_count(row.get(node_key)) if node_key else None
+
+                validity = None
+                if status_key:
+                    validity = parse_validity(row.get(status_key))
+                if validity is None and exit_code_key:
+                    exit_code_raw = row.get(exit_code_key)
+                    if exit_code_raw is not None:
+                        try:
+                            validity = int(str(exit_code_raw).strip()) == 0
+                        except ValueError:
+                            validity = None
+
+                if validity is False:
+                    if node_count is None:
+                        continue
+                    fvs_size = float(node_count)
+
                 if fvs_size is None:
                     continue
+
                 instances.setdefault(instance, {})[solver_name] = float(fvs_size)
 
     if not instances:
@@ -115,11 +179,21 @@ def main() -> int:
         scores_for_instance = {}
         for solver in solvers:
             fvs = solver_map.get(solver)
-            if fvs is None or fvs <= 0:
+            if fvs is None:
                 scores_for_instance[f"{solver}_fvs"] = "N/A"
                 scores_for_instance[f"{solver}_score"] = "N/A"
                 continue
-            score = 100.0 * optimal / fvs
+            if optimal == 0:
+                if fvs == 0:
+                    score = 100.0
+                else:
+                    score = 0.0
+            elif fvs <= 0:
+                scores_for_instance[f"{solver}_fvs"] = fvs
+                scores_for_instance[f"{solver}_score"] = "N/A"
+                continue
+            else:
+                score = 100.0 * optimal / fvs
             scores_for_instance[f"{solver}_fvs"] = fvs
             scores_for_instance[f"{solver}_score"] = round(score, 4)
             solver_scores[solver].append(score)
