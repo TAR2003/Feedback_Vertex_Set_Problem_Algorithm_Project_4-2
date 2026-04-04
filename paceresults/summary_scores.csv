@@ -1,6 +1,8 @@
 solver,mean_score,instance_count
+directed_KMA_heuristic_30,76.3657,200
 directed_KMA_heuristic_60,78.0611,200
 directed_KMA_heuristic_90,78.9312,200
+directed_MA_heuristic_30,68.642,200
 directed_MA_heuristic_60,70.6738,200
 directed_MA_heuristic_90,71.8443,200
 directed_PACE2022winner_heuristic,100.0,200
