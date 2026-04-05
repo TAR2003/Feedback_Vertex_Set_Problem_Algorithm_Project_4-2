@@ -1,27 +1,27 @@
 Analysis summary for undirected
-Best n by distinct k values: n=28, distinct k count=18
+Best n by distinct k values: n=28, distinct k count=19
 Best k by distinct n values: k=4, distinct n count=26
 
 Distinct k counts by n:
-n=32: distinct k count=18
-n=29: distinct k count=18
-n=28: distinct k count=18
-n=30: distinct k count=17
-n=26: distinct k count=17
-n=35: distinct k count=16
-n=34: distinct k count=16
-n=31: distinct k count=16
-n=27: distinct k count=16
-n=24: distinct k count=16
-n=22: distinct k count=16
-n=33: distinct k count=15
-n=25: distinct k count=14
-n=20: distinct k count=14
-n=23: distinct k count=12
-n=21: distinct k count=12
+n=32: distinct k count=19
+n=29: distinct k count=19
+n=28: distinct k count=19
+n=30: distinct k count=18
+n=26: distinct k count=18
+n=35: distinct k count=17
+n=34: distinct k count=17
+n=31: distinct k count=17
+n=27: distinct k count=17
+n=24: distinct k count=17
+n=22: distinct k count=17
+n=33: distinct k count=16
+n=25: distinct k count=15
+n=20: distinct k count=15
+n=23: distinct k count=13
+n=21: distinct k count=13
+n=18: distinct k count=12
 n=15: distinct k count=12
 n=19: distinct k count=11
-n=18: distinct k count=11
 n=17: distinct k count=11
 n=14: distinct k count=9
 n=11: distinct k count=9
@@ -42,6 +42,7 @@ k=9: distinct n count=21
 k=2: distinct n count=21
 k=10: distinct n count=20
 k=11: distinct n count=19
+k=-1: distinct n count=17
 k=13: distinct n count=16
 k=12: distinct n count=16
 k=1: distinct n count=14
@@ -75,17 +76,18 @@ n=23: 99.5%
 n=24: 99.3%
 n=25: 97.6%
 n=26: 91.8%
-n=27: 90.7%
-n=28: 86.7%
-n=29: 85.3%
-n=30: 89.4%
+n=27: 90.0%
+n=28: 84.0%
+n=29: 81.4%
+n=30: 82.3%
 n=31: 90.3%
-n=32: 79.8%
-n=33: 74.7%
-n=34: 67.0%
-n=35: 58.5%
+n=32: 79.1%
+n=33: 73.4%
+n=34: 64.7%
+n=35: 53.8%
 
 IC success percentage by k (10-second timeout):
+k=-1: 0.0%
 k=1: 100.0%
 k=2: 100.0%
 k=3: 100.0%
@@ -120,26 +122,27 @@ n=14: 100.0%
 n=15: 100.0%
 n=16: 100.0%
 n=17: 100.0%
-n=18: 100.0%
+n=18: 99.8%
 n=19: 99.4%
-n=20: 99.8%
-n=21: 97.3%
-n=22: 94.6%
-n=23: 97.3%
-n=24: 97.9%
-n=25: 97.3%
-n=26: 95.7%
-n=27: 96.1%
-n=28: 92.2%
-n=29: 87.3%
-n=30: 87.7%
-n=31: 82.9%
-n=32: 70.4%
-n=33: 82.8%
-n=34: 82.0%
-n=35: 76.7%
+n=20: 99.2%
+n=21: 95.3%
+n=22: 88.1%
+n=23: 89.6%
+n=24: 89.4%
+n=25: 88.5%
+n=26: 75.6%
+n=27: 78.4%
+n=28: 73.3%
+n=29: 64.3%
+n=30: 67.9%
+n=31: 67.2%
+n=32: 48.8%
+n=33: 55.8%
+n=34: 47.9%
+n=35: 37.3%
 
 BST success percentage by k (10-second timeout):
+k=-1: 0.0%
 k=1: 100.0%
 k=2: 100.0%
 k=3: 100.0%
@@ -154,3 +157,49 @@ k=11: 45.5%
 k=12: 37.0%
 k=13: 75.0%
 k=14: 0.0%
+
+Brute Force success percentage by n (10-second timeout):
+n=9: 100.0%
+n=10: 100.0%
+n=11: 100.0%
+n=12: 100.0%
+n=13: 100.0%
+n=14: 100.0%
+n=15: 100.0%
+n=16: 100.0%
+n=17: 100.0%
+n=18: 100.0%
+n=19: 100.0%
+n=20: 99.2%
+n=21: 93.8%
+n=22: 82.8%
+n=23: 85.9%
+n=24: 77.2%
+n=25: 52.5%
+n=26: 36.3%
+n=27: 31.3%
+n=28: 31.5%
+n=29: 19.9%
+n=30: 16.5%
+n=31: 25.4%
+n=32: 21.3%
+n=33: 21.5%
+n=34: 19.7%
+n=35: 19.3%
+
+Brute Force success percentage by k (10-second timeout):
+k=-1: 0.0%
+k=1: 100.0%
+k=2: 100.0%
+k=3: 100.0%
+k=4: 100.0%
+k=5: 100.0%
+k=6: 100.0%
+k=7: 100.0%
+k=8: 100.0%
+k=9: 100.0%
+k=10: 100.0%
+k=11: 100.0%
+k=12: 100.0%
+k=13: 100.0%
+k=16: 100.0%

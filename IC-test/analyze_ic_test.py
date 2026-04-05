@@ -16,21 +16,34 @@ def load_csv_data(csv_path):
             try:
                 n = int(row.get("n", row.get("N", "0")))
                 m = int(row.get("m", row.get("M", "0")))
-                k = int(row.get("FVS_size", row.get("k", row.get("K", "0"))))
+                # Handle FVS_size which might be a number or "TIMEOUT"
+                fvs_str = row.get("FVS_size", row.get("k", row.get("K", "0"))).strip()
+                if fvs_str.upper() == "TIMEOUT":
+                    k = -1  # Sentinel value indicating FVS_size is unknown due to timeout
+                else:
+                    k = int(fvs_str)
                 runtime_raw = row.get("runtime", row.get("time", "0"))
-                try:
-                    runtime = float(runtime_raw)
-                except Exception:
-                    # non-numeric runtime (e.g. TIMEOUT) -> treat as infinite
+                if runtime_raw is None:
+                    runtime_raw = ""
+                runtime_raw = runtime_raw.strip()
+                if runtime_raw.upper() == "TIMEOUT":
                     runtime = float("inf")
+                else:
+                    try:
+                        runtime = float(runtime_raw)
+                    except Exception:
+                        # non-numeric runtime -> treat as infinite timeout
+                        runtime = float("inf")
             except ValueError:
                 continue
             if k == 0:
                 continue
-            # treat runtimes > 10 or non-numeric as timeout for plotting and success calculations
-            timed_out = runtime > 10.0 or runtime == float("inf")
+            # treat runtimes > 10 or non-numeric/TIMEOUT as timeout for plotting and success calculations
+            # also treat k == -1 (FVS_size was TIMEOUT) as timed_out
+            timed_out = runtime > 10.0 or runtime == float("inf") or k == -1
             plot_runtime = min(runtime, 10.0) if runtime != float("inf") else 10.0
             validity = row.get("validity", "True").strip().lower() in {"true", "1", "yes"}
+            success = not timed_out and validity
             rows.append({
                 "file": row.get("file", ""),
                 "n": n,
@@ -39,6 +52,7 @@ def load_csv_data(csv_path):
                 "runtime": plot_runtime,
                 "timed_out": timed_out,
                 "validity": validity,
+                "success": success,
             })
     return rows
 
@@ -132,14 +146,14 @@ def build_method_column(method):
     return method
 
 
-def calculate_success_percentages(rows, group_key, timed_out_key="timed_out"):
+def calculate_success_percentages(rows, group_key):
     counts = defaultdict(lambda: {"total": 0, "success": 0})
     for row in rows:
         group_value = row.get(group_key)
         if group_value is None:
             continue
         counts[group_value]["total"] += 1
-        if not row.get(timed_out_key, False):
+        if row.get("success", False):
             counts[group_value]["success"] += 1
 
     return {
@@ -309,6 +323,7 @@ def analyze_folder(folder_path, show_plots=False):
 
     generate_method_success_plots(method_rows, "IC_exact", "IC", plot_dir, summary_output, show_plots=show_plots)
     generate_method_success_plots(method_rows, "BST_exact", "BST", plot_dir, summary_output, show_plots=show_plots)
+    generate_method_success_plots(method_rows, "brute_force", "Brute Force", plot_dir, summary_output, show_plots=show_plots)
 
 
 def main():
