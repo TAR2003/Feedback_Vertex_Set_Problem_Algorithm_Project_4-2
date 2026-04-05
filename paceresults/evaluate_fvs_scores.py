@@ -80,6 +80,27 @@ def parse_validity(raw: str):
     return None
 
 
+def parse_runtime(raw: str):
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if s == "" or s.upper() in {"N/A", "TIMEOUT", "ERROR", "NONE"}:
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        # try to handle trailing units like 'ms' or 's'
+        try:
+            low = s.lower()
+            if low.endswith('ms'):
+                return float(low[:-2]) / 1000.0
+            if low.endswith('s'):
+                return float(low[:-1])
+        except Exception:
+            return None
+        return None
+
+
 def main() -> int:
     detailed_csv = os.path.join(DATA_DIR, "detailed_scores.csv")
     summary_csv = os.path.join(DATA_DIR, "summary_scores.csv")
@@ -96,9 +117,12 @@ def main() -> int:
     instances: dict[str, dict[str, float]] = {}
     solvers: list[str] = []
 
+    solver_runtimes: dict[str, float] = {}
+
     for csv_file in csv_files:
         solver_name = os.path.splitext(os.path.basename(csv_file))[0]
         solvers.append(solver_name)
+        solver_runtimes.setdefault(solver_name, 0.0)
 
         with open(csv_file, newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
@@ -123,6 +147,13 @@ def main() -> int:
             for candidate in ["nodes_n", "n", "nodes", "vertices", "num_vertices", "node_count"]:
                 if candidate in reader.fieldnames:
                     node_key = candidate
+                    break
+
+            # detect runtime/time column if present
+            runtime_key = None
+            for candidate in ["time_seconds", "runtime", "time", "time_s", "time_ms", "ms"]:
+                if candidate in reader.fieldnames:
+                    runtime_key = candidate
                     break
 
             status_key = None
@@ -164,6 +195,13 @@ def main() -> int:
 
                 if fvs_size is None:
                     continue
+
+                # accumulate runtime if available
+                if runtime_key:
+                    raw_runtime = row.get(runtime_key)
+                    rt = parse_runtime(raw_runtime)
+                    if rt is not None:
+                        solver_runtimes[solver_name] = solver_runtimes.get(solver_name, 0.0) + float(rt)
 
                 instances.setdefault(instance, {})[solver_name] = float(fvs_size)
 
@@ -239,10 +277,15 @@ def main() -> int:
     print("Final solver mean normalized score (100*optimal/fvs):")
     for solver in solvers:
         values = solver_scores.get(solver, [])
+        total_time = solver_runtimes.get(solver, 0.0)
         if values:
-            print(f"  {solver}: {statistics.mean(values):.4f} (based on {len(values)} instances)")
+            print(f"  {solver}: {statistics.mean(values):.4f} (based on {len(values)} instances) — total_time={total_time:.2f}s")
         else:
-            print(f"  {solver}: N/A")
+            # still show total_time if any runtime collected
+            if total_time and total_time > 0:
+                print(f"  {solver}: N/A — total_time={total_time:.2f}s")
+            else:
+                print(f"  {solver}: N/A")
 
     print(f"\nWrote detailed per-instance scores to: {detailed_csv}")
     print(f"Wrote summary per-solver mean scores to: {summary_csv}")
