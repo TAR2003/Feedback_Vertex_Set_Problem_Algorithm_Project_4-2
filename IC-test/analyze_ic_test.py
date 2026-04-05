@@ -292,7 +292,7 @@ def analyze_folder(folder_path, show_plots=False):
             plot_percentage_bar_chart(
                 ic_success_by_k,
                 "k",
-                f"IC success percentage by k for {mode}",
+                f"IC success percentage by k (10-second timeout) for {mode}",
                 output_path,
             )
             if show_plots:
