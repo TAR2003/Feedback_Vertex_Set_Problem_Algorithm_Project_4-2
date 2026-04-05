@@ -67,6 +67,41 @@ def _log(msg: str) -> None:
     print(msg, flush=True)
 
 
+def _validate_graph_data(data: Data) -> tuple[bool, str]:
+    """Validate a loaded PyG graph and return (is_valid, reason_if_invalid)."""
+    x = getattr(data, "x", None)
+    y = getattr(data, "y", None)
+    edge_index = getattr(data, "edge_index", None)
+
+    if x is None or y is None or edge_index is None:
+        return False, "missing x/y/edge_index"
+    if not torch.is_tensor(x) or not torch.is_tensor(y) or not torch.is_tensor(edge_index):
+        return False, "x/y/edge_index must be tensors"
+    if x.dim() != 2:
+        return False, "x must be 2D"
+    if y.dim() != 1:
+        return False, "y must be 1D"
+    if edge_index.dim() != 2 or edge_index.size(0) != 2:
+        return False, "edge_index must have shape [2, m]"
+
+    num_nodes = x.size(0)
+    if num_nodes <= 0:
+        return False, "empty graph (num_nodes=0)"
+    if y.size(0) != num_nodes:
+        return False, "label length mismatch"
+    if x.numel() == 0:
+        return False, "empty x tensor"
+    if not torch.isfinite(x).all():
+        return False, "non-finite values in x"
+    if edge_index.numel() > 0:
+        if edge_index.min().item() < 0 or edge_index.max().item() >= num_nodes:
+            return False, "edge_index out of bounds"
+    if y.dtype not in (torch.int64, torch.int32, torch.int16, torch.int8, torch.uint8, torch.bool):
+        return False, "y must be integer/bool class labels"
+
+    return True, ""
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Asymmetric Focal Loss
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -186,8 +221,24 @@ def compute_topk_precision(
 def load_pt_dataset(data_dir: Path) -> list:
     """Load all .pt graph Data objects recursively from a directory."""
     files   = sorted(data_dir.rglob("*.pt"))
-    dataset = [torch.load(f, weights_only=False) for f in files]
+    dataset = []
+    skipped = 0
+    for file_path in files:
+        try:
+            data = torch.load(file_path, weights_only=False, map_location="cpu")
+            ok, reason = _validate_graph_data(data)
+            if not ok:
+                skipped += 1
+                _log(f"  [load-skip] {file_path.name}: {reason}")
+                continue
+            dataset.append(data)
+        except Exception as e:
+            skipped += 1
+            _log(f"  [load-skip] {file_path.name}: read failure: {e}")
+
     _log(f"  Loaded {len(dataset)} graphs from {data_dir}")
+    if skipped:
+        _log(f"  Skipped {skipped} invalid graphs during load")
     return dataset
 
 
@@ -208,13 +259,10 @@ def clean_pt_dataset(base_dir: Path) -> tuple[int, int]:
         reason = ""
         try:
             data = torch.load(file_path, weights_only=False, map_location="cpu")
-            x = getattr(data, "x", None)
-            if x is None:
+            ok, invalid_reason = _validate_graph_data(data)
+            if not ok:
                 should_remove = True
-                reason = "missing x features"
-            elif torch.isnan(x).any() or torch.isinf(x).any():
-                should_remove = True
-                reason = "NaN/Inf in x features"
+                reason = invalid_reason
         except Exception as e:
             should_remove = True
             reason = f"read failure: {e}"
@@ -358,9 +406,16 @@ def compute_metrics(model, dataset, device, weight_fn, is_v3=False):
             edge_index = data.edge_index.to(device)
             y          = data.y.to(device)
 
+            if x.size(0) == 0 or y.numel() == 0:
+                continue
+
             if is_v3:
                 logits = model(x, edge_index)
+                if not torch.isfinite(logits).all():
+                    continue
                 loss = criterion_v3(logits, y)
+                if not torch.isfinite(loss):
+                    continue
                 total_loss += loss.item()
                 preds = (torch.sigmoid(logits) >= 0.5).long()
                 # TopK precision
@@ -368,8 +423,12 @@ def compute_metrics(model, dataset, device, weight_fn, is_v3=False):
                 topk_n += 1
             else:
                 logits  = model(x, edge_index)
+                if not torch.isfinite(logits).all():
+                    continue
                 weights = weight_fn(y).to(device)
                 loss    = nn.NLLLoss(weight=weights)(logits, y)
+                if not torch.isfinite(loss):
+                    continue
                 total_loss += loss.item()
                 preds = logits.argmax(dim=1)
 
@@ -462,43 +521,76 @@ def train_model(
         # ── Train ────────────────────────────────────────────────────────────
         model.train()
         total_train_loss = 0.0
+        valid_batches = 0
+        skipped_batches = 0
 
         for data in train_set:
             x          = data.x.to(device)
             edge_index = data.edge_index.to(device)
             y          = data.y.to(device)
 
+            if x.size(0) == 0 or y.numel() == 0:
+                skipped_batches += 1
+                continue
+
             optimizer.zero_grad()
 
             if is_v3:
                 logits = model(x, edge_index)
+                if not torch.isfinite(logits).all():
+                    skipped_batches += 1
+                    continue
                 loss   = criterion_v3(logits, y)
             else:
                 logits  = model(x, edge_index)
+                if not torch.isfinite(logits).all():
+                    skipped_batches += 1
+                    continue
                 weights = weight_fn(y).to(device)
                 loss    = nn.NLLLoss(weight=weights)(logits, y)
 
+            if not torch.isfinite(loss):
+                skipped_batches += 1
+                continue
+
             loss.backward()
+
+            # Guard against exploding/invalid gradients propagating NaNs.
+            grad_is_finite = True
+            for p in model.parameters():
+                if p.grad is not None and (not torch.isfinite(p.grad).all()):
+                    grad_is_finite = False
+                    break
+            if not grad_is_finite:
+                optimizer.zero_grad(set_to_none=True)
+                skipped_batches += 1
+                continue
 
             if is_v3:
                 nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
 
             optimizer.step()
             total_train_loss += loss.item()
+            valid_batches += 1
 
         scheduler.step()
 
+        if valid_batches == 0:
+            _log("  ERROR: all training batches were invalid/non-finite this epoch; aborting early.")
+            break
+
         # Heartbeat log
         if epoch % log_every == 0 or epoch == epochs:
-            train_loss = total_train_loss / max(len(train_set), 1)
+            train_loss = total_train_loss / max(valid_batches, 1)
             pct = 100.0 * epoch / max(epochs, 1)
             cur_lr = scheduler.get_last_lr()[0] if hasattr(scheduler, 'get_last_lr') else lr
             _log(f"  [progress] epoch {epoch}/{epochs} ({pct:.1f}%) "
-                 f"train_loss={train_loss:.4f} lr={cur_lr:.7f}")
+                 f"train_loss={train_loss:.4f} lr={cur_lr:.7f} "
+                 f"valid_batches={valid_batches} skipped={skipped_batches}")
 
         # ── Validate every 5 epochs ───────────────────────────────────────────
         if epoch % 5 == 0 or epoch == epochs:
-            train_loss = total_train_loss / max(len(train_set), 1)
+            train_loss = total_train_loss / max(valid_batches, 1)
             val_m      = compute_metrics(model, val_set, device, weight_fn, is_v3=is_v3)
 
             _log(f"  {epoch:>6}  {train_loss:>10.4f}  {val_m['loss']:>10.4f}"
