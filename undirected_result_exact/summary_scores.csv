@@ -1,0 +1,7 @@
+solver,mean_score,instance_count
+undirected_BST_exact,100.0,9046
+undirected_IC_exact,100.0,9906
+undirected_KMA_exact,99.5267,10000
+undirected_MA_exact,99.4814,10000
+undirected_brute_force,100.0,7263
+undirected_fvs_check,N/A,0
