@@ -31,6 +31,8 @@ import argparse
 import time
 import math
 import random
+import multiprocessing as mp
+import queue
 from pathlib import Path
 
 # ── Path setup ────────────────────────────────────────────────────────────────
@@ -1198,29 +1200,72 @@ def run_gnn_directed_v3_probs(n, edges, hidden_dim=None, gnn_timeout=60):
     Reference: DirectedFVSNetV3 — Veličković et al. (2018) GAT +
         He et al. (2016) Deep Residual Learning.
     """
-    torch = get_torch()
-    has_gnn_v3, _, DNetV3 = get_gnn_models_v3()
-    weights_path = PROJECT_ROOT / "gnn_model" / "weights" / "directed_fvs_gcn_v3.pt"
+    def _run_inner_v3_probs(n_inner, edges_inner, hidden_dim_inner, gnn_timeout_inner):
+        torch = get_torch()
+        has_gnn_v3, _, DNetV3 = get_gnn_models_v3()
+        weights_path = PROJECT_ROOT / "gnn_model" / "weights" / "directed_fvs_gcn_v3.pt"
 
-    if not has_gnn_v3 or torch is None:
-        return None
-    if not weights_path.exists():
-        print(f"  [GNN-3] Weights not found at {weights_path}. Skipping GNN step.")
-        print("          Run: python gnn_model/train.py --type directed --v3")
+        if not has_gnn_v3 or torch is None:
+            return None
+        if not weights_path.exists():
+            print(f"  [GNN-3] Weights not found at {weights_path}. Skipping GNN step.")
+            print("          Run: python gnn_model/train.py --type directed --v3")
+            return None
+
+        try:
+            model, _ = _load_model_with_checkpoint(
+                DNetV3, weights_path, directed=True, hidden_dim_override=hidden_dim_inner
+            )
+            model.eval()
+            return _run_gnn_full_inference(
+                model, get_directed_features_v3, n_inner, edges_inner,
+                bidirected=False, label="[GNN-3]", gnn_timeout=gnn_timeout_inner
+            )
+        except Exception as ex:
+            print(f"  [GNN-3] Failed to load or run v3 model: {ex}")
+            return None
+
+    # Strict wall-clock cutoff for v3 GNN phase: hard-stop subprocess at timeout
+    # and force pure KMA fallback upstream.
+    timeout_s = max(1, int(math.ceil(float(gnn_timeout))))
+    start_method = "fork" if "fork" in mp.get_all_start_methods() else "spawn"
+    ctx = mp.get_context(start_method)
+    out_q: mp.Queue = ctx.Queue(maxsize=1)
+
+    def _worker(n_w, edges_w, hidden_w, timeout_w, q_w):
+        try:
+            q_w.put(("ok", _run_inner_v3_probs(n_w, edges_w, hidden_w, timeout_w)))
+        except Exception as ex:
+            q_w.put(("err", f"{type(ex).__name__}: {ex}"))
+
+    proc = ctx.Process(
+        target=_worker,
+        args=(n, edges, hidden_dim, gnn_timeout, out_q),
+        daemon=True,
+    )
+    proc.start()
+    proc.join(timeout=timeout_s)
+
+    if proc.is_alive():
+        proc.terminate()
+        proc.join(timeout=1.0)
+        if proc.is_alive() and hasattr(proc, "kill"):
+            proc.kill()
+            proc.join(timeout=1.0)
+        _warn_gnn_timeout(timeout_s)
         return None
 
     try:
-        model, _ = _load_model_with_checkpoint(
-            DNetV3, weights_path, directed=True, hidden_dim_override=hidden_dim
-        )
-        model.eval()
-        return _run_gnn_full_inference(
-            model, get_directed_features_v3, n, edges,
-            bidirected=False, label="[GNN-3]", gnn_timeout=gnn_timeout
-        )
-    except Exception as ex:
-        print(f"  [GNN-3] Failed to load or run v3 model: {ex}")
+        status, payload = out_q.get_nowait()
+    except queue.Empty:
+        print("  [GNN-3] GNN worker returned no result; falling back to pure KMA.")
         return None
+
+    if status == "ok":
+        return payload
+
+    print(f"  [GNN-3] Worker failed: {payload}. Falling back to pure KMA.")
+    return None
 
 
 def run_gnn_undirected_probs(n, edges, hidden_dim=None, gnn_timeout=60):
