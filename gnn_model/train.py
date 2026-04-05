@@ -8,6 +8,7 @@ Usage:
   python gnn_model/train.py --type directed   --epochs 100 --hidden 128
   python gnn_model/train.py --type both       --epochs 200 --batch_size 32
   python gnn_model/train.py --type directed   --variant v3 --epochs 200 --hidden 128
+    python gnn_model/train.py --type directed   --take-exact 500 --take-heuristic 500
 
 Output:
   gnn_model/weights/undirected_fvs_gcn.pt     (v1)
@@ -240,6 +241,77 @@ def load_pt_dataset(data_dir: Path) -> list:
     if skipped:
         _log(f"  Skipped {skipped} invalid graphs during load")
     return dataset
+
+
+def _canonical_track_name(track: str) -> str:
+    """Normalize track names to exact/heuristic/unknown buckets."""
+    t = (track or "").strip().lower()
+    if t in {"exact", "exact_track", "exact-track"}:
+        return "exact"
+    if t in {"heuristic", "heuristic_track", "heuristic-track"}:
+        return "heuristic"
+    return "unknown"
+
+
+def sample_dataset_by_track(
+    dataset: list,
+    take_exact: int | None,
+    take_heuristic: int | None,
+    seed: int,
+) -> list:
+    """
+    Randomly subsample loaded graphs by label track.
+
+    If a requested take count is None, all graphs from that track are kept.
+    Unknown-track graphs are excluded when any take-* flag is used.
+    """
+    if take_exact is None and take_heuristic is None:
+        return dataset
+
+    exact_graphs: list = []
+    heuristic_graphs: list = []
+    unknown_graphs: list = []
+
+    for g in dataset:
+        track = _canonical_track_name(str(getattr(g, "track", "unknown")))
+        if track == "exact":
+            exact_graphs.append(g)
+        elif track == "heuristic":
+            heuristic_graphs.append(g)
+        else:
+            unknown_graphs.append(g)
+
+    rng = random.Random(seed)
+    rng.shuffle(exact_graphs)
+    rng.shuffle(heuristic_graphs)
+    rng.shuffle(unknown_graphs)
+
+    exact_take = len(exact_graphs) if take_exact is None else min(take_exact, len(exact_graphs))
+    heur_take = len(heuristic_graphs) if take_heuristic is None else min(take_heuristic, len(heuristic_graphs))
+
+    if take_exact is not None and take_exact > len(exact_graphs):
+        _log(
+            f"  [take-exact] requested {take_exact}, but only {len(exact_graphs)} exact-track graphs are available"
+        )
+    if take_heuristic is not None and take_heuristic > len(heuristic_graphs):
+        _log(
+            "  [take-heuristic] requested "
+            f"{take_heuristic}, but only {len(heuristic_graphs)} heuristic-track graphs are available"
+        )
+
+    sampled = exact_graphs[:exact_take] + heuristic_graphs[:heur_take]
+    rng.shuffle(sampled)
+
+    if unknown_graphs:
+        _log(f"  [track-sampling] excluded {len(unknown_graphs)} unknown-track graphs")
+
+    _log(
+        "  Applied track sampling: "
+        f"exact={exact_take}/{len(exact_graphs)}, "
+        f"heuristic={heur_take}/{len(heuristic_graphs)}, "
+        f"total={len(sampled)}"
+    )
+    return sampled
 
 
 def clean_pt_dataset(base_dir: Path) -> tuple[int, int]:
@@ -657,6 +729,14 @@ def main():
         default=str(PROJECT_ROOT / "gnn_model" / "datasets" / "pt"),
         help="Path to .pt dataset root directory"
     )
+    parser.add_argument(
+        "--take-exact", type=int, default=None,
+        help="Randomly keep only N exact-track graphs from the loaded dataset"
+    )
+    parser.add_argument(
+        "--take-heuristic", type=int, default=None,
+        help="Randomly keep only M heuristic-track graphs from the loaded dataset"
+    )
     args = parser.parse_args()
 
     # --v3 flag is shorthand for --variant v3
@@ -665,6 +745,10 @@ def main():
 
     if not (0.0 < args.val_ratio < 1.0):
         raise ValueError("--val-ratio must be in (0, 1)")
+    if args.take_exact is not None and args.take_exact < 0:
+        raise ValueError("--take-exact must be >= 0")
+    if args.take_heuristic is not None and args.take_heuristic < 0:
+        raise ValueError("--take-heuristic must be >= 0")
 
     # Set global seeds for reproducibility
     random.seed(args.seed)
@@ -726,24 +810,33 @@ def main():
         if not dataset:
             _log("  No data found. Run dataset_gen.py first.")
         else:
-            log_dataset_breakdown(dataset)
-            train_set, val_set = stratified_split(
-                dataset, val_ratio=args.val_ratio, seed=args.seed
-            )
-            model = und_model_cls(
-                hidden_dim=args.hidden,
-                dropout=args.dropout,
-                **({"in_channels": 16} if is_v3 else {}),
-            )
-            train_model(
-                model, train_set, val_set, und_weight_fn,
-                epochs=args.epochs, lr=args.lr, device=device,
-                save_path=und_weight_path, log_every=args.log_every,
-                is_v3=is_v3,
-                warmup_epochs=args.warmup_epochs,
-                max_grad_norm=args.max_grad_norm,
+            dataset = sample_dataset_by_track(
+                dataset,
+                take_exact=args.take_exact,
+                take_heuristic=args.take_heuristic,
                 seed=args.seed,
             )
+            if not dataset:
+                _log("  No data left after track sampling; skipping undirected training.")
+            else:
+                log_dataset_breakdown(dataset)
+                train_set, val_set = stratified_split(
+                    dataset, val_ratio=args.val_ratio, seed=args.seed
+                )
+                model = und_model_cls(
+                    hidden_dim=args.hidden,
+                    dropout=args.dropout,
+                    **({"in_channels": 16} if is_v3 else {}),
+                )
+                train_model(
+                    model, train_set, val_set, und_weight_fn,
+                    epochs=args.epochs, lr=args.lr, device=device,
+                    save_path=und_weight_path, log_every=args.log_every,
+                    is_v3=is_v3,
+                    warmup_epochs=args.warmup_epochs,
+                    max_grad_norm=args.max_grad_norm,
+                    seed=args.seed,
+                )
 
     if args.type in ("directed", "both"):
         _log("\n" + "═" * 60)
@@ -753,24 +846,33 @@ def main():
         if not dataset:
             _log("  No data found. Run dataset_gen.py first.")
         else:
-            log_dataset_breakdown(dataset)
-            train_set, val_set = stratified_split(
-                dataset, val_ratio=args.val_ratio, seed=args.seed
-            )
-            model = dir_model_cls(
-                hidden_dim=args.hidden,
-                dropout=args.dropout,
-                **({"in_channels": 16} if is_v3 else {}),
-            )
-            train_model(
-                model, train_set, val_set, dir_weight_fn,
-                epochs=args.epochs, lr=args.lr, device=device,
-                save_path=dir_weight_path, log_every=args.log_every,
-                is_v3=is_v3,
-                warmup_epochs=args.warmup_epochs,
-                max_grad_norm=args.max_grad_norm,
+            dataset = sample_dataset_by_track(
+                dataset,
+                take_exact=args.take_exact,
+                take_heuristic=args.take_heuristic,
                 seed=args.seed,
             )
+            if not dataset:
+                _log("  No data left after track sampling; skipping directed training.")
+            else:
+                log_dataset_breakdown(dataset)
+                train_set, val_set = stratified_split(
+                    dataset, val_ratio=args.val_ratio, seed=args.seed
+                )
+                model = dir_model_cls(
+                    hidden_dim=args.hidden,
+                    dropout=args.dropout,
+                    **({"in_channels": 16} if is_v3 else {}),
+                )
+                train_model(
+                    model, train_set, val_set, dir_weight_fn,
+                    epochs=args.epochs, lr=args.lr, device=device,
+                    save_path=dir_weight_path, log_every=args.log_every,
+                    is_v3=is_v3,
+                    warmup_epochs=args.warmup_epochs,
+                    max_grad_norm=args.max_grad_norm,
+                    seed=args.seed,
+                )
 
 
 if __name__ == "__main__":
