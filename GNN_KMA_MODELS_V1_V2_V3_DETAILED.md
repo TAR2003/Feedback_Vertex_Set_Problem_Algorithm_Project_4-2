@@ -1,326 +1,282 @@
-# GNN-KMA Models (v1, v2, v3): Dataset, Training, and Solution Pipeline
+# GNN-KMA v1/v2/v3: Full Dataset, Training, and Runtime Integration Guide
 
-This document explains all three GNN-KMA generations implemented in this repository, including:
+This document explains the complete GNN-KMA stack in this repository at implementation depth:
 
-1. Dataset generation
-2. Model architectures and features
-3. Training protocol
-4. Inference and solver coupling with KMA/DKMA
+1. graph-to-PT dataset generation
+2. v1/v2/v3 feature engineering differences
+3. model architecture evolution
+4. training objectives and checkpoint policies
+5. runtime inference and coupling to KMA/DKMA
 
-Primary code files:
+Core code files:
 
-- Dataset generation: `gnn_model/dataset_gen.py`
-- Training: `gnn_model/train.py`
-- Hybrid solver runtime: `experiments/run_hybrid.py`
-- Models:
-  - `gnn_model/model_undirected.py`
-  - `gnn_model/model_directed.py`
-  - `gnn_model/model_undirected_v2.py`
-  - `gnn_model/model_directed_v2.py`
-  - `gnn_model/model_directed_v3.py` (contains directed + undirected v3 classes)
-- Feature engineering:
-  - `gnn_model/feature_engineering_v2.py`
-  - `gnn_model/feature_engineering_v3.py`
+- gnn_model/dataset_gen.py
+- gnn_model/train.py
+- experiments/run_hybrid.py
+- gnn_model/model_undirected.py
+- gnn_model/model_directed.py
+- gnn_model/model_undirected_v2.py
+- gnn_model/model_directed_v2.py
+- gnn_model/model_directed_v3.py
+- gnn_model/feature_engineering_v2.py
+- gnn_model/feature_engineering_v3.py
 
----
+## 1. End-to-End Data-to-Solver View
 
-## 1) Data Generation for GNN Training
+The full lifecycle is:
 
-## 1.1 Source distribution
+1. TXT graph corpus is prepared in benchmark format.
+2. dataset_gen.py computes node features and solver labels.
+3. PT samples are saved with metadata for training and stratification.
+4. train.py trains variant-specific models and writes weights.
+5. run_hybrid.py loads weights and performs GNN-guided KMA/DKMA solving.
 
-`gnn_model/dataset_gen.py` generates `.pt` datasets from the same two-track benchmark distribution:
+A key design rule in this repository is distribution consistency: benchmark data distribution and training data distribution are aligned by family/track/category.
 
-- `exact_track`
-- `heuristic_track`
+## 2. PT Dataset Generation: gnn_model/dataset_gen.py
 
-Across both families:
+### 2.1 Track-aware label generation
 
-- undirected
-- directed
+Label source by track:
 
-This keeps training data aligned with benchmark workload composition.
+- exact_track: IC-based labels
+- heuristic_track: KMA-based labels with timeout-bound MA stage
 
-## 1.2 Labeling strategy
+This mirrors benchmark role separation:
 
-Labels are solver-derived FVS membership vectors.
+- exact track approximates high-fidelity supervision
+- heuristic track reflects practical large-instance behavior
 
-- Exact track labels:
-  - produced with IC (exact style)
-  - timeout-protected via subprocess wrapper
-- Heuristic track labels:
-  - produced with KMA-style solver path
-  - timeout parameter routed to MA-stage budget
+### 2.2 Reliability guarantees
 
-Every label is validated for acyclicity before dataset write.
+dataset_gen.py includes multiple correctness guards:
 
-## 1.3 Output format
+1. subprocess timeout isolation for solver calls where needed
+2. explicit validation that predicted removal set is acyclic
+3. CSV status ledger for each source graph (completed, timeout, invalid)
+4. deterministic source traversal and reproducible sampling behavior
 
-Each sample is stored as PyG `Data`:
+### 2.3 PT sample contract
 
-- `x` node features
-- `edge_index`
-- `y` binary node labels
-- metadata (family/category/track/source)
-- `fvs_size`
+Each sample stores:
 
-Output roots by variant:
+- x: node feature matrix
+- edge_index: PyG COO edges
+- y: node labels (binary FVS membership)
+- fvs_size
+- family, track, category, source_file, feature_set metadata
 
-- v1: `gnn_model/datasets/pt`
-- v2: `gnn_model/datasets/pt_v2`
-- v3: `gnn_model/datasets/pt_v3`
+### 2.4 Variant data roots
 
-## 1.4 Robustness controls
+- v1: gnn_model/datasets/pt
+- v2: gnn_model/datasets/pt_v2
+- v3: gnn_model/datasets/pt_v3
 
-The dataset generator includes:
+## 3. Feature Engineering Evolution
 
-- per-graph timeout isolation in subprocess
-- invalid-label detection (`invalid FVS` safeguard)
-- persistent CSV status tracking (`completed`, `timeout`, `invalid`)
-- forced regeneration and root cleanup options
+### 3.1 v1 features
 
----
-
-## 2) Model Generation v1
-
-## 2.1 Features (v1)
-
-Undirected v1 features are compact structural signals:
+Undirected v1 (compact local structure):
 
 - normalized degree
 - clustering coefficient
 - normalized log-degree
 
-Directed v1 uses directional counterparts:
+Directed v1:
 
 - normalized in-degree
 - normalized out-degree
 - normalized min(in,out)
 
-## 2.2 Architecture (v1)
+Use case: fast baseline, low feature cost.
 
-### Undirected v1
+### 3.2 v2 features
 
-`UndirectedFVSNet`:
+v2 extends to richer structural channels (11 dims):
 
-- 3 message-passing layers (GraphSAGE when available)
-- batch normalization + dropout
-- MLP head
-- output as 2-class log-softmax
+- degree-like channels (directed or undirected)
+- RWSE short-range return channels
+- motif-derived channels (triangles, 4-cycle, 4-clique style counts)
+- core-number channel
 
-### Directed v1
+Use case: stronger structural discrimination with moderate overhead.
 
-`DirectedFVSNet`:
+### 3.3 v3 features
 
-- custom directed layer with separate incoming/outgoing aggregations
+v3 moves to a 16-channel research-grade set with deeper structural context.
+
+Highlights:
+
+- longer RWSE horizon steps [2,3,4,6,8,12,16]
+- SCC-aware channels for directed cycle structure
+- cycle-score style interaction features
+- directional ratio features
+- reduced reliance on expensive low-yield motif channels
+
+Use case: high-quality precision-first guidance for hybrid solving.
+
+## 4. Model Architecture Evolution
+
+### 4.1 v1 models
+
+UndirectedFVSNet:
+
+- 3-layer message passing (GraphSAGE when available)
+- BN + dropout + MLP head
+- 2-class log-softmax output
+
+DirectedFVSNet:
+
+- custom directed aggregation layer
+- separate in/out/self aggregation terms
 - 3 layers + BN + dropout + MLP
-- output as 2-class log-softmax
+- 2-class log-softmax output
 
-## 2.3 Loss and training style (v1)
+### 4.2 v2 models
 
-- weighted NLL loss to address class imbalance
-- cosine LR schedule
-- checkpoint selected by validation F1
+Architecture style remains similar to v1 but input channels and representation quality are upgraded via v2 features.
 
----
+- UndirectedFVSNetV2 default in_channels = 11
+- DirectedFVSNetV2 default in_channels = 11
 
-## 3) Model Generation v2
+### 4.3 v3 models
 
-v2 retains general architecture style but significantly expands feature expressiveness.
+Implemented in model_directed_v3.py with directed and undirected classes.
 
-## 3.1 Features (v2)
-
-`feature_engineering_v2.py` builds 11-channel features.
-
-Added signals include:
-
-- RWSE return probabilities (steps 2..5)
-- motif-related counts (triangles, 4-cycles, 4-cliques)
-- k-core number
-
-Directed v2 keeps directed degree channels and computes motif/core on undirected projection where appropriate.
-
-## 3.2 Architecture (v2)
-
-### Undirected v2
-
-`UndirectedFVSNetV2`:
-
-- in_channels defaults to 11
-- 3 GraphSAGE/manual conv layers
-- same classifier style as v1
-
-### Directed v2
-
-`DirectedFVSNetV2`:
-
-- in_channels defaults to 11
-- directed in/out/self aggregation layers
-- same classifier style as v1
-
-## 3.3 Training style (v2)
-
-- weighted NLL objective
-- stratified train/val split by family/category in `train.py`
-- saved weights:
-  - `*_gcn_v2.pt`
-
----
-
-## 4) Model Generation v3
-
-v3 is the research-grade redesign.
-
-## 4.1 Features (v3)
-
-`feature_engineering_v3.py` computes 16-channel features.
-
-Key additions and redesign:
-
-- longer-horizon RWSE steps: `[2,3,4,6,8,12,16]`
-- SCC-centric directed features
-- cycle-score style interaction feature
-- directional ratio channels
-- reduced dependency on expensive low-signal motifs
-
-Undirected adaptation maps SCC ideas to connected-component proxies.
-
-## 4.2 Architecture (v3)
-
-Implemented in `model_directed_v3.py`.
-
-### Directed v3 (`DirectedFVSNetV3`)
+DirectedFVSNetV3 includes:
 
 - input projection
 - 5 residual GATv2-style blocks
-- separate forward/reverse edge message paths
-- fusion projections per layer
-- global context readout concatenated to node embeddings
-- final MLP outputs one logit per node
+- separate forward and reverse message paths
+- per-layer fusion projections
+- global readout context concatenated to node embedding
+- single-logit output per node
 
-### Undirected v3 (`UndirectedFVSNetV3`)
+UndirectedFVSNetV3 follows similar residual GAT design without direction split.
 
-- same design philosophy with single undirected path
-- residual GAT blocks + global context + single-logit output
+## 5. Training Pipeline: gnn_model/train.py
 
-## 4.3 Training style (v3)
+### 5.1 Dataset loading and cleaning
 
-`train.py` switches to v3-specialized protocol:
+Before training, the script scans PT files and drops corrupted/invalid samples (shape mismatch, non-finite values, invalid edge_index bounds, etc.).
 
-- `AsymmetricFVSLoss` (false positives penalized more than false negatives)
+### 5.2 Splitting strategy
+
+train.py uses stratified split behavior by graph metadata (family/category), reducing validation distribution mismatch.
+
+Optional track-level subsampling is also supported via take-exact and take-heuristic.
+
+### 5.3 v1/v2 objective and checkpointing
+
+- weighted NLL-based training
+- cosine schedule
+- primary selection metric: validation F1
+
+### 5.4 v3 objective and checkpointing
+
+v3 training introduces specialized optimization choices:
+
+- AsymmetricFVSLoss to penalize false positives more strongly
 - warmup + cosine schedule
 - gradient clipping
-- primary validation metric: top-k precision at 8%
-- checkpoint selection by `topk_precision` instead of F1
+- primary validation metric: topk_precision@8%
 
-Saved weights:
+Why this matters: false positives are expensive in hard-fix hybrid coupling, so v3 optimizes for precision where it directly affects solver quality.
 
-- `undirected_fvs_gcn_v3.pt`
-- `directed_fvs_gcn_v3.pt`
+## 6. Runtime Inference Engine: experiments/run_hybrid.py
 
----
+### 6.1 Lazy loading and compatibility
 
-## 5) Runtime Inference and Solver Coupling
+run_hybrid.py lazily imports torch, model classes, and PyG loaders to keep startup cost low and allow graceful fallback when optional dependencies are missing.
 
-All runtime integration is in `experiments/run_hybrid.py`.
+### 6.2 Feature-model matching
 
-## 5.1 Inference execution
+Each solver variant calls matching inference path:
 
-The runtime pipeline:
+- v1 uses base feature functions and v1 weights
+- v2 uses feature_engineering_v2 + v2 weights
+- v3 uses feature_engineering_v3 + v3 weights (with fallback behavior where applicable)
 
-1. Load model lazily.
-2. Auto-detect hidden dimension from checkpoint when possible.
-3. Compute variant-appropriate features.
-4. Run mini-batch node inference (`NeighborLoader`) where available.
-5. Produce per-node probabilities.
+### 6.3 Probability extraction
 
-## 5.2 Soft-hint coupling strategy
+Inference uses sigmoid probabilities and supports robust handling of shape variants in output tensors.
 
-Current GNN-KMA coupling is precision-first soft-hint design.
+## 7. Coupling to KMA/DKMA
 
-Core rule:
+### 7.1 Current KMA coupling design
 
-- hard-fix only high-confidence nodes above threshold (default around 0.65)
-- cap hard-fixes to a small kernel fraction (8%)
-- if confidence is insufficient, fall back to pure KMA instead of risky hard-fixing
-
-This prevents FP-heavy inflation seen in naive hard-fix approaches.
-
-## 5.3 Solver variants
-
-Available hybrid functions include:
-
-- `gnn_KMA_solve_undirected` / `gnn_KMA_solve_directed` (v1)
-- `gnn_KMA2_solve_undirected` / `gnn_KMA2_solve_directed` (v2)
-- `gnn_KMA3_solve_undirected` / `gnn_KMA3_solve_directed` (v3)
-- `gnn_dkma_*` variants for DKMA backend
-
-Common flow:
+The active coupling strategy is precision-first soft-hint:
 
 1. kernelize graph
-2. infer GNN probabilities on kernel
-3. choose high-confidence candidates
-4. run KMA/DKMA refinement
-5. map solution back to original graph IDs
-6. union with forced reductions
+2. run GNN on kernel
+3. hard-fix only high-confidence vertices
+4. cap hard-fix ratio (around 8%)
+5. run KMA on residual
+6. map back and union with forced set
 
----
+If confidence is insufficient, code falls back to pure KMA path rather than forcing uncertain vertices.
 
-## 6) Training and Deployment Commands (Practical)
+### 7.2 Why precision-first
 
-## 6.1 Generate PT datasets
+In this design, false positives are high-cost because hard-fixed wrong vertices inflate final FVS size and cannot be removed later in that branch. Therefore, thresholding and caps are critical.
 
-Use variant-specific generation:
+### 7.3 GNN-DKMA path
 
-- v1: `--variant v1`
-- v2: `--variant v2`
-- v3: `--variant v3`
+gnn_dkma variants apply the same probability-guided fixing principle before running DKMA on reduced kernel.
 
-Adjust:
+## 8. Variant Comparison Matrix
 
-- track selection
-- solver timeout
-- KMA label parameters (`kma-pop`, `kma-gens`, `kma-early-stop`)
+v1:
 
-## 6.2 Train models
+- lowest feature and model complexity
+- fastest setup
+- baseline quality
 
-`gnn_model/train.py` supports:
+v2:
 
-- `--type undirected|directed|both`
-- `--variant v1|v2|v3`
-- shared hyperparameters (`epochs`, `lr`, `hidden`, `dropout`, `val-ratio`)
-- v3-specific controls (`warmup-epochs`, `max-grad-norm`)
+- richer structural features
+- same family of training objective as v1
+- stronger structural discrimination
 
-## 6.3 Use in benchmarks
+v3:
 
-`benchmark_undirected.py` and `benchmark_directed.py` can run:
+- deepest feature/model redesign
+- precision-oriented loss and metric selection
+- strongest alignment with hybrid hard-fix risk profile
 
-- `GNN-KMA`
-- `GNN-KMA-2`
-- `GNN-KMA-3`
-- `GNN-DKMA`
+## 9. Operational Workflows
 
-with timeout/threshold/hidden-dim controls and CSV logging.
+### 9.1 Generate PT datasets
 
----
+Run one variant at a time to control compute:
 
-## 7) Summary by Version
+- dataset_gen.py with variant v1/v2/v3
+- tune solver timeout and KMA label parameters to match hardware budget
 
-## v1
+### 9.2 Train and validate
 
-- compact features
-- baseline hybrid guidance
-- weighted-NLL training
+- train.py with matching variant and type
+- use fixed seed for reproducibility
+- monitor primary metric by variant (F1 for v1/v2, topk precision for v3)
 
-## v2
+### 9.3 Deploy in benchmark scripts
 
-- richer structural features (RWSE + motifs + core)
-- improved guidance quality on difficult structures
+benchmark_undirected.py and benchmark_directed.py support GNN-KMA, GNN-KMA-2, GNN-KMA-3, and GNN-DKMA with threshold, timeout, and hidden-dim controls.
 
-## v3
+## 10. Common Failure Modes and Recovery
 
-- research-grade features + residual GAT architecture
-- asymmetric training objective focused on false-positive control
-- top-k precision optimized for hard-fix quality
-- strongest alignment with soft-hint KMA coupling
+1. Missing weights: train.py must be run for target variant/type.
+2. Feature mismatch: variant must match dataset root and model class.
+3. Slow inference on very large kernels: reduce gnn-timeout or use fallback path.
+4. Poor hybrid quality due to over-fixing: increase threshold or reduce fix fraction.
 
-Together, these three generations provide an incremental evolution from baseline GNN guidance to a robust, precision-controlled hybrid optimization pipeline.
+## 11. Summary
+
+The repository implements an end-to-end, production-grade hybrid ML + combinatorial optimization stack:
+
+- robust PT label generation,
+- progressively stronger feature/model variants,
+- variant-aware training and checkpoint selection,
+- runtime coupling that explicitly manages false-positive risk.
+
+v1 establishes baseline guidance, v2 improves structural representation, and v3 delivers precision-focused guidance optimized for real hybrid solver behavior.

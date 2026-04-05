@@ -1,172 +1,228 @@
-# IC, BST, and MA Implementation Details
+# IC, BST, and MA: Full Implementation and Runtime Guide
 
-This document explains how BST, IC, and MA are implemented in this repository for both undirected and directed FVS.
+This document explains the three foundational solver families in the project at implementation depth:
 
-Core implementation files:
+1. BST (Bounded Search Tree)
+2. IC (Iterative Compression)
+3. MA (Memetic Algorithm)
 
-- Undirected exact solvers: `cpp_engine/src/undirected_algos/exact_solver_u.cpp`
-- Directed exact solvers: `cpp_engine/src/directed_algos/exact_solver_d.cpp`
-- Undirected MA: `cpp_engine/src/undirected_algos/memetic_u.cpp`
-- Directed MA: `cpp_engine/src/directed_algos/memetic_d.cpp`
-- Python runners and timeout wrappers:
-  - `experiments/benchmark_undirected.py`
-  - `experiments/benchmark_directed.py`
+Code anchors:
 
----
+- cpp_engine/src/undirected_algos/exact_solver_u.cpp
+- cpp_engine/src/directed_algos/exact_solver_d.cpp
+- cpp_engine/src/undirected_algos/memetic_u.cpp
+- cpp_engine/src/directed_algos/memetic_d.cpp
+- experiments/benchmark_undirected.py
+- experiments/benchmark_directed.py
 
-## 1) BST (Bounded Search Tree)
+## 1. Problem Context
 
-BST is implemented as a fixed-parameter branching algorithm with iterative deepening on solution size `k`.
+For a graph G, FVS asks for a minimum vertex set S such that G - S is acyclic.
 
-## Undirected BST
+- undirected: G - S must be a forest
+- directed: G - S must be a DAG
 
-Implemented in `solve_undirected_BST` + recursive helper in `exact_solver_u.cpp`.
+This repository contains exact and heuristic implementations for both settings, sharing a common C++ core with Python orchestration.
 
-### Undirected IC procedure
+## 2. BST (Bounded Search Tree)
 
-1. Build graph.
-2. For `k = 0..n`, call recursive solver.
-3. In recursion:
-   - Apply kernelization and forced reductions first.
-   - Find any cycle.
-   - If no cycle: success.
-   - If cycle exists and `k == 0`: fail branch.
-   - Otherwise branch by selecting each cycle vertex into FVS.
+BST is a parameterized exact approach with iterative deepening on budget k.
 
-### Important implementation details
+High-level invariant:
 
-- Kernelization is executed before branching to reduce state and prune infeasible branches early.
-- Branch vertex ordering is degree-based (high degree first) as a practical speed heuristic.
-- Returned solution is deduplicated and sorted before final return.
+- if a cycle exists, at least one cycle vertex must be selected
 
-## Directed BST
+### 2.1 Undirected BST flow
 
-Implemented in `solve_directed_BST` + recursive helper in `exact_solver_d.cpp`.
+Entry point: solve_undirected_BST.
 
-### Directed IC differences
+Execution:
 
-- Cycles are directed cycles (`find_directed_cycle`).
-- Directed kernelization is used.
-- SCC pruning is applied to remove vertices not in nontrivial SCCs since they cannot lie on directed cycles.
-- Branching priority uses total degree (`in + out`) for practical pruning.
+1. Build UndirectedGraph from edge list.
+2. Iterate k from 0 to n.
+3. Call recursive branch solver with graph copy and budget k.
+4. In each recursive frame:
+   - run kernelize_undirected (forced reductions, simplification)
+   - if no cycle: accept
+   - if cycle exists and k exhausted: reject branch
+   - otherwise branch on cycle vertices
 
----
+Implementation-level notes:
 
-## 2) IC (Iterative Compression)
+- Branching order is degree-descending for faster practical pruning.
+- Graph is passed by value intentionally to isolate branch state.
+- Result is deduplicated/sorted before return.
 
-IC is implemented as incremental graph growth with repeated compression of a size `k+1` FVS into size `k` when possible.
+### 2.2 Directed BST flow
 
-## Undirected IC
+Entry point: solve_directed_BST.
 
-Implemented via:
+Differences from undirected:
 
-- `solve_undirected_IC`
-- `compress`
-- `restricted_bst`
+- cycle detection is directed (find_directed_cycle)
+- directed kernelization path is used
+- SCC pruning removes vertices outside nontrivial SCCs (cannot be on directed cycles)
+- branching score uses in+out degree
 
-### Procedure
+Practical effect:
 
-1. Order vertices (degree-descending in this implementation for practical quality).
-2. Add vertices incrementally to current induced graph.
-3. Maintain FVS `X` for current prefix; on each step push new vertex into `X`.
-4. Attempt compression repeatedly:
-   - Enumerate subsets `Z ⊆ X`.
-   - Let `Y = X \ Z`.
-   - Require `G[Y]` to be acyclic (forest condition).
-   - Remove `Z`, then run restricted BST that may only pick from allowed non-forbidden vertices.
-   - Return first valid compressed set.
-5. Final cleanup tries removing redundant vertices from the output.
+- directed SCC pruning greatly reduces search space on sparse real graphs.
 
-### Why restricted BST is needed
+### 2.3 BST runtime profile
 
-The compression subproblem forbids selecting some vertices (`X`) in certain branches, so the solver must enforce forbidden constraints while branching.
+BST is exact but exponential in parameterized budget behavior. In practice:
 
-## Directed IC
+- excellent on small kernels and low-cycle density
+- can become slow on larger/highly cyclic instances
 
-Implemented in `exact_solver_d.cpp` as:
+Use BST as exact baseline and correctness reference rather than default large-scale solver.
 
-- `solve_directed_IC`
-- `compress_directed`
-- `restricted_bst_directed`
+## 3. IC (Iterative Compression)
 
-### Directed-specific differences
+IC is exact and often stronger than naive branching in practice.
 
-- Forest test becomes DAG test (`induced_has_dcycle`).
-- SCC pruning and directed kernelization are integrated in restricted recursion.
-- Same subset enumeration strategy (`Z` / `Y`) but with directed acyclicity constraints.
+Core idea:
 
----
+- maintain a valid solution X while adding vertices incrementally
+- repeatedly compress size |X|+1 solution back to size |X| if possible
 
-## 3) MA (Memetic Algorithm)
+### 3.1 Undirected IC structure
 
-MA is implemented in C++ for both graph families.
+Main functions:
 
-## Common representation
+- solve_undirected_IC
+- compress
+- restricted_bst
 
-An individual is a binary vector over vertices:
+Execution pattern:
 
-- `1` means vertex is selected in FVS
-- `0` means not selected
+1. Build incremental induced graph by ordered vertex insertion.
+2. Maintain current FVS X.
+3. For each insertion, add new vertex to X (trivial validity restore).
+4. Attempt repeated compression:
+   - enumerate subset Z of X
+   - let Y = X - Z
+   - require induced G[Y] to be acyclic
+   - solve remaining part with restricted BST disallowing forbidden choices
+   - return first valid compressed candidate
+5. Run final redundancy cleanup by removal testing.
 
-## Common components
+### 3.2 Why restricted BST exists
 
-- Population initialization (greedy + random repaired solutions)
-- Tournament selection
-- Uniform crossover
-- Bit-flip mutation (`~1/n` probability)
-- Feasibility repair for cycle elimination
-- Local search that removes redundant selected vertices
-- Early stopping via patience
-- Hard wall-clock timeout guard
+Compression imposes forbidden picks in some branches. restricted_bst enforces these constraints while preserving BST-style branching correctness.
 
-## Undirected MA (`memetic_u.cpp`)
+### 3.3 Directed IC structure
 
-### Fitness
+Directed counterparts in exact_solver_d.cpp:
 
-Fitness is based on solution size plus cycle penalty:
+- solve_directed_IC
+- compress_directed
+- restricted_bst_directed
 
-`fitness = |FVS| + n * cycles_remaining`
+Directed changes:
 
-This strongly separates feasible and infeasible solutions while still preferring smaller feasible sets.
+- forest condition becomes DAG condition
+- induced cycle check uses directed cycle routine
+- directed kernelization/SCC pruning are integrated in restricted recursion
 
-### Initialization
+### 3.4 IC runtime profile
 
-- Greedy seed uses high-degree removal ordering.
-- Additional individuals are random, repaired, then locally improved.
+IC remains exact but typically offers better practical scaling than straightforward branching on many structured instances.
 
-### Search behavior
+It is still not intended as the default for very large heuristic-track workloads.
 
-- Replaces worst individual when child improves quality.
-- Tracks generation-best size and stops after no improvement for `patience` generations.
+## 4. MA (Memetic Algorithm)
 
-## Directed MA (`memetic_d.cpp`)
+MA is the scalable heuristic backbone and is implemented for both families.
 
-Directed variant keeps the same global structure with directed-specific scoring/repair cues.
+Representation:
 
-### Directed heuristics
+- binary chromosome over vertices
+- 1 means selected into current FVS candidate
 
-- Greedy seed uses `min(in_degree, out_degree)` to target directed-cycle participation.
-- Repair often uses total directed degree to select influential removals.
-- Directed local search validates against directed cycle existence.
+Core operators:
 
----
+- greedy + random repaired initialization
+- tournament parent selection
+- uniform crossover
+- bit mutation (approx 1/n)
+- feasibility repair
+- local search for redundancy removal
 
-## 4) Runtime Integration in Python
+### 4.1 Undirected MA details
 
-`benchmark_undirected.py` and `benchmark_directed.py` expose these algorithms through CLI and CSV logging.
+Entry: solve_undirected_MA in memetic_u.cpp.
 
-### Practical behavior
+Fitness is size-plus-penalty style:
 
-- Exact algorithms (BST/IC) are run through C++ bindings directly.
-- MA/KMA/GNN variants are wrapped with timeout logic.
-- Output rows include runtime, size, validity, and status for benchmark tracking.
+- fitness = |candidate| + n * cycles_remaining
 
----
+Behavioral outcomes:
 
-## 5) Complexity and Usage Guidance
+- infeasible solutions are strongly penalized
+- feasible smaller sets dominate ranking
 
-- BST/IC are exact and can be expensive on large graphs.
-- MA is heuristic and scales much better for large instances.
-- In this codebase, exact-track runs include exact methods for quality baselines, while heuristic-track focuses on scalable methods.
+Early stop is patience-based and wall-clock timeout is enforced.
 
-For high-scale runs, prefer MA/KMA/DKMA families; use BST/IC for ground-truth style references and controlled-size experiments.
+### 4.2 Directed MA details
+
+Entry: solve_directed_MA in memetic_d.cpp.
+
+Directed-specific heuristics:
+
+- seed preference uses min(in, out)
+- repair heuristics use directed degree cues
+- validity checks use directed cycle tests
+
+Population and operator framework remains consistent with undirected version for implementation symmetry.
+
+### 4.3 MA runtime profile
+
+Compared to exact methods, MA scales significantly better and is suitable for large instances.
+
+Trade-off:
+
+- not guaranteed optimal
+- quality depends on population, generations, and patience settings
+
+## 5. Python Runtime Integration
+
+benchmark_undirected.py and benchmark_directed.py provide execution wrappers around C++ solvers.
+
+Important integration points:
+
+- parser compatibility for benchmark graph formats
+- timeout-aware execution for heuristic families
+- result verification and CSV persistence
+- algorithm mapping between CLI names and solver bindings
+
+For exact algorithms, scripts call C++ exact entries directly. For heuristic/hybrid algorithms, wrappers maintain robust timeout and status reporting.
+
+## 6. Recommended Solver Usage by Scenario
+
+1. correctness baseline or small-instance optimality studies:
+   BST and IC
+2. medium/large benchmark throughput:
+   MA and KMA
+3. high-scale hybrid experiments:
+   KMA, DKMA, and GNN-guided variants
+
+## 7. Practical Parameter Guidance
+
+For MA-like execution:
+
+- increase pop_size for stability on heterogeneous graphs
+- increase max_gens when runtime budget allows
+- tune patience to avoid wasted tail generations
+- always set hard timeout in large batch runs
+
+For exact runs:
+
+- limit to exact-track or explicitly small subsets
+- use CSV resume mechanisms in benchmark scripts for long campaigns
+
+## 8. Summary
+
+BST and IC deliver exactness through branching/compression logic; MA delivers practical scale through evolutionary search with local refinement.
+
+Together they form the algorithmic foundation on top of which KMA, DKMA, and GNN-hybrid procedures are built in this repository.

@@ -1,159 +1,168 @@
-# Feedback Vertex Set Project: Exact, Heuristic, and GNN-Hybrid Solvers
+# Feedback Vertex Set Project
 
-This repository is a full research and engineering workspace for the Feedback Vertex Set (FVS) problem, covering:
+Comprehensive framework for solving and studying Feedback Vertex Set (FVS) and Directed FVS (DFVS), with exact algorithms, scalable heuristics, and GNN-guided hybrid solvers.
 
-- Undirected FVS and Directed FVS (DFVS)
-- Exact algorithms (BST, IC)
-- Heuristic and hybrid algorithms (MA, KMA, DKMA, GNN-KMA variants)
-- Synthetic and real-world benchmark data generation
-- End-to-end benchmarking pipelines and result analysis
-- GNN dataset generation, training, and hybrid inference integration
-- C++ core engine with Python orchestration
+## 1. Project Scope
 
----
+This repository is both a research platform and an operations-ready benchmarking toolkit.
 
-## 1. What This Codebase Contains
+It includes:
 
-At a high level, the project has four layers:
+- exact solvers (BST, IC)
+- evolutionary solvers (MA, KMA, DKMA)
+- hybrid ML + combinatorial solvers (GNN-KMA v1/v2/v3, GNN-DKMA)
+- synthetic and real-world data generation
+- repeatable benchmark pipelines with resume semantics
+- PT dataset generation, model training, and weight deployment
 
-1. C++ solver engine (`cpp_engine/`)
-2. Python benchmark and orchestration scripts (`experiments/`, top-level scripts)
-3. Dataset generation pipeline (`data/` and `gnn_model/dataset_gen.py`)
-4. GNN models and training pipeline (`gnn_model/`)
+## 2. Architecture Overview
 
-Important top-level files/folders:
+The codebase has four layers:
 
-- `build_engine.py` - one-command C++ build + install helper
-- `requirements.txt` - Python dependencies for benchmarks + GNN pipeline
-- `data/` - benchmark graph generation scripts and datasets
-- `experiments/` - benchmark runners and experiment suites
-- `gnn_model/` - feature engineering, model definitions, training, dataset-to-PT conversion
-- `results/`, `directed_results/`, `paceresults/` - benchmark outputs and evaluation artifacts
-- `tests/` - unit tests (currently includes GNN component tests)
+1. C++ algorithm engine
+2. Python benchmarking/orchestration layer
+3. data generation and preprocessing layer
+4. GNN dataset/training/inference layer
 
----
+### 2.1 C++ engine
 
-## 2. Algorithm Families Implemented
+Located in cpp_engine, with separate directed and undirected solver modules.
 
-### Exact
+### 2.2 Python orchestration
 
-- `BST` - Bounded Search Tree
-- `IC` - Iterative Compression
+Located in experiments and top-level scripts. It provides:
 
-### Heuristic / Hybrid
+- parser adapters
+- timeout and batch execution wrappers
+- CSV persistence and resume behavior
+- suite/pipeline runners
 
-- `MA` - Memetic Algorithm
-- `KMA` - Kernelized Memetic Algorithm
-- `DKMA` - Dynamic Kernelized Memetic Algorithm
-- `GNN-KMA` (v1, v2, v3)
-- `GNN-DKMA`
+### 2.3 Data pipeline
 
-Core solver implementations live primarily in:
+Located in data and gnn_model/dataset_gen.py.
 
-- `cpp_engine/src/undirected_algos/`
-- `cpp_engine/src/directed_algos/`
-- `experiments/run_hybrid.py` (hybrid and DKMA orchestration)
+### 2.4 GNN stack
 
----
+Located in gnn_model, including:
 
-## 3. Two-Track Benchmark Design
+- feature engineering
+- model definitions
+- train loop
+- runtime inference integration
 
-The project uses a two-track benchmark layout:
+## 3. Repository Highlights
 
-- `exact_track` - smaller graphs, includes exact algorithms
-- `heuristic_track` - larger graphs, focuses on scalable heuristic/hybrid methods
+Key files and why they matter:
 
-Canonical layout:
+- build_engine.py: reproducible build+install entrypoint for C++ module
+- requirements.txt: pinned/runtime dependencies for both solver and GNN paths
+- data/setup_benchmark_inputs.py: one-command benchmark input orchestrator
+- experiments/run_benchmark_suite.py: large-scale batch benchmark runner
+- experiments/run_pipeline.py: unified existing-data pipeline
+- experiments/run_hybrid.py: hybrid runtime core (KMA, DKMA, GNN coupling)
+- gnn_model/dataset_gen.py: TXT-to-PT generation with solver supervision
+- gnn_model/train.py: variant-aware training and checkpointing
 
-`data/synthetic/<family>/<track>/<category>/*.txt`
+## 4. Algorithms Implemented
+
+### 4.1 Exact
+
+- BST (Bounded Search Tree)
+- IC (Iterative Compression)
+
+### 4.2 Heuristic and hybrid
+
+- MA (Memetic Algorithm)
+- KMA (Kernelized Memetic Algorithm)
+- DKMA (Dynamic Kernelized Memetic Algorithm)
+- GNN-KMA v1
+- GNN-KMA v2
+- GNN-KMA v3
+- GNN-DKMA
+
+## 5. Data Model and Benchmark Tracks
+
+Canonical corpus layout:
+
+- data/synthetic/{family}/{track}/{category}/*.txt
 
 Families:
 
-- `undirected`
-- `directed`
+- undirected
+- directed
 
----
+Tracks:
 
-## 4. Environment Setup
+- exact_track
+- heuristic_track
 
-### 4.1 Python dependencies
+Track intent:
+
+- exact_track: small/controlled workloads where exact methods are feasible
+- heuristic_track: larger workloads for scalable heuristics/hybrids
+
+## 6. Environment Setup
+
+Install dependencies:
 
 ```bash
 python -m pip install -r requirements.txt
 ```
 
-### 4.2 Build C++ engine
-
-Recommended:
+Build C++ engine:
 
 ```bash
 python build_engine.py
 ```
 
-Optional flags:
+Common build options:
 
-- `--clean`
-- `--build-type Debug|Release|RelWithDebInfo|MinSizeRel`
-- `--jobs N`
-- `--no-install-deps`
+- clean
+- build-type
+- jobs
+- no-install-deps
 
-Build outputs are generated under `cpp_engine/build-*` and installed module artifacts are made available to benchmark scripts.
+## 7. Data Generation Workflows
 
----
-
-## 5. Data Generation Workflow
-
-### 5.1 One-command benchmark input generation
+### 7.1 Full benchmark input generation
 
 ```bash
-python data/setup_benchmark_inputs.py --total-undirected 100000 --total-directed 100000
+python data/setup_benchmark_inputs.py --total-undirected 100000 --total-directed 100000 --exact-ratio 0.5 --seed 1337
 ```
 
-This orchestrates:
-
-1. `data/download_real_world.py`
-2. `data/generate_synthetic.py`
-
-Quick smoke run:
+### 7.2 Smoke generation
 
 ```bash
 python data/setup_benchmark_inputs.py --total-undirected 100 --total-directed 100
 ```
 
-### 5.2 Real-world and synthetic generators
+### 7.3 Family-limited generation
 
-- `download_real_world.py` populates real-world category slices from available datasets (with graceful fallback).
-- `generate_synthetic.py` fills category buckets using graph-model generators.
+```bash
+python data/setup_benchmark_inputs.py --family directed --total-directed 5000 --total-undirected 0
+```
 
-### 5.3 Detailed documentation
+Detailed process guide:
 
-See:
+- DATASET_GENERATION_PROCESS.md
 
-- `DATASET_GENERATION_PROCESS.md`
+## 8. Benchmark Execution
 
----
-
-## 6. Running Benchmarks
-
-### 6.1 Full suite runner
+### 8.1 Full suite
 
 ```bash
 python experiments/run_benchmark_suite.py
 ```
 
-Profiles:
+Useful switches:
 
-- `--profile requested` (default)
-- `--profile full`
+- profile requested or full
+- mode all/undirected/directed
+- pop, gens, timeout, earlystop
+- rerun
+- max-files for smoke batches
 
-Useful options:
-
-- `--mode all|undirected|directed`
-- `--pop`, `--gens`, `--timeout`, `--earlystop`
-- `--rerun`
-- `--max-files` for quick checks
-
-### 6.2 Single-family benchmark scripts
+### 8.2 Single benchmark scripts
 
 Undirected:
 
@@ -167,15 +176,13 @@ Directed:
 python experiments/benchmark_directed.py --algo KMA --test data/synthetic/directed
 ```
 
-### 6.3 Unified pipeline
+### 8.3 Unified pipeline mode
 
-`experiments/run_pipeline.py` supports existing-data validation, subset preparation, and benchmark execution by track/family.
+run_pipeline.py supports validation, synthetic subset preparation, and benchmark dispatch in one command path.
 
----
+## 9. GNN Dataset and Training Pipeline
 
-## 7. GNN Dataset Generation and Training
-
-### 7.1 Build PT datasets
+### 9.1 PT generation by variant
 
 ```bash
 python gnn_model/dataset_gen.py --family all --track both --variant v1
@@ -183,13 +190,13 @@ python gnn_model/dataset_gen.py --family all --track both --variant v2
 python gnn_model/dataset_gen.py --family all --track both --variant v3
 ```
 
-Controls include:
+Important controls:
 
-- `--solver-timeout`
-- `--kma-pop`, `--kma-gens`, `--kma-early-stop`
-- `--force`, `--clean-root`
+- solver-timeout
+- kma-pop, kma-gens, kma-early-stop
+- force, clean-root
 
-### 7.2 Train models
+### 9.2 Training
 
 ```bash
 python gnn_model/train.py --type both --variant v1 --epochs 100
@@ -197,121 +204,103 @@ python gnn_model/train.py --type both --variant v2 --epochs 100
 python gnn_model/train.py --type both --variant v3 --epochs 200
 ```
 
-Key training controls:
+v3-specific controls:
 
-- `--hidden`, `--dropout`, `--lr`, `--val-ratio`
-- `--seed`
-- v3-specific: `--warmup-epochs`, `--max-grad-norm`
+- warmup-epochs
+- max-grad-norm
 
-### 7.3 Weight outputs
+### 9.3 Weights
 
-Saved in `gnn_model/weights/` as variant-specific files, for example:
+Weights are saved under gnn_model/weights with variant-specific filenames (base, v2, v3).
 
-- `undirected_fvs_gcn.pt`, `directed_fvs_gcn.pt`
-- `undirected_fvs_gcn_v2.pt`, `directed_fvs_gcn_v2.pt`
-- `undirected_fvs_gcn_v3.pt`, `directed_fvs_gcn_v3.pt`
+## 10. Hybrid Runtime
 
----
+experiments/run_hybrid.py provides:
 
-## 8. Hybrid Solvers (GNN-KMA and DKMA)
+- KMA wrappers
+- DKMA wrappers
+- GNN-KMA v1/v2/v3 wrappers
+- GNN-DKMA wrappers
 
-`experiments/run_hybrid.py` is the central hybrid runtime module.
+Current coupling policy is precision-first soft-hint:
 
-Implemented capabilities include:
+- only high-confidence candidates are hard-fixed
+- hard-fix ratio is capped
+- pure KMA fallback path is used when confidence is insufficient
 
-- pure KMA wrappers (directed/undirected)
-- DKMA (dynamic kernelized) directed/undirected
-- GNN-KMA v1/v2/v3
-- GNN-DKMA
+## 11. Outputs and Evaluation Artifacts
 
-Current coupling design is precision-first soft-hint integration:
+Benchmark CSV outputs are written to folders such as:
 
-- high-confidence GNN candidates may be hard-fixed
-- hard-fix fraction is capped
-- fallback to pure KMA when confidence is insufficient
+- results
+- results/suite
+- directed_results
+- paceresults
 
-This design avoids false-positive inflation and keeps hybrid outputs stable.
+Typical fields include:
 
----
+- file identity
+- graph size
+- algorithm/family/track tags
+- fvs_size, runtime, valid, status
 
-## 9. Result Files and Evaluation
+Analysis scripts for comparison and plotting are included in result and IC-test folders.
 
-Outputs are produced in CSV form across folders such as:
+## 12. Testing
 
-- `results/`
-- `results/suite/`
-- `directed_results/`
-- `paceresults/`
+Current test focus includes GNN component tests:
 
-Common fields include:
+- tests/test_gnn_components.py
 
-- input identity (`file`, `file_path`)
-- graph size (`n`, `m`)
-- algorithm and track/family tags
-- `fvs_size`, `runtime_ms`, validity/status flags
-
-Evaluation and analysis scripts are available in result folders and `IC-test/`.
-
----
-
-## 10. Documentation Index
-
-Detailed algorithm/process documents in this repository:
-
-- `DATASET_GENERATION_PROCESS.md`
-- `IC_BST_MA_IMPLEMENTATION.md`
-- `KMA_IMPLEMENTATION_PROCEDURE.md`
-- `DKMA_IMPLEMENTATION_PROCEDURE.md`
-- `GNN_KMA_MODELS_V1_V2_V3_DETAILED.md`
-- `KMA_ALGORITHM_EXPLANATION.md`
-- `DKMA_ALGORITHM_EXPLANATION.md`
-- `GNN_KMA_MODELS.md`
-- `GNN_KMA_PROCESS_DETAILED.md`
-- `operations_guide.md`
-
----
-
-## 11. Testing
-
-Current test module:
-
-- `tests/test_gnn_components.py`
-
-Run tests with:
+Run:
 
 ```bash
 pytest -q
 ```
 
----
+## 13. Documentation Index
 
-## 12. Suggested Workflows
+Primary deep-dive docs:
 
-### Fast local smoke workflow
+- DATASET_GENERATION_PROCESS.md
+- IC_BST_MA_IMPLEMENTATION.md
+- KMA_IMPLEMENTATION_PROCEDURE.md
+- DKMA_IMPLEMENTATION_PROCEDURE.md
+- GNN_KMA_MODELS_V1_V2_V3_DETAILED.md
 
-1. Build engine: `python build_engine.py`
-2. Generate tiny data: `python data/setup_benchmark_inputs.py --total-undirected 100 --total-directed 100`
-3. Run tiny suite: `python experiments/run_benchmark_suite.py --max-files 1 --quiet`
+Additional repository references:
 
-### Full benchmark workflow
+- KMA_ALGORITHM_EXPLANATION.md
+- DKMA_ALGORITHM_EXPLANATION.md
+- GNN_KMA_MODELS.md
+- GNN_KMA_PROCESS_DETAILED.md
+- operations_guide.md
 
-1. Generate full dataset corpora
-2. Run suite (`run_benchmark_suite.py`)
-3. Analyze CSV outputs and plots
+## 14. Recommended Usage Patterns
 
-### Full hybrid/GNN workflow
+### 14.1 Fast local smoke
 
-1. Generate PT datasets (`dataset_gen.py`)
-2. Train v1/v2/v3 models (`train.py`)
-3. Benchmark GNN-KMA variants via benchmark scripts or `run_pipeline.py`
-4. Compare against MA/KMA/DKMA baselines
+1. build engine
+2. generate small corpus
+3. run suite with max-files 1
 
----
+### 14.2 Full benchmark campaign
 
-## 13. Notes
+1. generate full corpora
+2. run run_benchmark_suite.py with resume semantics
+3. aggregate and analyze CSV outputs
 
-- The project is designed for deterministic and restartable experimentation.
-- Most long-running commands expose timeout and early-stop controls.
-- Hybrid pipelines include robust fallback paths when optional components (weights, packages, specific bindings) are unavailable.
+### 14.3 Full hybrid campaign
 
-For implementation-level details, use the dedicated markdown guides listed in section 10.
+1. generate PT datasets
+2. train v1/v2/v3
+3. run benchmark scripts for GNN variants
+4. compare against MA/KMA/DKMA baselines
+
+## 15. Operational Notes
+
+- Pipelines are designed for deterministic and restartable execution.
+- Timeouts and early-stop settings are available on long-running solver paths.
+- Most hybrid paths include fallback logic to keep batch runs robust under partial dependency availability.
+
+For implementation-level understanding, use the deep-dive documents in Section 13.

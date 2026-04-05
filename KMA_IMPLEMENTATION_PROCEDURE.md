@@ -1,134 +1,172 @@
-# KMA Implementation Procedure
+# KMA Implementation Procedure (Professional Deep-Dive)
 
-This document explains how KMA (Kernelized Memetic Algorithm) is implemented and executed in this repository.
+This document explains exactly how KMA (Kernelized Memetic Algorithm) is implemented in this repository, from C++ core solver flow to Python runtime wrappers and benchmark integration.
 
-Primary implementation locations:
+Primary code anchors:
 
-- C++ undirected: `cpp_engine/src/undirected_algos/memetic_u.cpp`
-- C++ directed: `cpp_engine/src/directed_algos/memetic_d.cpp`
-- Python hybrid wrappers: `experiments/run_hybrid.py`
-- Benchmark integration:
-  - `experiments/benchmark_undirected.py`
-  - `experiments/benchmark_directed.py`
+- cpp_engine/src/undirected_algos/memetic_u.cpp
+- cpp_engine/src/directed_algos/memetic_d.cpp
+- experiments/run_hybrid.py
+- experiments/benchmark_undirected.py
+- experiments/benchmark_directed.py
 
----
+## 1. KMA in One Sentence
 
-## 1) Conceptual Pipeline
+KMA = kernelization stage + memetic optimization stage + mapping back to original graph.
 
-KMA combines two ideas:
+The kernelization stage reduces problem size while preserving correctness structure; the memetic stage optimizes on the reduced instance; mapping reconstructs the final answer in original vertex IDs.
 
-1. Kernelization/reduction to shrink the graph while preserving optimality structure.
-2. Memetic search (MA) on the reduced kernel graph.
+## 2. Why KMA Exists in This Codebase
 
-Final solution is:
+MA alone scales better than exact methods but still spends time on vertices that reductions can eliminate deterministically.
 
-- forced vertices from reductions
-- plus mapped kernel solution from MA/KMA
+KMA addresses this by:
 
-This gives better scalability than running MA directly on the full graph.
+1. applying reduction rules first,
+2. searching only on the active kernel,
+3. reintroducing forced vertices afterwards.
 
----
+This usually improves both wall-clock and solution quality stability for medium/large instances.
 
-## 2) C++ KMA Path
+## 3. C++ Implementation Flow
 
-Both undirected and directed C++ implementations follow the same overall structure.
+### 3.1 Undirected path
 
-## Undirected KMA (`solve_undirected_KMA`)
+Entry function: solve_undirected_KMA.
 
-### Steps
+Execution steps:
 
-1. Build graph from input edge list.
-2. Run undirected kernelization (`kernelize_undirected`).
-3. Record forced vertices selected by reduction rules.
-4. Build mapping:
-   - original vertex -> kernel index
-   - kernel index -> original vertex
-5. Create kernel edge list from active vertices.
-6. Run MA on kernel graph (`solve_undirected_MA`).
+1. Build UndirectedGraph from input edges.
+2. Run kernelize_undirected.
+3. Collect forced vertices produced by reductions.
+4. Build old/new index mapping for active kernel vertices.
+5. Build kernel edge list among active vertices.
+6. Run solve_undirected_MA on kernel.
 7. Map kernel solution back to original IDs.
-8. Union with forced set and deduplicate.
+8. Union mapped solution with forced set.
+9. Sort and deduplicate output.
 
-## Directed KMA (`solve_directed_KMA`)
+### 3.2 Directed path
 
-The directed variant mirrors the undirected flow with directed graph structures and directed kernelization.
+Entry function: solve_directed_KMA.
 
-### Directed specifics
+The same structure is used with directed graph structures and directed kernelization:
 
-- Uses directed adjacency (`out_adj`).
-- Uses directed kernel rules via `kernelize_directed`.
-- Kernel MA stage calls `solve_directed_MA`.
+- directed adjacency and cycle semantics
+- kernelize_directed reductions
+- solve_directed_MA for kernel optimization
 
-Both implementations provide alias compatibility (`KME` aliases to `KMA`).
+### 3.3 Alias compatibility
 
----
+Both memetic files expose KME aliases forwarding to KMA for backward compatibility with older call sites.
 
-## 3) Python KMA Wrappers (`run_hybrid.py`)
+## 4. Python KMA Runtime Wrappers
 
-`run_hybrid.py` provides repository-level KMA APIs that:
+run_hybrid.py contains operational wrappers:
 
-- compute timing by stage
-- handle fallback if a specific binding is unavailable
-- expose diagnostics for benchmark CSV integration
+- kma_solve_undirected
+- kma_solve_directed
 
-Key functions:
+These wrappers are not just call-throughs; they provide stage timing and robust fallback dispatch.
 
-- `kma_solve_undirected(...)`
-- `kma_solve_directed(...)`
+### 4.1 Dispatch hierarchy
 
-### Stage accounting
+Wrapper preference order:
 
-Wrappers explicitly track:
+1. solve_*_KMA
+2. solve_*_KME
+3. solve_*_MA
 
-- `kernelization_ms`
-- `ma_ms`
+This ensures portability across build variants where symbol exposure may differ.
 
-This makes KMA behavior inspectable across benchmark runs.
+### 4.2 Diagnostics support
 
-### Fallback hierarchy
+Wrappers can return stage metrics with keys such as:
 
-For both families, wrappers prefer:
+- kernelization_ms
+- ma_ms
 
-1. native `solve_*_KMA`
-2. legacy alias `solve_*_KME`
-3. `solve_*_MA` as last resort
+This allows benchmark scripts and research runs to distinguish reduction time from search time.
 
----
+## 5. Runtime Semantics and Time Budgeting
 
-## 4) Timeout and Early-Stop Semantics
+KMA-related parameters:
 
-KMA in this codebase is configured through:
+- pop_size
+- max_gens
+- early_stop
+- max_time_seconds
 
-- `pop_size`
-- `max_gens`
-- `early_stop` (patience)
-- `max_time_seconds` (hard bound for MA stage)
+Important practical semantic:
 
-Important behavior:
+- The expensive search stage is MA on kernel.
+- Kernelization executes before MA and can significantly reduce effective runtime by shrinking kernel size.
+- Timeouts in benchmark wrappers are designed to preserve best-so-far outputs where possible, rather than discarding progress.
 
-- Kernelization runs before MA-stage timeout budget dominates runtime.
-- Heuristic wrappers in benchmarks keep best-so-far behavior rather than discarding partial progress.
+## 6. Mapping and Correctness Intuition
 
----
+KMA output has two components:
 
-## 5) CLI and Benchmark Integration
+1. forced vertices from reductions
+2. selected kernel vertices from MA
 
-KMA is exposed in both directed and undirected benchmark scripts and can be run:
+Mapping logic converts kernel vertex IDs back to original IDs and unions with forced set.
 
-- standalone (`--algo KMA`)
-- as part of `ALL`
-- as part of suite/pipeline scripts
+Because reductions are consistency-preserving and mapping is deterministic, the produced set is a valid candidate over original graph space.
 
-Result CSVs record per-instance outcomes, including validity and runtime.
+## 7. Complexity and Performance Behavior
 
----
+There is no single closed-form practical runtime because KMA behavior depends on:
 
-## 6) Why KMA Works Well Here
+- reduction effectiveness on specific graph family
+- kernel size after reductions
+- evolutionary convergence profile
 
-KMA is effective in this repository because:
+Empirically in this codebase:
 
-- reduction removes many irrelevant vertices before expensive search,
-- MA explores nontrivial combinations on a smaller kernel,
-- final mapping guarantees compatibility with original graph indexing,
-- solver wrappers unify behavior across C++ and Python orchestration.
+- strong reductions yield major speedups vs pure MA
+- weakly reducible instances behave closer to MA runtime
+- larger pop/gens improve search quality but increase runtime
 
-In practice, this is the baseline hybrid-ready solver used by GNN-guided variants and by DKMA components.
+## 8. Tuning Guidance
+
+For throughput-focused runs:
+
+- keep moderate pop_size
+- cap max_gens and use early_stop
+- enforce wall timeout
+
+For quality-focused runs:
+
+- increase pop_size and max_gens
+- relax early_stop
+- retain timeout safety for batch stability
+
+For very large batch campaigns, always rely on CSV resume behavior in benchmark scripts.
+
+## 9. Integration in Benchmark Tooling
+
+KMA is first-class in benchmark scripts and pipeline runners:
+
+- single algorithm mode (algo KMA)
+- ALL profile comparisons
+- suite and pipeline orchestration
+
+Output rows include runtime, validity, status fields, allowing direct comparison with BST, IC, MA, DKMA, and GNN-guided variants.
+
+## 10. Relationship to DKMA and GNN-KMA
+
+KMA is the baseline hybrid backbone:
+
+- DKMA extends KMA with dynamic reduction-search interleaving.
+- GNN-KMA uses GNN priors plus KMA refinement.
+
+In other words, understanding KMA implementation is mandatory before reasoning correctly about DKMA or GNN-assisted procedures in this repository.
+
+## 11. Practical Takeaway
+
+In this project, KMA is the default robust solver for medium/large practical workloads:
+
+- significantly more scalable than exact methods,
+- typically more stable than plain MA on reducible graphs,
+- forms the operational bridge between pure heuristics and ML-guided hybrids.

@@ -1,184 +1,231 @@
-# DKMA Implementation Procedure
+# DKMA Implementation Procedure (Full Runtime and Algorithm Guide)
 
-This document describes how DKMA (Dynamic Kernelized Memetic Algorithm) is implemented in this repository.
+This document covers the complete DKMA implementation as it exists in the repository, including control flow, helper mechanics, runtime safeguards, and practical tuning.
 
 Main implementation file:
 
-- `experiments/run_hybrid.py`
+- experiments/run_hybrid.py
 
-Primary entry functions:
+Public entry points:
 
-- `dkma_solve_undirected(...)`
-- `dkma_solve_directed(...)`
+- dkma_solve_undirected(...)
+- dkma_solve_directed(...)
 
-Both route into the shared engine:
+Shared engine:
 
-- `_dkma_solve_common(...)`
+- _dkma_solve_common(...)
 
----
+## 1. DKMA Motivation and Position in Solver Stack
 
-## 1) What Makes DKMA Different from KMA
+KMA performs one reduction pass and then MA search on the resulting kernel.
 
-KMA performs one kernelization pass followed by MA search.
+DKMA extends this by interleaving search and reduction repeatedly:
 
-DKMA extends this with dynamic reduction-search interleaving:
+1. search generates population-level evidence,
+2. consensus vertices are committed,
+3. residual graph is re-kernelized,
+4. search continues in new reduced space.
 
-1. Initialize on an initial kernel.
-2. Maintain a population of candidate solutions.
-3. Periodically commit consensus vertices.
-4. Re-kernelize the residual graph.
-5. Remap population/solutions to the new kernel.
-6. Continue search with updated reduced state.
+This dynamic loop can expose reduction opportunities that are invisible before partial search decisions are made.
 
-This dynamic loop can open additional reduction opportunities during search.
+## 2. DKMA State Model
 
----
+Core mutable state inside _dkma_solve_common includes:
 
-## 2) DKMA Core Flow (`_dkma_solve_common`)
+- current_k_n: current kernel size
+- current_k_edges: current kernel edge set
+- current_forced: original-graph forced vertices accumulated so far
+- current_k_new_to_old: mapping from kernel IDs to original IDs
+- population: current set of kernel-space candidate solutions
+- best_solution: best kernel-space candidate
+- best_original: mapped best candidate in original graph IDs
+- stagnation counters and dynamic reduction count
 
-### Step A: Initial reduction
+Understanding these variables is key to understanding remapping correctness.
 
-- Kernelize graph (directed or undirected path).
-- Capture forced vertices and kernel mapping to original IDs.
-- For directed path, SHORTONE-style contraction may be applied.
+## 3. Step-by-Step DKMA Execution
 
-### Step B: Population initialization
+### 3.1 Initial reduction stage
 
-Population uses:
+1. kernelize input graph (directed or undirected path)
+2. collect forced vertices
+3. build kernel-to-original mapping
+4. directed path optionally applies additional SHORTONE-style contraction
 
-- a warm-start KMA seed when time budget allows
-- additional random individuals
-- duplicate elimination and size ranking
+If kernel becomes empty, DKMA returns forced set directly.
 
-### Step C: Iterative dynamic loop
+### 3.2 Population initialization stage
 
-For each generation (subject to time/patience):
+Initialization strategy is mixed:
 
-1. Run one lightweight MA evolution step.
-2. Optional diversification phase.
-3. Evaluate/rank candidates.
-4. Validate candidates on original graph acyclicity.
-5. Update global best if improved.
-6. Every `dynkern_every` generations:
-   - compute consensus commitments from population
-   - dynamically re-kernelize residual graph
-   - remap population and best solution into new kernel index space
+- warm-start from KMA seed when budget permits
+- random population fill for diversity
+- duplicate removal and sorting by objective proxy (size)
 
-### Step D: Post-optimization
+This gives both quality and diversity without expensive full-generation bootstrapping.
 
-- Optional gain-based local search (`_gain_local_search`).
-- Final acyclicity validation.
-- Repair if needed (`_greedy_acyclic_repair`).
-- Optional fallback to KMA if final validation fails.
+### 3.3 Iterative dynamic loop
 
----
+Loop continues while generation/time/patience constraints are satisfied.
 
-## 3) Dynamic Components in Detail
+Per-cycle operations:
 
-## 3.1 Consensus commit
+1. one-generation MA-style evolution step
+2. optional diversification injection
+3. rank and validate candidates
+4. update best solution if improved
+5. at dynkern_every intervals, perform commit + re-kernelize + remap
 
-`_commit_vertices_from_population` computes per-vertex support count across population and commits vertices above threshold.
+### 3.4 Post-loop refinement
 
-Controls:
+After loop exit:
 
-- `commit_threshold` (default `0.6`)
+- optional gain-based local search
+- final acyclicity verification in original graph
+- repair fallback if needed
+- optional fallback to KMA on severe failure
 
-Safety:
+## 4. Dynamic Components in Detail
 
-- if too many vertices meet threshold, commitment is capped (top-ranked subset only)
+### 4.1 Consensus commit logic
 
-## 3.2 Dynamic re-kernelization
+Helper: _commit_vertices_from_population.
 
-`_dynamic_kernelize`:
+Mechanism:
 
-- removes committed kernel vertices
-- re-kernelizes residual graph
-- updates forced original vertices
-- builds new kernel mapping
-- provides old->new index remap for population transfer
+- count vertex frequency across population
+- commit vertices above threshold fraction
+- cap over-commit situations to avoid collapse
 
-## 3.3 Population remap
+Primary control:
 
-`_remap_population` rewrites individuals after kernel change and injects random individuals when needed to preserve diversity.
+- commit_threshold (default ~0.6)
 
-## 3.4 Diversification
+### 4.2 Dynamic re-kernelization logic
 
-`_diversify_with_topological_ordering` periodically injects diversity using topological-order-inspired perturbations.
+Helper: _dynamic_kernelize.
 
-## 3.5 Gain local search
+Mechanism:
 
-`_gain_local_search` tries 1-1 and 2-1 swap improvements while preserving acyclicity.
+1. remove committed kernel vertices
+2. map committed picks to original forced set
+3. kernelize residual graph
+4. rebuild mapping layers
+5. export old->new kernel index map for population remap
 
----
+This is the critical correctness step that keeps solution semantics stable across changing kernel spaces.
 
-## 4) Short-Budget Behavior
+### 4.3 Population remap
 
-For low time budgets (`<= 30s`), DKMA intentionally uses a robust short-budget branch:
+Helper: _remap_population.
 
-1. Run KMA baseline.
-2. If time remains, run diversified second KMA shot.
-3. Keep the better valid result.
-4. Apply non-worsening prune refinement.
+Mechanism:
 
-This avoids unstable long-loop behavior when budget is too small for full dynamic adaptation.
+- transform each individual from old kernel IDs to new kernel IDs
+- drop committed/deleted vertices
+- refill with random candidates if diversity collapses
 
----
+### 4.4 Diversification
 
-## 5) Directed and Undirected Variants
+Helper: _diversify_with_topological_ordering.
 
-The same DKMA core handles both families via a `directed` flag.
+Purpose:
 
-Differences are handled internally through:
+- prevent search collapse into single structural basin
+- reintroduce exploration pressure periodically
 
-- directed vs undirected kernelization
-- directed cycle checks vs undirected cycle checks
-- directed-specific helper rules (including SHORTONE path)
+### 4.5 Gain local search
 
-Public wrappers expose identical argument structure for both graph families.
+Helper: _gain_local_search.
 
----
+Implements swap-style local optimization (1-1 and 2-1 style moves) while preserving acyclicity constraints.
 
-## 6) GNN-DKMA
+## 5. Runtime Safeguards and Failure Handling
 
-`run_hybrid.py` also provides:
+DKMA has explicit reliability guards:
 
-- `gnn_dkma_solve_undirected(...)`
-- `gnn_dkma_solve_directed(...)`
+1. hard global wall-clock budget
+2. short-budget fallback branch (KMA-first strategy)
+3. final validity check in original graph
+4. repair fallback (_greedy_acyclic_repair)
+5. optional KMA fallback when final DKMA state is invalid
+
+These safeguards are why DKMA remains usable in large unattended benchmark batches.
+
+## 6. Short-Budget Branch (<= 30s)
+
+When time budget is very small, full dynamic interleaving can become unstable or ineffective.
+
+Implemented strategy:
+
+1. run baseline KMA
+2. if time remains, run diversified alternate shot
+3. keep best valid result
+4. apply non-worsening prune pass
+
+This branch prioritizes robustness over dynamic sophistication for strict wall-time regimes.
+
+## 7. Directed vs Undirected DKMA
+
+Both wrappers call the same engine with directed flag.
+
+Differences handled internally:
+
+- directed/undirected kernelization routines
+- directed/undirected acyclicity predicates
+- directed-specific contraction behavior and edge semantics
+
+The user-facing API remains consistent across families.
+
+## 8. GNN-DKMA Coupling
+
+run_hybrid.py includes:
+
+- gnn_dkma_solve_undirected
+- gnn_dkma_solve_directed
 
 Pipeline:
 
-1. Initial kernelization
-2. GNN probability inference
-3. Hard-fix high-confidence kernel vertices
-4. Run DKMA on reduced kernel
-5. Map and union with forced/fixed sets
+1. initial kernelization
+2. GNN probability inference on kernel
+3. high-confidence hard-fix
+4. DKMA on residual
+5. map and union with forced/fixed vertices
 
-This mirrors DKMA’s dynamic backend while introducing GNN-guided initialization pressure.
+This is DKMA with ML-guided initialization pressure.
 
----
+## 9. Parameter Semantics and Tuning
 
-## 7) Practical Tuning Knobs
+Primary DKMA controls:
 
-Important DKMA controls exposed by benchmark CLI:
+- pop_size
+- max_gens
+- early_stop
+- max_time_seconds
+- commit_threshold
+- dynkern_every
+- gain_search on/off
+- diversify on/off
 
-- `pop_size`
-- `max_gens`
-- `early_stop`
-- `max_time_seconds`
-- `commit_threshold`
-- `dynkern_every`
-- `gain_search` toggle
-- `diversify` toggle
+Tuning heuristics:
 
-The defaults are conservative and tuned for stable benchmark operation.
+1. if runtime too high: reduce pop_size, max_gens; increase early_stop strictness
+2. if quality unstable: increase pop_size; relax early_stop; keep diversification on
+3. if over-committing hurts quality: raise commit_threshold or reduce commit frequency
 
----
+## 10. Diagnostics and Interpretability
 
-## 8) Summary
+When diagnostics are requested, DKMA returns stage and structural metadata, including kernel size transitions and dynamic reduction count.
 
-DKMA in this repository is a dynamic, reduction-aware extension of KMA:
+This makes DKMA behavior auditable and suitable for ablation studies.
 
-- search and reduction are interleaved, not one-shot,
-- consensus commitments trigger structural graph simplification during search,
-- remapping logic keeps optimization state consistent after each reduction,
-- final safeguards ensure valid acyclic output even under strict runtime limits.
+## 11. Practical Summary
+
+DKMA is the repository's advanced dynamic heuristic:
+
+- starts from kernelized search like KMA,
+- adds consensus-driven reduction interleaving,
+- preserves correctness through remapping and validation guards,
+- remains deployable in batch pipelines because of short-budget and fallback protections.
+
+If KMA is the stable baseline, DKMA is the adaptive extension for harder or structurally diverse workloads.

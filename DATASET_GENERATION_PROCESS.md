@@ -1,245 +1,287 @@
-# Dataset Generation Process
+# Dataset Generation Process (Complete Technical Guide)
 
-This document explains the full data generation pipeline implemented in this repository, with a focus on:
+This document explains the repository's complete data-generation system in implementation order, with runtime behavior and operational intent.
 
-1. `data/setup_benchmark_inputs.py`
-2. `data/download_real_world.py`
-3. `data/generate_synthetic.py`
+Primary scripts:
 
-It also describes how these scripts are consumed by GNN dataset generation (`gnn_model/dataset_gen.py`).
+1. data/setup_benchmark_inputs.py (orchestrator)
+2. data/download_real_world.py (real-world bucket constructor)
+3. data/generate_synthetic.py (synthetic bucket constructor)
+4. gnn_model/dataset_gen.py (TXT-to-PT with solver labels)
 
----
+## 1. Design Goals
 
-## 1) End-to-End Entry Point: `setup_benchmark_inputs.py`
+The generation pipeline is designed around five goals:
 
-`setup_benchmark_inputs.py` is the orchestration script that builds the benchmark inputs in one command.
+1. Controlled distribution: fixed category proportions by family.
+2. Track-aware difficulty: exact_track and heuristic_track are constructed separately.
+3. Reproducibility: deterministic allocation and seed handling.
+4. Restartability: safe reuse of existing files when regeneration is not required.
+5. Benchmark/train alignment: PT datasets inherit the same family/track/category structure.
 
-### Primary responsibilities
+## 2. Output Contracts and Directory Layout
 
-- Optionally clean old data artifacts under `data/`.
-- Generate real-world category buckets by calling `download_real_world.py`.
-- Generate synthetic category buckets by calling `generate_synthetic.py`.
-- Keep the pipeline reproducible through explicit seed forwarding.
+Benchmark graph corpus contract:
 
-### Important defaults
+- data/synthetic/{family}/{track}/{category}/*.txt
 
-- `--total-undirected 100000`
-- `--total-directed 100000`
-- `--exact-ratio 0.5`
-- `--seed 1337`
-- `--family all`
+Family values:
 
-### Cleaning policy
+- undirected
+- directed
 
-Before generation (unless `--no-clean` is passed), the script removes data items in `data/` while preserving:
+Track values:
 
-- `data/pace2022`
-- `data/__pycache__`
-- script and docs files (`.py`, `.md`, `.gitkeep`)
+- exact_track
+- heuristic_track
 
-This gives deterministic, clean dataset reconstruction while protecting source assets and PACE data.
+The downstream benchmark and PT pipelines assume this contract; changing it requires coordinated script updates.
 
-### Execution model
+## 3. Orchestration Layer: setup_benchmark_inputs.py
 
-The script launches two subprocesses in order:
+setup_benchmark_inputs.py is the entrypoint used for complete benchmark input preparation.
 
-1. `download_real_world.py` with shared totals/split/seed/family
-2. `generate_synthetic.py` with the same configuration
+### 3.1 CLI and defaults
 
-The order ensures the real-world buckets are populated first, then synthetic categories fill the rest.
+Key defaults:
 
----
+- total-undirected: 100000
+- total-directed: 100000
+- exact-ratio: 0.5
+- seed: 1337
+- family: all
 
-## 2) Real-World Bucket Builder: `download_real_world.py`
+### 3.2 Cleaning behavior
 
-This script populates only the real-world category portions of the benchmark layout:
+Unless no-clean is specified, the script removes generated items in data while preserving:
 
-- `data/synthetic/undirected/exact_track/real_world/`
-- `data/synthetic/undirected/heuristic_track/real_world/`
-- `data/synthetic/directed/exact_track/real_world_ego/`
-- `data/synthetic/directed/heuristic_track/real_world_ego/`
+- data/pace2022
+- data/__pycache__
+- source/document files with .py, .md, .gitkeep
 
-### Real-world allocation ratios
+This ensures a reproducible clean rebuild while protecting static assets.
 
-The script reserves fixed real-world fractions from global totals:
+### 3.3 Execution graph
 
-- Undirected real-world share: `20%`
-- Directed real-world share: `30%`
+The orchestrator performs two subprocess calls in order:
 
-Then each share is split by `--exact-ratio` into exact and heuristic tracks.
+1. download_real_world.py
+2. generate_synthetic.py
 
-### Data sources and loader strategy
+Both receive synchronized family, total counts, exact-ratio, and seed.
 
-The loader is robust and best-effort. It attempts the following source families and degrades gracefully when packages or network are unavailable.
+Operationally, this means real-world buckets are prepared first, then synthetic bucket generation completes all category plans.
+
+## 4. Real-World Bucket Constructor: download_real_world.py
+
+This script populates only the real-world categories:
+
+- undirected/*/real_world
+- directed/*/real_world_ego
+
+### 4.1 Real-world budget allocation
+
+Real-world slices are fixed fractions of family totals:
+
+- undirected real-world share = 20%
+- directed real-world share = 30%
+
+Each share is split into exact and heuristic counts using exact-ratio.
+
+### 4.2 Source loading strategy (best-effort)
+
+The loader attempts multiple source classes in sequence and continues gracefully if some are unavailable.
+
+Source families:
 
 - NetworkX built-ins
-- PyTorch Geometric datasets (Planetoid, Amazon, Coauthor, TU)
-- Open Graph Benchmark (`ogbn-arxiv`)
-- SNAP archives via URL download
+- PyTorch Geometric datasets
+- OGB node property datasets
+- SNAP archives
 
-A local cache is maintained under `.cache/real_graphs` to avoid repeated download costs.
+Artifacts are cached under .cache/real_graphs to reduce repeated network/download costs.
 
-### Normalization and slicing
+### 4.3 Normalization and slicing rules
 
-Every loaded graph is normalized before writing:
+Before write, each candidate graph is normalized:
 
-- Largest connected component / weakly connected component extraction
-- Node relabeling to compact integer IDs
-- Optional BFS-induced sampling to match target size bands
+1. extract largest component (connected/weakly connected)
+2. relabel to compact integer IDs
+3. sample to track-specific target size if required
 
-Target size policy per track:
+Track size intent:
 
-- Exact track: small graphs (`~10..35` nodes)
-- Heuristic track: larger graphs (`~100..5000` nodes)
+- exact_track: small instances (roughly 10-35 nodes)
+- heuristic_track: larger instances (roughly 100-5000 nodes)
 
-### Output format
+### 4.4 Write format
 
-Each output file is in benchmark edge-list format:
+Each .txt follows edge_list_v1 with metadata:
 
-- `# format: edge_list_v1`
-- `# directed: 0|1`
-- `# source: <source-tag>`
-- `p edge N M`
-- then edge list `u v`
+- format marker
+- directed bit
+- source tag
+- p edge N M header
+- normalized edge list
 
-The `# source` metadata is especially useful for provenance and debugging.
+The source tag is useful when auditing provenance and debugging quality drift.
 
-### Fallback behavior
+### 4.5 Degradation path
 
-If no real dataset can be loaded, the script generates proxy graphs (BA/GN-style) so the pipeline remains operational.
+If external datasets cannot be loaded, the script emits proxy real-world-like graphs so the generation process remains operational.
 
----
+## 5. Synthetic Constructor: generate_synthetic.py
 
-## 3) Synthetic Category Builder: `generate_synthetic.py`
+This script generates all categories for both tracks and families according to weighted plans.
 
-This script generates all category buckets (including synthetic proxies for real-world categories), split into exact and heuristic tracks.
+### 5.1 Category weights
 
-### Output layout
+Undirected categories are uniformly weighted (0.20 each):
 
-`data/synthetic/<family>/<track>/<category>/*.txt`
+- real_world
+- scale_free
+- small_world
+- random_er
+- grids_trees
 
-Families:
+Directed categories are nonuniform:
 
-- `undirected`
-- `directed`
+- real_world_ego 0.30
+- scale_free 0.20
+- random_er 0.20
+- directed_grids 0.15
+- dags 0.15
 
-Tracks:
+### 5.2 Count allocation algorithm
 
-- `exact_track`
-- `heuristic_track`
+The script uses weighted integer allocation with remainder distribution by largest fractional part.
 
-### Category weights
+For each category:
 
-Undirected categories are distributed equally (20% each):
+- exact = floor(cat_total * exact_ratio)
+- heuristic = cat_total - exact
 
-- `real_world`
-- `scale_free`
-- `small_world`
-- `random_er`
-- `grids_trees`
+This guarantees exact + heuristic = category total while preserving global proportions.
 
-Directed categories use asymmetric distribution:
+### 5.3 Graph model implementations
 
-- `real_world_ego`: 30%
-- `scale_free`: 20%
-- `random_er`: 20%
-- `directed_grids`: 15%
-- `dags`: 15%
+Examples by category and family:
 
-### Exact/heuristic split logic
+- scale_free: Barabasi-Albert (undirected) / directed scale-free projection
+- small_world: Watts-Strogatz
+- random_er: Erdos-Renyi (directed and undirected variants)
+- grids_trees: alternating grid and random tree construction
+- directed_grids: oriented grid with occasional reverse-edge injection
+- dags: GN DAG-style generator
 
-For each category count, the script computes:
+The track controls graph-size ranges, not only algorithm labels.
 
-- `exact = int(total * exact_ratio)`
-- `heuristic = total - exact`
+### 5.4 Regeneration semantics
 
-This preserves category proportions while enforcing track split.
+- force: removes bucket .txt files first, then regenerates
+- non-force: existing files are reused and only missing files are generated
 
-### Generators by category
+This behavior is crucial for long-running workflows and interrupted runs.
 
-The script uses category-specific graph generators and track-dependent size ranges.
+### 5.5 Deterministic seeding
 
-Examples:
+Each bucket receives derived seed material from:
 
-- Undirected scale-free: Barabasi-Albert
-- Undirected small-world: Watts-Strogatz
-- Undirected random: Erdos-Renyi
-- Undirected grids/trees: alternating grid and random tree
-- Directed scale-free: directed projection from scale-free multigraph
-- Directed grids: oriented grid with occasional reverse edge injection
-- Directed DAGs: GN model
+- global seed
+- deterministic bucket key (family:track:category)
 
-### Reproducibility
+This makes bucket-level generation reproducible.
 
-Each bucket receives a deterministic derived seed:
+## 6. Graph File Compatibility Considerations
 
-- Global seed + deterministic hash of `family:track:category`
+The generated TXT files are consumed by benchmark parsers in experiments/benchmark_undirected.py and experiments/benchmark_directed.py.
 
-This allows exact regeneration of each bucket.
+Compatibility properties preserved by generation:
 
-### Regeneration controls
+- compact index space
+- no self-loop emission in normalized edge list path
+- consistent edge semantics by directed flag
 
-- `--force` deletes existing `.txt` files in each bucket before regeneration
-- Without `--force`, existing files are reused and only missing files are created
+## 7. Runtime Characteristics and Bottlenecks
 
----
+Most expensive stages in practice:
 
-## 4) Track Semantics and Intended Solver Usage
+1. external dataset loading/downloading in download_real_world.py
+2. large-bucket synthetic generation under high totals
+3. PT labeling stage in gnn_model/dataset_gen.py (solver calls dominate)
 
-The two-track design is solver-aware.
+Operational recommendations:
 
-### Exact track
+- run small smoke totals first
+- keep fixed seed during comparative experiments
+- use force only when full replacement is required
 
-Purpose:
+## 8. PT Dataset Generation Integration (gnn_model/dataset_gen.py)
 
-- Smaller graphs for exact algorithms and exhaustive comparison
+dataset_gen.py consumes the generated TXT hierarchy and produces PyG Data objects.
 
-Algorithms commonly run:
+### 8.1 Label source policy
 
-- BST
-- IC
-- MA
-- KMA
-- GNN-KMA variants
+- exact_track labels: IC path (with timeout guard)
+- heuristic_track labels: KMA path (with MA-stage timeout)
 
-### Heuristic track
+### 8.2 Reliability guards
 
-Purpose:
+- solver isolation via subprocess timeout where needed
+- explicit FVS validity checks before save
+- CSV status ledger for completed/timeout/invalid outcomes
+- track/family/category metadata retained per sample
 
-- Larger graphs intended for scalable heuristic/hybrid methods
+### 8.3 Variant output roots
 
-Algorithms commonly run:
+- v1: gnn_model/datasets/pt
+- v2: gnn_model/datasets/pt_v2
+- v3: gnn_model/datasets/pt_v3
 
-- MA
-- KMA
-- DKMA
-- GNN-KMA family
+## 9. Practical Command Patterns
 
----
+Full benchmark input build:
 
-## 5) Integration with GNN Dataset Creation (`gnn_model/dataset_gen.py`)
+```bash
+python data/setup_benchmark_inputs.py --total-undirected 100000 --total-directed 100000 --exact-ratio 0.5 --seed 1337
+```
 
-The benchmark generators produce `.txt` graph corpora. `gnn_model/dataset_gen.py` consumes those files and produces `.pt` graph objects.
+Quick smoke build:
 
-### Labeling policy
+```bash
+python data/setup_benchmark_inputs.py --total-undirected 200 --total-directed 200 --no-clean
+```
 
-- `exact_track`: labels from IC (exact) with timeout control
-- `heuristic_track`: labels from KMA with MA-stage timeout and best-so-far return
+Family-specific generation:
 
-### Additional safety features
+```bash
+python data/setup_benchmark_inputs.py --family directed --total-directed 5000 --total-undirected 0
+```
 
-- Subprocess timeout enforcement per graph for robust generation
-- Invalid-solution verification and CSV status logging (`completed`, `timeout`, `invalid`)
-- Track-aware progress accounting
+## 10. Failure Modes and Troubleshooting
 
-This design keeps model training data aligned with benchmark data distribution and solver behavior.
+Typical issues and causes:
 
----
+1. Empty real-world buckets: external dataset package/network unavailable.
+2. Fewer files than requested: source caps and per-bucket availability constraints.
+3. Slow generation: large totals + expensive categories + cold cache.
+4. PT invalid records: solver timeout or invalid solution rejected by validator.
 
-## 6) Operational Recommendations
+High-confidence recovery sequence:
 
-- Use `setup_benchmark_inputs.py` as the canonical generation entrypoint.
-- Keep a fixed `--seed` for reproducible experiments.
-- Use `--family` and reduced totals for quick smoke validation.
-- Use `--force` only when intentional full refresh is needed.
-- Preserve the same split logic between benchmark runs and GNN dataset generation to avoid train-test distribution drift.
+1. run tiny totals to verify pipeline health
+2. inspect bucket counts under data/synthetic
+3. regenerate specific families with force only if needed
+4. run dataset_gen with reduced timeout and small totals to validate label path
+
+## 11. Summary
+
+The repository implements a production-style research data pipeline:
+
+- deterministic weighted planning,
+- separate real-world and synthetic construction,
+- strict track semantics,
+- robust restart behavior,
+- direct compatibility with benchmark and GNN training workflows.
+
+If you understand the four scripts in this document, you understand the entire data lifecycle from raw graph construction to model-ready PT data.
