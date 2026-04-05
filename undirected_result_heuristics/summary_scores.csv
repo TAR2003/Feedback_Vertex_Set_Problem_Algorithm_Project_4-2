@@ -1,0 +1,3 @@
+solver,mean_score,instance_count
+undirected_KMA_heuristic,99.8822,7749
+undirected_MA_heuristic,99.6266,8451

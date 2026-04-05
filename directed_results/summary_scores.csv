@@ -1,0 +1,6 @@
+solver,mean_score,instance_count
+directed_BST_exact,100.0,9504
+directed_IC_exact,100.0,9989
+directed_MA_exact,99.9276,10000
+directed_brute_force,100.0,8416
+directed_fvs_check,N/A,0
