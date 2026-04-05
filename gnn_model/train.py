@@ -191,6 +191,48 @@ def load_pt_dataset(data_dir: Path) -> list:
     return dataset
 
 
+def clean_pt_dataset(base_dir: Path) -> tuple[int, int]:
+    """
+    Remove unreadable/corrupted PT files and files with NaN/Inf features.
+
+    Returns:
+        (scanned_count, removed_count)
+    """
+    files = sorted(base_dir.rglob("*.pt"))
+    removed_count = 0
+
+    _log(f"\n[clean] Scanning {base_dir} for corrupted .pt files...")
+
+    for file_path in files:
+        should_remove = False
+        reason = ""
+        try:
+            data = torch.load(file_path, weights_only=False, map_location="cpu")
+            x = getattr(data, "x", None)
+            if x is None:
+                should_remove = True
+                reason = "missing x features"
+            elif torch.isnan(x).any() or torch.isinf(x).any():
+                should_remove = True
+                reason = "NaN/Inf in x features"
+        except Exception as e:
+            should_remove = True
+            reason = f"read failure: {e}"
+
+        if should_remove:
+            try:
+                file_path.unlink()
+                removed_count += 1
+                _log(f"[clean] Deleted: {file_path} ({reason})")
+            except Exception as e:
+                _log(f"[clean] Failed to delete {file_path}: {e}")
+
+    _log(
+        f"[clean] Done. Scanned {len(files)} files. Removed {removed_count} bad files."
+    )
+    return len(files), removed_count
+
+
 def log_dataset_breakdown(dataset: list) -> None:
     """Print a concise track/category breakdown for loaded PT graphs."""
     if not dataset:
@@ -550,6 +592,9 @@ def main():
             data_dir = PROJECT_ROOT / "gnn_model" / "datasets" / "pt_v3"
 
     wt_dir = PROJECT_ROOT / "gnn_model" / "weights"
+
+    # Always scrub dataset files before training to avoid NaN/Inf crashes.
+    clean_pt_dataset(data_dir)
 
     # Model + weight file selection
     if args.variant == "v3":
