@@ -336,7 +336,7 @@ def get_results_csv_path(
         # Fallback to algorithm family for backwards compatibility.
         if algo in ["BST", "IC"]:
             algo_type = "exact"
-        elif algo in ["MA", "KMA", "GNN-KMA", "GNN-KMA-2", "GNN-KMA-3"]:
+        elif algo in ["MA", "KMA", "DKMA", "GNN-KMA", "GNN-KMA-2", "GNN-KMA-3", "GNN-DKMA"]:
             algo_type = "heuristic"
         else:
             algo_type = "unknown"
@@ -439,6 +439,10 @@ def _directed_worker_run(algo: str, n: int, edges: List[Tuple[int, int]],
                          gnn_threshold: float, gnn_hidden: Optional[int],
                          timeout_seconds: int,
                          early_stop: int,
+                         commit_threshold: float,
+                         dynkern_every: int,
+                         gain_search: bool,
+                         diversify: bool,
                          out_q: mp.Queue) -> None:
     """Child-process worker that runs one algorithm and returns via queue."""
     try:
@@ -491,6 +495,38 @@ def _directed_worker_run(algo: str, n: int, edges: List[Tuple[int, int]],
                 max_time_seconds=timeout_seconds,
                 early_stop=early_stop,
             )
+        elif algo == "DKMA":
+            from run_hybrid import dkma_solve_directed
+            fvs = dkma_solve_directed(
+                n,
+                edges,
+                pop_size,
+                max_gens,
+                early_stop=early_stop,
+                max_time_seconds=timeout_seconds,
+                commit_threshold=commit_threshold,
+                dynkern_every=dynkern_every,
+                gain_search=gain_search,
+                diversify=diversify,
+            )
+        elif algo == "GNN-DKMA":
+            from run_hybrid import gnn_dkma_solve_directed
+            fvs = gnn_dkma_solve_directed(
+                n,
+                edges,
+                gnn_version="v1",
+                gnn_threshold=gnn_threshold,
+                gnn_hidden=gnn_hidden,
+                gnn_timeout=timeout_seconds,
+                pop_size=pop_size,
+                max_gens=max_gens,
+                early_stop=early_stop,
+                max_time_seconds=timeout_seconds,
+                commit_threshold=commit_threshold,
+                dynkern_every=dynkern_every,
+                gain_search=gain_search,
+                diversify=diversify,
+            )
         else:
             fvs = ALGO_MAP_D[algo](n, edges)
         elapsed_ms = (time.perf_counter() - start) * 1000.0
@@ -511,6 +547,10 @@ def run_directed_algorithm_with_timeout(
     timeout_s: int,
     gnn_timeout: int,
     early_stop: int,
+    commit_threshold: float,
+    dynkern_every: int,
+    gain_search: bool,
+    diversify: bool,
 ) -> Tuple[Optional[List[int]], Optional[float], Optional[dict], Optional[str]]:
     """
     Run one directed algorithm in a child process with timeout.
@@ -524,7 +564,7 @@ def run_directed_algorithm_with_timeout(
     # Heuristic solvers return best-so-far at their own timeout boundary.
     # Keep them in-process so we can always receive that solution instead of
     # parent-level TIMEOUT without a candidate set.
-    if algo in {"MA", "KMA", "GNN-KMA", "GNN-KMA-2", "GNN-KMA-3"}:
+    if algo in {"MA", "KMA", "DKMA", "GNN-KMA", "GNN-KMA-2", "GNN-KMA-3", "GNN-DKMA"}:
         try:
             fvs, elapsed_ms, stage_metrics = run_directed_algorithm(
                 algo,
@@ -537,6 +577,10 @@ def run_directed_algorithm_with_timeout(
                 timeout_seconds,
                 gnn_timeout,
                 early_stop,
+                commit_threshold,
+                dynkern_every,
+                gain_search,
+                diversify,
             )
             return fvs, elapsed_ms, stage_metrics, None
         except Exception as ex:
@@ -545,7 +589,22 @@ def run_directed_algorithm_with_timeout(
     out_q: mp.Queue = mp.Queue()
     proc = mp.Process(
         target=_directed_worker_run,
-        args=(algo, n, edges, pop_size, max_gens, gnn_threshold, gnn_hidden, timeout_seconds, early_stop, out_q),
+        args=(
+            algo,
+            n,
+            edges,
+            pop_size,
+            max_gens,
+            gnn_threshold,
+            gnn_hidden,
+            timeout_seconds,
+            early_stop,
+            commit_threshold,
+            dynkern_every,
+            gain_search,
+            diversify,
+            out_q,
+        ),
     )
     proc.start()
     proc.join(timeout=timeout_s)
@@ -574,11 +633,22 @@ def run_directed_algorithm(algo: str, n: int, edges: List[Tuple[int, int]],
                             timeout_seconds: int = 600,
                             gnn_timeout: int = 60,
                             early_stop: int = 20,
+                            commit_threshold: float = 0.6,
+                            dynkern_every: int = 5,
+                            gain_search: bool = True,
+                            diversify: bool = True,
                             ) -> Tuple[List[int], float, dict]:
     """Run one directed algorithm. Returns (fvs, elapsed_ms)."""
     start = time.perf_counter()
 
-    stage_metrics = {"kernelization_ms": 0.0, "gnn_candidate_ms": 0.0, "ma_ms": 0.0}
+    stage_metrics = {
+        "kernelization_ms": 0.0,
+        "gnn_candidate_ms": 0.0,
+        "ma_ms": 0.0,
+        "initial_kernel_size": n,
+        "final_kernel_size": n,
+        "n_dynamic_reductions": 0,
+    }
 
     if algo == "MA":
         fvs = cpp_engine.solve_directed_MA(n, edges, pop_size, max_gens, early_stop, timeout_seconds)
@@ -634,6 +704,39 @@ def run_directed_algorithm(algo: str, n: int, edges: List[Tuple[int, int]],
             early_stop=early_stop,
             return_diagnostics=True,
         )
+    elif algo == "DKMA":
+        from run_hybrid import dkma_solve_directed
+        fvs, stage_metrics = dkma_solve_directed(
+            n,
+            edges,
+            pop_size=pop_size,
+            max_gens=max_gens,
+            early_stop=early_stop,
+            max_time_seconds=timeout_seconds,
+            commit_threshold=commit_threshold,
+            dynkern_every=dynkern_every,
+            gain_search=gain_search,
+            diversify=diversify,
+            return_diagnostics=True,
+        )
+    elif algo == "GNN-DKMA":
+        from run_hybrid import gnn_dkma_solve_directed
+        fvs = gnn_dkma_solve_directed(
+            n,
+            edges,
+            gnn_version="v1",
+            gnn_threshold=gnn_threshold,
+            gnn_hidden=gnn_hidden,
+            gnn_timeout=gnn_timeout,
+            pop_size=pop_size,
+            max_gens=max_gens,
+            early_stop=early_stop,
+            max_time_seconds=timeout_seconds,
+            commit_threshold=commit_threshold,
+            dynkern_every=dynkern_every,
+            gain_search=gain_search,
+            diversify=diversify,
+        )
     else:
         fvs = ALGO_MAP_D[algo](n, edges)
 
@@ -648,6 +751,10 @@ def run_on_file(filepath: str, algo: str, pop_size: int, max_gens: int,
                 timeout_seconds: int = 600,
                 gnn_timeout: int = 60,
                 early_stop: int = 20,
+                commit_threshold: float = 0.6,
+                dynkern_every: int = 5,
+                gain_search: bool = True,
+                diversify: bool = True,
                 results_dir: str = "results", result_tag: Optional[str] = None,
                 verbose: bool = True) -> dict:
     """
@@ -671,9 +778,9 @@ def run_on_file(filepath: str, algo: str, pop_size: int, max_gens: int,
         print(f"{'─' * 60}")
 
     if algo == "ALL":
-        algos_to_run = ["BST", "IC", "MA", "KMA", "GNN-KMA", "GNN-KMA-2"]
+        algos_to_run = ["BST", "IC", "MA", "KMA", "DKMA", "GNN-KMA", "GNN-KMA-2", "GNN-KMA-3", "GNN-DKMA"]
     elif algo == "PUREALGO":
-        algos_to_run = ["BST", "IC", "MA", "KMA"]
+        algos_to_run = ["BST", "IC", "MA", "KMA", "DKMA"]
     else:
         algos_to_run = [algo]
 
@@ -705,7 +812,21 @@ def run_on_file(filepath: str, algo: str, pop_size: int, max_gens: int,
             print(f"  Running {alg:4s} (timeout={timeout_s}s) ... ", end="", flush=True)
 
         fvs, elapsed_ms, stage_metrics, error = run_directed_algorithm_with_timeout(
-            alg, n, edges, pop_size, max_gens, gnn_threshold, gnn_hidden, timeout_seconds, timeout_s, gnn_timeout, early_stop
+            alg,
+            n,
+            edges,
+            pop_size,
+            max_gens,
+            gnn_threshold,
+            gnn_hidden,
+            timeout_seconds,
+            timeout_s,
+            gnn_timeout,
+            early_stop,
+            commit_threshold,
+            dynkern_every,
+            gain_search,
+            diversify,
         )
 
         # Build single-algorithm result row with unified schema.
@@ -719,6 +840,11 @@ def run_on_file(filepath: str, algo: str, pop_size: int, max_gens: int,
             algo_result["validity"] = "TIMEOUT"
             algo_result["kernelization_time"] = "TIMEOUT"
             algo_result["gnn_candidate_time"] = "TIMEOUT"
+            algo_result["initial_kernel_size"] = "TIMEOUT"
+            algo_result["final_kernel_size"] = "TIMEOUT"
+            algo_result["n_dynamic_reductions"] = "TIMEOUT"
+            algo_result["solution_size"] = "TIMEOUT"
+            algo_result["time_seconds"] = timeout_s
             results[f"{alg}_size"] = "TIMEOUT"
             results[f"{alg}_ms"] = "TIMEOUT"
             results[f"{alg}_valid"] = "TIMEOUT"
@@ -730,6 +856,11 @@ def run_on_file(filepath: str, algo: str, pop_size: int, max_gens: int,
             algo_result["validity"] = False
             algo_result["kernelization_time"] = "ERROR"
             algo_result["gnn_candidate_time"] = "ERROR"
+            algo_result["initial_kernel_size"] = "ERROR"
+            algo_result["final_kernel_size"] = "ERROR"
+            algo_result["n_dynamic_reductions"] = "ERROR"
+            algo_result["solution_size"] = "ERROR"
+            algo_result["time_seconds"] = "ERROR"
             results[f"{alg}_size"] = "ERROR"
             results[f"{alg}_ms"] = "ERROR"
             results[f"{alg}_valid"] = False
@@ -746,6 +877,11 @@ def run_on_file(filepath: str, algo: str, pop_size: int, max_gens: int,
             gnn_s = round((stage_metrics or {}).get("gnn_candidate_ms", 0.0) / 1000.0, 6)
             algo_result["kernelization_time"] = kernel_s
             algo_result["gnn_candidate_time"] = gnn_s
+            algo_result["initial_kernel_size"] = int((stage_metrics or {}).get("initial_kernel_size", n))
+            algo_result["final_kernel_size"] = int((stage_metrics or {}).get("final_kernel_size", n))
+            algo_result["n_dynamic_reductions"] = int((stage_metrics or {}).get("n_dynamic_reductions", 0))
+            algo_result["solution_size"] = len(fvs)
+            algo_result["time_seconds"] = round(elapsed_ms / 1000.0, 6)
             
             results[f"{alg}_size"]  = len(fvs)
             results[f"{alg}_ms"]    = round(elapsed_ms, 2)
@@ -771,8 +907,8 @@ def main():
     )
     parser.add_argument(
         "--algo", required=True,
-        choices=["BST", "IC", "MA", "KMA", "GNN-KMA", "GNN-KMA-2", "GNN-KMA-3", "ALL", "PUREALGO"],
-        help="Algorithm: BST (exact), IC (exact), MA (heuristic), KMA (kernelized MA), GNN-KMA (GNN+KMA), GNN-KMA-2 (advanced features), GNN-KMA-3 (research-grade GNN-KMA), ALL (compare), PUREALGO (BST+IC+MA+KMA)"
+        choices=["BST", "IC", "MA", "KMA", "DKMA", "GNN-KMA", "GNN-KMA-2", "GNN-KMA-3", "GNN-DKMA", "ALL", "PUREALGO"],
+        help="Algorithm: BST/IC exact, MA/KMA/DKMA heuristic, GNN-KMA/GNN-KMA-2/GNN-KMA-3/GNN-DKMA hybrid, ALL compare, PUREALGO baseline set"
     )
     parser.add_argument(
         "--test", required=True,
@@ -822,6 +958,22 @@ def main():
         "--gnn-timeout", type=int, default=60,
         help="Hard wall-clock timeout in seconds for the GNN candidate inference phase (default: 60)"
     )
+    parser.add_argument(
+        "--commit-threshold", type=float, default=0.6,
+        help="[DKMA/GNN-DKMA] Population consensus threshold for dynamic commitments (default: 0.6)"
+    )
+    parser.add_argument(
+        "--dynkern-every", type=int, default=5,
+        help="[DKMA/GNN-DKMA] Re-kernelize every N generations (default: 5)"
+    )
+    parser.add_argument(
+        "--no-gain-search", action="store_true",
+        help="[DKMA/GNN-DKMA] Disable post-loop gain-based local search"
+    )
+    parser.add_argument(
+        "--no-diversify", action="store_true",
+        help="[DKMA/GNN-DKMA] Disable topological-order diversification"
+    )
 
     args = parser.parse_args()
 
@@ -839,6 +991,12 @@ def main():
         sys.exit(1)
     if args.gnn_hidden is not None and args.gnn_hidden <= 0:
         print("ERROR: --gnn-hidden must be a positive integer")
+        sys.exit(1)
+    if not (0.0 < args.commit_threshold < 1.0):
+        print("ERROR: --commit-threshold must be in (0, 1)")
+        sys.exit(1)
+    if args.dynkern_every <= 0:
+        print("ERROR: --dynkern-every must be a positive integer")
         sys.exit(1)
 
     # ── Collect input files ──────────────────────────────────────────────────
@@ -865,6 +1023,10 @@ def main():
                              timeout_seconds=args.timeout,
                              gnn_timeout=args.gnn_timeout,
                              early_stop=args.earlystop,
+                             commit_threshold=args.commit_threshold,
+                             dynkern_every=args.dynkern_every,
+                             gain_search=(not args.no_gain_search),
+                             diversify=(not args.no_diversify),
                              results_dir=args.results_dir,
                             result_tag=args.result_tag,
                              verbose=not args.quiet)
@@ -878,9 +1040,9 @@ def main():
         print(f"{'═' * 80}")
 
         if args.algo == "ALL":
-            algos_ran = ["BST", "IC", "MA", "KMA", "GNN-KMA", "GNN-KMA-2"]
+            algos_ran = ["BST", "IC", "MA", "KMA", "DKMA", "GNN-KMA", "GNN-KMA-2", "GNN-KMA-3", "GNN-DKMA"]
         elif args.algo == "PUREALGO":
-            algos_ran = ["BST", "IC", "MA", "KMA"]
+            algos_ran = ["BST", "IC", "MA", "KMA", "DKMA"]
         else:
             algos_ran = [args.algo]
         header = f"  {'File':<28} {'n':>6} {'m':>8}"

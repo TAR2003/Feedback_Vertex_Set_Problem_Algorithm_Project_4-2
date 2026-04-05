@@ -30,6 +30,7 @@ sys.setrecursionlimit(20000)
 import argparse
 import time
 import math
+import random
 from pathlib import Path
 
 # ── Path setup ────────────────────────────────────────────────────────────────
@@ -1439,6 +1440,1094 @@ def _kma_run_undirected(n, edges, pop_size, max_gens, early_stop, max_time_secon
         return cpp_engine.solve_undirected_MA(n, edges, pop_size, max_gens, early_stop, max_time_seconds)
 
 
+def _kernel_mapping_to_dict(k_new_to_old):
+    if isinstance(k_new_to_old, dict):
+        return dict(k_new_to_old)
+    return {i: v for i, v in enumerate(k_new_to_old)}
+
+
+def _commit_vertices_from_population(population, n_kernel, threshold):
+    """
+    Select committed vertices from population consensus.
+
+    References:
+      [PACE22] Dynamic interleaving of reduction and search opens reductions.
+      [ESA22] Undo/redo style reductions expose new opportunities.
+    """
+    if not population or n_kernel <= 0:
+        return set()
+
+    counts = [0] * n_kernel
+    pop_size = len(population)
+    for individual in population:
+        for v in set(individual):
+            if 0 <= v < n_kernel:
+                counts[v] += 1
+
+    min_count = max(1, int(math.ceil(float(threshold) * pop_size)))
+    committed = {v for v, c in enumerate(counts) if c >= min_count}
+    if not committed:
+        return set()
+
+    if len(committed) > (n_kernel // 2):
+        cap = max(1, int(math.ceil(0.30 * n_kernel)))
+        ranked = sorted(committed, key=lambda v: (-counts[v], v))
+        committed = set(ranked[:cap])
+    return committed
+
+
+def _apply_shortone_rule(k_n, k_edges, directed):
+    """
+    Apply SHORTONE-style contractions for directed kernels.
+
+    Reference:
+      [SEA23] Angrick et al., iterative directed reductions (Mount-Doom).
+    """
+    if not directed or k_n <= 1:
+        return k_n, list(k_edges), {i: i for i in range(k_n)}
+
+    curr_n = int(k_n)
+    curr_edges = {(int(u), int(v)) for u, v in k_edges if 0 <= u < k_n and 0 <= v < k_n}
+    merge_map = {i: i for i in range(curr_n)}
+
+    changed = True
+    while changed and curr_n > 1:
+        changed = False
+        out_adj = [set() for _ in range(curr_n)]
+        in_adj = [set() for _ in range(curr_n)]
+        for u, v in curr_edges:
+            out_adj[u].add(v)
+            in_adj[v].add(u)
+
+        candidate = None
+        for u, v in curr_edges:
+            if u == v:
+                continue
+            if len(out_adj[u]) == 1 and len(in_adj[v]) == 1:
+                candidate = (u, v)
+                break
+        if candidate is None:
+            break
+
+        u, v = candidate
+        kept = [x for x in range(curr_n) if x not in {u, v}]
+        rep_idx = len(kept)
+
+        old_to_new = {old: i for i, old in enumerate(kept)}
+        old_to_new[u] = rep_idx
+        old_to_new[v] = rep_idx
+
+        next_edges = set()
+        for a, b in curr_edges:
+            na = old_to_new[a]
+            nb = old_to_new[b]
+            if na == nb:
+                continue
+            next_edges.add((na, nb))
+
+        next_merge_map = {}
+        for old in kept:
+            next_merge_map[old_to_new[old]] = merge_map[old]
+        next_merge_map[rep_idx] = merge_map[v]
+
+        curr_n = len(kept) + 1
+        curr_edges = next_edges
+        merge_map = next_merge_map
+        changed = True
+
+    return curr_n, sorted(curr_edges), merge_map
+
+
+def _dynamic_kernelize(
+    k_n,
+    k_edges,
+    committed_kernel_vertices,
+    k_new_to_old,
+    forced_so_far,
+    directed,
+):
+    """
+    Re-kernelize the residual graph after committing kernel vertices.
+
+    Reference:
+      [PACE22], [ESA22] for reduction-search interleaving motivation.
+    """
+    k_map = _kernel_mapping_to_dict(k_new_to_old)
+    forced_original = set(forced_so_far)
+    committed = {v for v in committed_kernel_vertices if 0 <= v < k_n}
+
+    for v in committed:
+        if v in k_map:
+            forced_original.add(k_map[v])
+
+    keep_vertices = [v for v in range(k_n) if v not in committed]
+    keep_old_to_residual = {old: i for i, old in enumerate(keep_vertices)}
+    residual_to_old_kernel = {i: old for old, i in keep_old_to_residual.items()}
+
+    residual_edges = []
+    for u, v in k_edges:
+        if u in keep_old_to_residual and v in keep_old_to_residual:
+            residual_edges.append((keep_old_to_residual[u], keep_old_to_residual[v]))
+
+    residual_n = len(keep_vertices)
+    if residual_n == 0:
+        return 0, [], forced_original, {}, {}
+
+    if directed:
+        rk_n, rk_edges, rk_forced, rk_new_to_old = kernelize_directed_graph(residual_n, residual_edges)
+    else:
+        rk_n, rk_edges, rk_forced, rk_new_to_old = kernelize_undirected_graph(residual_n, residual_edges)
+
+    new_k_new_to_old = {}
+    for new_idx in range(rk_n):
+        residual_old = rk_new_to_old[new_idx]
+        old_kernel_idx = residual_to_old_kernel[residual_old]
+        new_k_new_to_old[new_idx] = k_map[old_kernel_idx]
+
+    for residual_forced_idx in rk_forced:
+        if 0 <= residual_forced_idx < len(rk_new_to_old):
+            residual_old = rk_new_to_old[residual_forced_idx]
+            old_kernel_idx = residual_to_old_kernel[residual_old]
+            forced_original.add(k_map[old_kernel_idx])
+
+    old_kernel_to_new_kernel = {}
+    for new_idx in range(rk_n):
+        residual_old = rk_new_to_old[new_idx]
+        old_kernel_idx = residual_to_old_kernel[residual_old]
+        old_kernel_to_new_kernel[old_kernel_idx] = new_idx
+    return rk_n, rk_edges, forced_original, new_k_new_to_old, old_kernel_to_new_kernel
+
+
+def _is_acyclic(n, edges, removed_vertices, directed):
+    """Check if graph minus removed vertices is acyclic."""
+    removed = set(removed_vertices)
+    active = [v not in removed for v in range(n)]
+
+    if directed:
+        out_adj = [[] for _ in range(n)]
+        for u, v in edges:
+            if 0 <= u < n and 0 <= v < n and active[u] and active[v]:
+                out_adj[u].append(v)
+
+        state = [0] * n
+        for start in range(n):
+            if not active[start] or state[start] != 0:
+                continue
+            state[start] = 1
+            stack = [(start, 0)]
+            while stack:
+                node, idx = stack[-1]
+                nbrs = out_adj[node]
+                if idx >= len(nbrs):
+                    state[node] = 2
+                    stack.pop()
+                    continue
+                nb = nbrs[idx]
+                stack[-1] = (node, idx + 1)
+                if state[nb] == 1:
+                    return False
+                if state[nb] == 0:
+                    state[nb] = 1
+                    stack.append((nb, 0))
+        return True
+
+    parent = list(range(n))
+    rank = [0] * n
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a, b):
+        ra = find(a)
+        rb = find(b)
+        if ra == rb:
+            return False
+        if rank[ra] < rank[rb]:
+            parent[ra] = rb
+        elif rank[ra] > rank[rb]:
+            parent[rb] = ra
+        else:
+            parent[rb] = ra
+            rank[ra] += 1
+        return True
+
+    seen = set()
+    for u, v in edges:
+        if not (0 <= u < n and 0 <= v < n):
+            continue
+        if not active[u] or not active[v]:
+            continue
+        if u == v:
+            return False
+        a, b = (u, v) if u <= v else (v, u)
+        if (a, b) in seen:
+            continue
+        seen.add((a, b))
+        if not union(a, b):
+            return False
+    return True
+
+
+def _residual_max_degree(solution_set, k_n, k_edges, directed):
+    removed = set(solution_set)
+    degree = [0] * k_n
+    if directed:
+        for u, v in k_edges:
+            if u in removed or v in removed:
+                continue
+            degree[u] += 1
+            degree[v] += 1
+    else:
+        for u, v in k_edges:
+            if u in removed or v in removed:
+                continue
+            degree[u] += 1
+            degree[v] += 1
+    return max(degree) if degree else 0
+
+
+def _gain_local_search(solution_set, k_n, k_edges, directed, max_swaps=500):
+    """
+    Gain-driven local search using 1-1 and 2-1 swaps.
+
+    References:
+      [LANGEDAL], [PACE22], [TRSA24].
+    """
+    current = set(solution_set)
+    if not _is_acyclic(k_n, k_edges, current, directed):
+        return set(solution_set)
+
+    adjacency = [set() for _ in range(k_n)]
+    for u, v in k_edges:
+        if 0 <= u < k_n and 0 <= v < k_n:
+            adjacency[u].add(v)
+            adjacency[v].add(u)
+
+    swaps = 0
+    improved = True
+    while improved and swaps < max_swaps:
+        improved = False
+        base_secondary = _residual_max_degree(current, k_n, k_edges, directed)
+
+        for v in list(current):
+            candidate_us = [u for u in adjacency[v] if u not in current]
+            for u in candidate_us:
+                swaps += 1
+                trial = set(current)
+                trial.discard(v)
+                trial.add(u)
+                if not _is_acyclic(k_n, k_edges, trial, directed):
+                    if swaps >= max_swaps:
+                        break
+                    continue
+                new_secondary = _residual_max_degree(trial, k_n, k_edges, directed)
+                if len(trial) < len(current) or (
+                    len(trial) == len(current) and new_secondary < base_secondary
+                ):
+                    current = trial
+                    improved = True
+                    break
+                if swaps >= max_swaps:
+                    break
+            if improved or swaps >= max_swaps:
+                break
+        if improved:
+            continue
+
+        current_list = list(current)
+        outside = [u for u in range(k_n) if u not in current]
+        for i in range(len(current_list)):
+            for j in range(i + 1, len(current_list)):
+                v1 = current_list[i]
+                v2 = current_list[j]
+                for u in outside:
+                    swaps += 1
+                    trial = set(current)
+                    trial.discard(v1)
+                    trial.discard(v2)
+                    trial.add(u)
+                    if _is_acyclic(k_n, k_edges, trial, directed) and len(trial) <= len(current):
+                        current = trial
+                        improved = True
+                        break
+                    if swaps >= max_swaps:
+                        break
+                if improved or swaps >= max_swaps:
+                    break
+            if improved or swaps >= max_swaps:
+                break
+
+    return current
+
+
+def _diversify_with_topological_ordering(k_n, k_edges, current_solution, directed):
+    """
+    Diversification move inspired by randomized topological ordering.
+
+    Reference:
+      [PACE22] Kahn-order diversification every fixed rounds.
+    """
+    candidate = set(current_solution)
+    if k_n <= 0:
+        return candidate
+
+    if directed:
+        out_adj = [set() for _ in range(k_n)]
+        in_adj = [set() for _ in range(k_n)]
+        for u, v in k_edges:
+            if 0 <= u < k_n and 0 <= v < k_n:
+                out_adj[u].add(v)
+                in_adj[v].add(u)
+
+        while True:
+            active = [v for v in range(k_n) if v not in candidate]
+            if not active:
+                break
+
+            indeg = {v: 0 for v in active}
+            for v in active:
+                indeg[v] = sum(1 for p in in_adj[v] if p in indeg)
+
+            zeros = [v for v in active if indeg[v] == 0]
+            order_count = 0
+            while zeros:
+                idx = random.randrange(len(zeros))
+                v = zeros.pop(idx)
+                order_count += 1
+                for nb in out_adj[v]:
+                    if nb in indeg:
+                        indeg[nb] -= 1
+                        if indeg[nb] == 0:
+                            zeros.append(nb)
+
+            if order_count == len(active):
+                break
+
+            cyclic_vertices = [v for v in active if indeg.get(v, 0) > 0]
+            if not cyclic_vertices:
+                break
+            pick = max(cyclic_vertices, key=lambda x: (len(in_adj[x]), x))
+            candidate.add(pick)
+
+        return candidate
+
+    adj = [set() for _ in range(k_n)]
+    for u, v in k_edges:
+        if 0 <= u < k_n and 0 <= v < k_n:
+            adj[u].add(v)
+            adj[v].add(u)
+
+    for _ in range(max(1, k_n)):
+        if _is_acyclic(k_n, k_edges, candidate, directed=False):
+            break
+
+        active = [v for v in range(k_n) if v not in candidate]
+        visited = set()
+        added_this_round = set()
+
+        for root in active:
+            if root in visited:
+                continue
+            stack = [(root, -1, list(adj[root]))]
+            random.shuffle(stack[0][2])
+            visited.add(root)
+
+            while stack:
+                node, parent, nbrs = stack[-1]
+                if not nbrs:
+                    stack.pop()
+                    continue
+                nb = nbrs.pop()
+                if nb == parent or nb in candidate:
+                    continue
+                if nb in visited:
+                    chosen = nb if len(adj[nb]) >= len(adj[node]) else node
+                    added_this_round.add(chosen)
+                    continue
+                visited.add(nb)
+                next_nbrs = list(adj[nb])
+                random.shuffle(next_nbrs)
+                stack.append((nb, node, next_nbrs))
+
+        if not added_this_round:
+            residual = [v for v in range(k_n) if v not in candidate]
+            if not residual:
+                break
+            pick = max(residual, key=lambda x: (len(adj[x]), x))
+            candidate.add(pick)
+        else:
+            candidate.update(added_this_round)
+
+    return candidate
+
+
+def _build_random_population(k_n, target_size):
+    pop = []
+    if k_n <= 0 or target_size <= 0:
+        return pop
+    for _ in range(target_size):
+        p = random.uniform(0.05, 0.20)
+        individual = {v for v in range(k_n) if random.random() < p}
+        pop.append(individual)
+    return pop
+
+
+def _greedy_acyclic_repair(n, edges, removed_vertices, directed):
+    """Ensure validity by greedily adding high-degree vertices until acyclic."""
+    removed = set(removed_vertices)
+    if _is_acyclic(n, edges, removed, directed):
+        return removed
+
+    for _ in range(n):
+        if _is_acyclic(n, edges, removed, directed):
+            break
+        degree = [0] * n
+        for u, v in edges:
+            if u in removed or v in removed:
+                continue
+            if 0 <= u < n:
+                degree[u] += 1
+            if 0 <= v < n:
+                degree[v] += 1
+        candidates = [v for v in range(n) if v not in removed]
+        if not candidates:
+            break
+        pick = max(candidates, key=lambda x: (degree[x], x))
+        removed.add(pick)
+    return removed
+
+
+def _prune_redundant_vertices(n, edges, solution_vertices, directed, max_seconds=2.0):
+    """Try to remove redundant solution vertices while preserving acyclicity."""
+    current = set(solution_vertices)
+    if not current:
+        return current
+    start = time.time()
+
+    # Low-degree vertices are more likely redundant after local search/MA.
+    degree = [0] * n
+    for u, v in edges:
+        if 0 <= u < n:
+            degree[u] += 1
+        if 0 <= v < n:
+            degree[v] += 1
+    order = sorted(current, key=lambda v: (degree[v], v))
+
+    for v in order:
+        if (time.time() - start) > max_seconds:
+            break
+        trial = set(current)
+        trial.discard(v)
+        if _is_acyclic(n, edges, trial, directed):
+            current = trial
+    return current
+
+
+def _run_one_generation_ma(
+    k_n,
+    k_edges,
+    population,
+    directed,
+    remaining_time_seconds=None,
+    use_cpp_step=True,
+):
+    """
+    Run a short MA step and merge offspring back into the population.
+
+    If exact single-generation stepping is unavailable from cpp_engine, this
+    executes a 1-generation MA/KMA call as a short evolution proxy.
+    """
+    if k_n <= 0:
+        return []
+
+    target_pop = max(1, len(population) if population else 20)
+    sanitized = []
+    for individual in (population or []):
+        sanitized.append({v for v in individual if 0 <= v < k_n})
+
+    offspring = []
+
+    # Lightweight in-Python evolution to avoid spending full timeout each gen.
+    if sanitized:
+        ranked = sorted(sanitized, key=len)
+        elite = ranked[: max(1, target_pop // 2)]
+        for _ in range(max(1, target_pop // 3)):
+            p1 = random.choice(elite)
+            p2 = random.choice(elite)
+            child = set(p1)
+            if p2:
+                child.symmetric_difference_update(set(random.sample(list(p2), k=max(0, len(p2) // 4))))
+            for _ in range(max(1, k_n // 200)):
+                v = random.randrange(k_n)
+                if random.random() < 0.5:
+                    child.add(v)
+                else:
+                    child.discard(v)
+            offspring.append({v for v in child if 0 <= v < k_n})
+
+    # Only occasionally call cpp single-gen stepping, and only with real time left.
+    time_left = float(remaining_time_seconds) if remaining_time_seconds is not None else 0.0
+    cpp_budget = max(0, min(2, int(time_left) - 1))
+    if use_cpp_step and cpp_budget >= 1:
+        try:
+            if directed:
+                if hasattr(cpp_engine, "solve_directed_KMA"):
+                    child = cpp_engine.solve_directed_KMA(k_n, k_edges, max(2, target_pop // 2), 1, 1, cpp_budget)
+                elif hasattr(cpp_engine, "solve_directed_KME"):
+                    child = cpp_engine.solve_directed_KME(k_n, k_edges, max(2, target_pop // 2), 1, 1, cpp_budget)
+                else:
+                    child = cpp_engine.solve_directed_MA(k_n, k_edges, max(2, target_pop // 2), 1, 1, cpp_budget)
+            else:
+                if hasattr(cpp_engine, "solve_undirected_KMA"):
+                    child = cpp_engine.solve_undirected_KMA(k_n, k_edges, max(2, target_pop // 2), 1, 1, cpp_budget)
+                elif hasattr(cpp_engine, "solve_undirected_KME"):
+                    child = cpp_engine.solve_undirected_KME(k_n, k_edges, max(2, target_pop // 2), 1, 1, cpp_budget)
+                else:
+                    child = cpp_engine.solve_undirected_MA(k_n, k_edges, max(2, target_pop // 2), 1, 1, cpp_budget)
+            offspring.append({v for v in child if 0 <= v < k_n})
+        except Exception:
+            pass
+
+    merged = sanitized + offspring
+    if not merged:
+        merged = _build_random_population(k_n, target_pop)
+
+    uniq = {}
+    for ind in merged:
+        uniq[tuple(sorted(ind))] = set(ind)
+    ranked = sorted(uniq.values(), key=lambda s: (len(s), tuple(sorted(s))))
+
+    if len(ranked) < target_pop:
+        ranked.extend(_build_random_population(k_n, target_pop - len(ranked)))
+
+    return ranked[:target_pop]
+
+
+def _remap_population(population, committed_old_kernel_indices, old_to_new_map, new_k_n, pop_size=20):
+    """Remap individuals from old kernel indices to new kernel indices."""
+    committed = set(committed_old_kernel_indices)
+    remapped = []
+    seen = set()
+
+    for individual in population:
+        new_ind = set()
+        for v in individual:
+            if v in committed:
+                continue
+            new_idx = old_to_new_map.get(v)
+            if new_idx is not None and 0 <= new_idx < new_k_n:
+                new_ind.add(new_idx)
+        key = tuple(sorted(new_ind))
+        if key not in seen:
+            seen.add(key)
+            remapped.append(new_ind)
+
+    min_size = max(1, pop_size // 2)
+    if len(remapped) < min_size:
+        remapped.extend(_build_random_population(new_k_n, min_size - len(remapped)))
+    return remapped
+
+
+def _initialize_population(k_n, k_edges, directed, pop_size, max_gens, early_stop, max_time_seconds):
+    if k_n <= 0:
+        return []
+    population = []
+    # Use a single warm-start KMA call when enough budget exists.
+    # This keeps DKMA quality close to KMA while avoiding per-generation timeout spam.
+    if max_time_seconds >= 20:
+        try:
+            seed_gens = max(5, min(20, max_gens))
+            seed_time = max(8, min(int(max_time_seconds * 0.5), max_time_seconds - 2))
+            if directed:
+                base = _kma_run_directed(k_n, k_edges, pop_size, seed_gens, early_stop, seed_time)
+            else:
+                base = _kma_run_undirected(k_n, k_edges, pop_size, seed_gens, early_stop, seed_time)
+            population.append({v for v in base if 0 <= v < k_n})
+        except Exception:
+            pass
+
+    if len(population) < pop_size:
+        population.extend(_build_random_population(k_n, pop_size - len(population)))
+
+    uniq = {}
+    for ind in population:
+        uniq[tuple(sorted(ind))] = set(ind)
+    ranked = sorted(uniq.values(), key=lambda s: len(s))
+    if len(ranked) < pop_size:
+        ranked.extend(_build_random_population(k_n, pop_size - len(ranked)))
+    return ranked[:pop_size]
+
+
+def _dkma_solve_common(
+    n,
+    edges,
+    directed,
+    pop_size=20,
+    max_gens=100,
+    early_stop=10,
+    max_time_seconds=600,
+    commit_threshold=0.6,
+    dynkern_every=5,
+    gain_search=True,
+    diversify=True,
+    dkma_verify=False,
+    return_diagnostics=False,
+):
+    if not HAS_CPP_ENGINE:
+        raise RuntimeError("cpp_engine not available. Please compile it first.")
+
+    # For very short budgets, use stable KMA plus non-worsening post-pruning.
+    if max_time_seconds <= 30:
+        short_start = time.time()
+        if directed:
+            base_solution, base_metrics = kma_solve_directed(
+                n,
+                edges,
+                pop_size=pop_size,
+                max_gens=max_gens,
+                max_time_seconds=max_time_seconds,
+                early_stop=early_stop,
+                return_diagnostics=True,
+            )
+        else:
+            base_solution, base_metrics = kma_solve_undirected(
+                n,
+                edges,
+                pop_size=pop_size,
+                max_gens=max_gens,
+                max_time_seconds=max_time_seconds,
+                early_stop=early_stop,
+                return_diagnostics=True,
+            )
+
+        best_solution = set(base_solution)
+
+        # If KMA ends early, spend leftover budget on a diversified second shot.
+        elapsed_short = time.time() - short_start
+        remaining_short = int(max_time_seconds - elapsed_short)
+        if remaining_short >= 3:
+            try:
+                if directed:
+                    alt_solution = kma_solve_directed(
+                        n,
+                        edges,
+                        pop_size=max(8, pop_size + max(2, pop_size // 2)),
+                        max_gens=max(20, max_gens // 2),
+                        max_time_seconds=remaining_short,
+                        early_stop=max(5, early_stop // 2),
+                    )
+                else:
+                    alt_solution = kma_solve_undirected(
+                        n,
+                        edges,
+                        pop_size=max(8, pop_size + max(2, pop_size // 2)),
+                        max_gens=max(20, max_gens // 2),
+                        max_time_seconds=remaining_short,
+                        early_stop=max(5, early_stop // 2),
+                    )
+                if _is_acyclic(n, edges, set(alt_solution), directed) and len(alt_solution) < len(best_solution):
+                    best_solution = set(alt_solution)
+            except Exception:
+                pass
+
+        improved_solution = _prune_redundant_vertices(
+            n,
+            edges,
+            best_solution,
+            directed,
+            max_seconds=2.0,
+        )
+        if not _is_acyclic(n, edges, improved_solution, directed):
+            improved_solution = set(best_solution)
+        if len(improved_solution) <= len(best_solution):
+            final_solution = sorted(improved_solution)
+        else:
+            final_solution = sorted(best_solution)
+
+        base_metrics = dict(base_metrics or {})
+        base_metrics.setdefault("initial_kernel_size", n)
+        base_metrics.setdefault("final_kernel_size", n)
+        base_metrics.setdefault("n_dynamic_reductions", 0)
+        return _maybe_with_metrics(final_solution, base_metrics, return_diagnostics)
+
+    wall_start = time.time()
+
+    t0 = time.perf_counter()
+    if directed:
+        k_n, k_edges, forced, k_new_to_old_raw = kernelize_directed_graph(n, edges)
+    else:
+        k_n, k_edges, forced, k_new_to_old_raw = kernelize_undirected_graph(n, edges)
+    kernel_ms = (time.perf_counter() - t0) * 1000.0
+
+    k_new_to_old = _kernel_mapping_to_dict(k_new_to_old_raw)
+    initial_kernel_size = k_n
+
+    if k_n == 0:
+        solution = sorted(set(forced))
+        metrics = _stage_metrics(kernelization_ms=kernel_ms, ma_ms=0.0)
+        metrics.update({
+            "initial_kernel_size": initial_kernel_size,
+            "final_kernel_size": 0,
+            "n_dynamic_reductions": 0,
+        })
+        return _maybe_with_metrics(solution, metrics, return_diagnostics)
+
+    if directed:
+        k_n, k_edges, shortone_map = _apply_shortone_rule(k_n, k_edges, directed=True)
+        k_new_to_old = {
+            new_idx: k_new_to_old[old_idx]
+            for new_idx, old_idx in shortone_map.items()
+            if old_idx in k_new_to_old
+        }
+
+    ma_start = time.perf_counter()
+    population = _initialize_population(
+        k_n, k_edges, directed, pop_size, max_gens, early_stop, max_time_seconds
+    )
+    if not population:
+        population = _build_random_population(k_n, pop_size)
+    best_solution = min(population, key=len) if population else set()
+    best_original = set(forced) | {k_new_to_old[v] for v in best_solution if v in k_new_to_old}
+
+    current_forced = set(forced)
+    current_k_n = k_n
+    current_k_edges = list(k_edges)
+    current_k_new_to_old = dict(k_new_to_old)
+
+    gen = 0
+    stagnation = 0
+    n_dynamic_reductions = 0
+
+    while gen < max_gens and stagnation < early_stop:
+        elapsed = time.time() - wall_start
+        if elapsed > max_time_seconds:
+            break
+
+        remaining = max_time_seconds - elapsed
+
+        population = _run_one_generation_ma(
+            current_k_n,
+            current_k_edges,
+            population,
+            directed,
+            remaining_time_seconds=remaining,
+            use_cpp_step=False,
+        )
+
+        if diversify and gen % 5 == 0 and current_k_n > 0:
+            diverse_candidate = _diversify_with_topological_ordering(
+                current_k_n, current_k_edges, best_solution, directed
+            )
+            population.append(set(diverse_candidate))
+            population = sorted(population, key=len)[:pop_size]
+
+        if not population:
+            break
+
+        ranked_population = sorted(population, key=len)
+        local_best = ranked_population[0]
+        local_best_original = current_forced | {
+            current_k_new_to_old[v] for v in local_best if v in current_k_new_to_old
+        }
+
+        found_valid = False
+        for candidate in ranked_population:
+            candidate_original = current_forced | {
+                current_k_new_to_old[v] for v in candidate if v in current_k_new_to_old
+            }
+            if _is_acyclic(n, edges, candidate_original, directed):
+                local_best = candidate
+                local_best_original = candidate_original
+                found_valid = True
+                break
+
+        if not found_valid:
+            local_best_original = _greedy_acyclic_repair(n, edges, local_best_original, directed)
+            if dkma_verify:
+                print("[DKMA] verification warning: repaired invalid intermediate candidate")
+
+        if len(local_best_original) < len(best_original):
+            best_solution = set(local_best)
+            best_original = set(local_best_original)
+            stagnation = 0
+        else:
+            stagnation += 1
+
+        if dynkern_every > 0 and gen % dynkern_every == 0 and gen > 0 and current_k_n > 0:
+            committed = _commit_vertices_from_population(population, current_k_n, commit_threshold)
+            if committed:
+                (
+                    new_k_n,
+                    new_k_edges,
+                    new_forced,
+                    new_map,
+                    new_old_to_new,
+                ) = _dynamic_kernelize(
+                    current_k_n,
+                    current_k_edges,
+                    committed,
+                    current_k_new_to_old,
+                    current_forced,
+                    directed,
+                )
+
+                if new_k_n < current_k_n:
+                    old_kernel_best = set(best_solution)
+
+                    current_k_n = new_k_n
+                    current_k_edges = list(new_k_edges)
+                    current_forced = set(new_forced)
+                    current_k_new_to_old = dict(new_map)
+                    population = _remap_population(
+                        population,
+                        committed,
+                        new_old_to_new,
+                        current_k_n,
+                        pop_size=pop_size,
+                    )
+
+                    best_solution = {
+                        new_old_to_new[o]
+                        for o in old_kernel_best
+                        if o in new_old_to_new
+                    }
+                    best_original = current_forced | {
+                        current_k_new_to_old[v]
+                        for v in best_solution
+                        if v in current_k_new_to_old
+                    }
+                    if not best_solution and population:
+                        best_solution = min(population, key=len)
+                        best_original = current_forced | {
+                            current_k_new_to_old[v]
+                            for v in best_solution
+                            if v in current_k_new_to_old
+                        }
+
+                    if len(population) == 0:
+                        break
+
+                    n_dynamic_reductions += 1
+                    stagnation = 0
+
+        gen += 1
+
+    if gain_search and current_k_n > 0:
+        improved_kernel_sol = _gain_local_search(
+            best_solution,
+            current_k_n,
+            current_k_edges,
+            directed,
+            max_swaps=1000,
+        )
+        improved_original = current_forced | {
+            current_k_new_to_old[v]
+            for v in improved_kernel_sol
+            if v in current_k_new_to_old
+        }
+        if len(improved_original) <= len(best_original):
+            best_original = improved_original
+
+    if not _is_acyclic(n, edges, best_original, directed):
+        best_original = _greedy_acyclic_repair(n, edges, best_original, directed)
+
+    if not _is_acyclic(n, edges, best_original, directed):
+        print("[DKMA] warning: final solution failed validation, falling back to KMA")
+        remaining_for_fallback = int(max_time_seconds - (time.time() - wall_start))
+        if remaining_for_fallback >= 2:
+            if directed:
+                fallback = kma_solve_directed(
+                    n,
+                    edges,
+                    pop_size=pop_size,
+                    max_gens=max_gens,
+                    max_time_seconds=remaining_for_fallback,
+                    early_stop=early_stop,
+                )
+            else:
+                fallback = kma_solve_undirected(
+                    n,
+                    edges,
+                    pop_size=pop_size,
+                    max_gens=max_gens,
+                    max_time_seconds=remaining_for_fallback,
+                    early_stop=early_stop,
+                )
+            best_original = set(fallback)
+        else:
+            best_original = _greedy_acyclic_repair(n, edges, best_original, directed)
+
+    ma_ms = (time.perf_counter() - ma_start) * 1000.0
+    metrics = _stage_metrics(kernelization_ms=kernel_ms, ma_ms=ma_ms)
+    metrics.update({
+        "initial_kernel_size": initial_kernel_size,
+        "final_kernel_size": current_k_n,
+        "n_dynamic_reductions": n_dynamic_reductions,
+    })
+    return _maybe_with_metrics(sorted(set(best_original)), metrics, return_diagnostics)
+
+
+def dkma_solve_undirected(
+    n,
+    edges,
+    pop_size=20,
+    max_gens=100,
+    early_stop=10,
+    max_time_seconds=600,
+    commit_threshold=0.6,
+    dynkern_every=5,
+    gain_search=True,
+    diversify=True,
+    dkma_verify=False,
+    return_diagnostics=False,
+):
+    """Dynamic Kernelized Memetic Algorithm for undirected FVS."""
+    return _dkma_solve_common(
+        n,
+        edges,
+        directed=False,
+        pop_size=pop_size,
+        max_gens=max_gens,
+        early_stop=early_stop,
+        max_time_seconds=max_time_seconds,
+        commit_threshold=commit_threshold,
+        dynkern_every=dynkern_every,
+        gain_search=gain_search,
+        diversify=diversify,
+        dkma_verify=dkma_verify,
+        return_diagnostics=return_diagnostics,
+    )
+
+
+def dkma_solve_directed(
+    n,
+    edges,
+    pop_size=20,
+    max_gens=100,
+    early_stop=10,
+    max_time_seconds=600,
+    commit_threshold=0.6,
+    dynkern_every=5,
+    gain_search=True,
+    diversify=True,
+    dkma_verify=False,
+    return_diagnostics=False,
+):
+    """Dynamic Kernelized Memetic Algorithm for directed FVS."""
+    return _dkma_solve_common(
+        n,
+        edges,
+        directed=True,
+        pop_size=pop_size,
+        max_gens=max_gens,
+        early_stop=early_stop,
+        max_time_seconds=max_time_seconds,
+        commit_threshold=commit_threshold,
+        dynkern_every=dynkern_every,
+        gain_search=gain_search,
+        diversify=diversify,
+        dkma_verify=dkma_verify,
+        return_diagnostics=return_diagnostics,
+    )
+
+
+def gnn_dkma_solve_undirected(
+    n,
+    edges,
+    gnn_version="v1",
+    gnn_threshold=0.65,
+    gnn_hidden=None,
+    gnn_timeout=60,
+    **dkma_kwargs,
+):
+    """GNN-DKMA: GNN-guided hard-fix followed by DKMA on the reduced kernel."""
+    k_n, k_edges, forced, k_new_to_old = kernelize_undirected_graph(n, edges)
+    if k_n == 0:
+        return sorted(set(forced))
+
+    if gnn_version == "v2":
+        probs = run_gnn_undirected_v2_probs(k_n, k_edges, hidden_dim=gnn_hidden, gnn_timeout=gnn_timeout)
+    else:
+        probs = run_gnn_undirected_probs(k_n, k_edges, hidden_dim=gnn_hidden, gnn_timeout=gnn_timeout)
+
+    fixed = set()
+    if probs is not None:
+        for idx, p in enumerate(probs):
+            if p >= gnn_threshold:
+                fixed.add(idx)
+
+    keep = [v for v in range(k_n) if v not in fixed]
+    old_to_reduced = {old: i for i, old in enumerate(keep)}
+    reduced_edges = [
+        (old_to_reduced[u], old_to_reduced[v])
+        for u, v in k_edges
+        if u in old_to_reduced and v in old_to_reduced
+    ]
+
+    reduced_solution = dkma_solve_undirected(
+        len(keep),
+        reduced_edges,
+        **dkma_kwargs,
+    )
+    reduced_to_old = {i: old for old, i in old_to_reduced.items()}
+
+    answer = set(forced)
+    answer.update(k_new_to_old[v] for v in fixed if 0 <= v < len(k_new_to_old))
+    answer.update(k_new_to_old[reduced_to_old[v]] for v in reduced_solution if v in reduced_to_old)
+    return sorted(answer)
+
+
+def gnn_dkma_solve_directed(
+    n,
+    edges,
+    gnn_version="v1",
+    gnn_threshold=0.65,
+    gnn_hidden=None,
+    gnn_timeout=60,
+    **dkma_kwargs,
+):
+    """GNN-DKMA: GNN-guided hard-fix followed by DKMA on the reduced kernel."""
+    k_n, k_edges, forced, k_new_to_old = kernelize_directed_graph(n, edges)
+    if k_n == 0:
+        return sorted(set(forced))
+
+    if gnn_version == "v2":
+        probs = run_gnn_directed_v2_probs(k_n, k_edges, hidden_dim=gnn_hidden, gnn_timeout=gnn_timeout)
+    elif gnn_version == "v3":
+        probs = run_gnn_directed_v3_probs(k_n, k_edges, hidden_dim=gnn_hidden, gnn_timeout=gnn_timeout)
+    else:
+        probs = run_gnn_directed_probs(k_n, k_edges, hidden_dim=gnn_hidden, gnn_timeout=gnn_timeout)
+
+    fixed = set()
+    if probs is not None:
+        for idx, p in enumerate(probs):
+            if p >= gnn_threshold:
+                fixed.add(idx)
+
+    keep = [v for v in range(k_n) if v not in fixed]
+    old_to_reduced = {old: i for i, old in enumerate(keep)}
+    reduced_edges = [
+        (old_to_reduced[u], old_to_reduced[v])
+        for u, v in k_edges
+        if u in old_to_reduced and v in old_to_reduced
+    ]
+
+    reduced_solution = dkma_solve_directed(
+        len(keep),
+        reduced_edges,
+        **dkma_kwargs,
+    )
+    reduced_to_old = {i: old for old, i in old_to_reduced.items()}
+
+    answer = set(forced)
+    answer.update(k_new_to_old[v] for v in fixed if 0 <= v < len(k_new_to_old))
+    answer.update(k_new_to_old[reduced_to_old[v]] for v in reduced_solution if v in reduced_to_old)
+    return sorted(answer)
+
+
 def _soft_hint_gnn_kernel_solve(
     k_n, k_edges, gnn_probs_np, pop_size, max_gens, early_stop, max_time_seconds,
     gnn_threshold, max_fix_fraction, label, directed, run_kma_fn
@@ -1873,6 +2962,10 @@ gnn_kma3_solve_directed = gnn_KMA3_solve_directed
 gnn_kma3_solve_undirected = gnn_KMA3_solve_undirected
 kma_solve_undirected_legacy = kma_solve_undirected
 kma_solve_directed_legacy = kma_solve_directed
+dkma_solve_undirected_legacy = dkma_solve_undirected
+dkma_solve_directed_legacy = dkma_solve_directed
+gnn_dkma_solve_undirected_legacy = gnn_dkma_solve_undirected
+gnn_dkma_solve_directed_legacy = gnn_dkma_solve_directed
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
