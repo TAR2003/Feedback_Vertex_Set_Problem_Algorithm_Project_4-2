@@ -1,0 +1,58 @@
+Analysis summary for directed
+Best n by distinct k values: n=28, distinct k count=20
+Best k by distinct n values: k=1, distinct n count=28
+
+Distinct k counts by n:
+n=30: distinct k count=20
+n=29: distinct k count=20
+n=28: distinct k count=20
+n=35: distinct k count=19
+n=32: distinct k count=19
+n=25: distinct k count=19
+n=34: distinct k count=18
+n=33: distinct k count=18
+n=31: distinct k count=18
+n=27: distinct k count=18
+n=26: distinct k count=17
+n=22: distinct k count=16
+n=24: distinct k count=15
+n=23: distinct k count=15
+n=21: distinct k count=13
+n=20: distinct k count=13
+n=19: distinct k count=13
+n=18: distinct k count=12
+n=17: distinct k count=11
+n=16: distinct k count=11
+n=15: distinct k count=10
+n=14: distinct k count=9
+n=36: distinct k count=8
+n=13: distinct k count=8
+n=12: distinct k count=8
+n=11: distinct k count=6
+n=10: distinct k count=6
+n=9: distinct k count=3
+
+Distinct n counts by k:
+k=3: distinct n count=28
+k=2: distinct n count=28
+k=1: distinct n count=28
+k=6: distinct n count=27
+k=5: distinct n count=27
+k=4: distinct n count=26
+k=8: distinct n count=24
+k=7: distinct n count=24
+k=11: distinct n count=22
+k=9: distinct n count=21
+k=10: distinct n count=20
+k=12: distinct n count=19
+k=13: distinct n count=16
+k=14: distinct n count=15
+k=15: distinct n count=14
+k=17: distinct n count=10
+k=16: distinct n count=10
+k=18: distinct n count=7
+k=19: distinct n count=5
+k=22: distinct n count=4
+k=21: distinct n count=4
+k=23: distinct n count=2
+k=20: distinct n count=2
