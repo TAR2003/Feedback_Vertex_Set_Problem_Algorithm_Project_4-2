@@ -1,6 +1,7 @@
 solver,mean_score,instance_count
 directed_DKMA_heuristic_15,75.8974,200
 directed_DKMA_heuristic_30,76.4942,200
+directed_GNN-KMA_heuristic_30,70.6677,106
 directed_KMA_heuristic_15,75.6944,200
 directed_KMA_heuristic_30,76.3657,200
 directed_KMA_heuristic_60,78.0611,200
