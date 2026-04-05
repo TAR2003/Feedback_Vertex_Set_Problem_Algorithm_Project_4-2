@@ -509,6 +509,7 @@ def run_directed_algorithm_with_timeout(
     gnn_hidden: Optional[int],
     timeout_seconds: int,
     timeout_s: int,
+    gnn_timeout: int,
     early_stop: int,
 ) -> Tuple[Optional[List[int]], Optional[float], Optional[dict], Optional[str]]:
     """
@@ -534,6 +535,7 @@ def run_directed_algorithm_with_timeout(
                 gnn_threshold,
                 gnn_hidden,
                 timeout_seconds,
+                gnn_timeout,
                 early_stop,
             )
             return fvs, elapsed_ms, stage_metrics, None
@@ -570,6 +572,7 @@ def run_directed_algorithm(algo: str, n: int, edges: List[Tuple[int, int]],
                             gnn_threshold: float = 0.2,
                             gnn_hidden: Optional[int] = None,
                             timeout_seconds: int = 600,
+                            gnn_timeout: int = 60,
                             early_stop: int = 20,
                             ) -> Tuple[List[int], float, dict]:
     """Run one directed algorithm. Returns (fvs, elapsed_ms)."""
@@ -599,6 +602,7 @@ def run_directed_algorithm(algo: str, n: int, edges: List[Tuple[int, int]],
             max_gens,
             gnn_threshold=gnn_threshold,
             gnn_hidden_dim=gnn_hidden,
+            gnn_timeout=gnn_timeout,
             max_time_seconds=timeout_seconds,
             early_stop=early_stop,
             return_diagnostics=True,
@@ -612,6 +616,7 @@ def run_directed_algorithm(algo: str, n: int, edges: List[Tuple[int, int]],
             max_gens,
             gnn_threshold=gnn_threshold,
             gnn_hidden_dim=gnn_hidden,
+            gnn_timeout=gnn_timeout,
             max_time_seconds=timeout_seconds,
             early_stop=early_stop,
             return_diagnostics=True,
@@ -641,6 +646,7 @@ def run_directed_algorithm(algo: str, n: int, edges: List[Tuple[int, int]],
 def run_on_file(filepath: str, algo: str, pop_size: int, max_gens: int,
                 gnn_threshold: float = 0.2, gnn_hidden: Optional[int] = None,
                 timeout_seconds: int = 600,
+                gnn_timeout: int = 60,
                 early_stop: int = 20,
                 results_dir: str = "results", result_tag: Optional[str] = None,
                 verbose: bool = True) -> dict:
@@ -699,7 +705,7 @@ def run_on_file(filepath: str, algo: str, pop_size: int, max_gens: int,
             print(f"  Running {alg:4s} (timeout={timeout_s}s) ... ", end="", flush=True)
 
         fvs, elapsed_ms, stage_metrics, error = run_directed_algorithm_with_timeout(
-            alg, n, edges, pop_size, max_gens, gnn_threshold, gnn_hidden, timeout_seconds, timeout_s, early_stop
+            alg, n, edges, pop_size, max_gens, gnn_threshold, gnn_hidden, timeout_seconds, timeout_s, gnn_timeout, early_stop
         )
 
         # Build single-algorithm result row with unified schema.
@@ -812,6 +818,10 @@ def main():
         "--gnn-hidden", type=int, default=None,
         help="[GNN-KMA/GNN-KMA-2/GNN-KMA-3 only] Optional hidden dimension override for loading GNN weights"
     )
+    parser.add_argument(
+        "--gnn-timeout", type=int, default=60,
+        help="Hard wall-clock timeout in seconds for the GNN candidate inference phase (default: 60)"
+    )
 
     args = parser.parse_args()
 
@@ -820,6 +830,9 @@ def main():
         sys.exit(1)
     if args.timeout <= 0:
         print("ERROR: --timeout must be a positive integer")
+        sys.exit(1)
+    if args.gnn_timeout <= 0:
+        print("ERROR: --gnn-timeout must be a positive integer")
         sys.exit(1)
     if args.earlystop <= 0:
         print("ERROR: --earlystop must be a positive integer")
@@ -850,6 +863,7 @@ def main():
                              gnn_threshold=args.gnn_threshold,
                              gnn_hidden=args.gnn_hidden,
                              timeout_seconds=args.timeout,
+                             gnn_timeout=args.gnn_timeout,
                              early_stop=args.earlystop,
                              results_dir=args.results_dir,
                             result_tag=args.result_tag,

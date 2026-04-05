@@ -286,6 +286,7 @@ def run_undirected(
     synthetic_dir: Path,
     synthetic_only: bool,
     track: str,
+    gnn_timeout: int,
 ) -> List[Path]:
     outputs: List[Path] = []
     test_targets: List[Tuple[Path, str | None]] = []
@@ -325,6 +326,8 @@ def run_undirected(
                 str(earlystop),
                 "--gnn-threshold",
                 str(gnn_threshold),
+                "--gnn-timeout",
+                str(gnn_timeout),
             ]
             if result_tag is not None:
                 cmd.extend(["--result-tag", result_tag])
@@ -356,6 +359,7 @@ def run_directed(
     synthetic_dir: Path,
     synthetic_only: bool,
     track: str,
+    gnn_timeout: int,
 ) -> List[Path]:
     outputs: List[Path] = []
     test_targets: List[Tuple[Path, str | None]] = []
@@ -366,7 +370,7 @@ def run_directed(
         test_targets.append((DATA_DIR / "pace2022", None))
 
     if algo == "ALL":
-        algos_to_run = ["BST", "IC", "MA", "KMA", "GNN-KMA", "GNN-KMA-2"]
+        algos_to_run = ["BST", "IC", "MA", "KMA", "GNN-KMA", "GNN-KMA-2", "GNN-KMA-3"]
     elif algo == "PUREALGO":
         algos_to_run = ["BST", "IC", "MA", "KMA"]
     else:
@@ -397,6 +401,8 @@ def run_directed(
                 str(earlystop),
                 "--gnn-threshold",
                 str(gnn_threshold),
+                "--gnn-timeout",
+                str(gnn_timeout),
             ]
             if result_tag is not None:
                 cmd.extend(["--result-tag", result_tag])
@@ -433,7 +439,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--algo",
-        choices=["BST", "IC", "MA", "KMA", "GNN-KMA", "GNN-KMA-2", "ALL", "PUREALGO"],
+        choices=["BST", "IC", "MA", "KMA", "GNN-KMA", "GNN-KMA-2", "GNN-KMA-3", "ALL", "PUREALGO"],
         type=str.upper,
         default="ALL",
         help="Algorithm selection forwarded to benchmark scripts (PUREALGO: BST, IC, MA, KMA)",
@@ -441,6 +447,7 @@ def main() -> None:
     parser.add_argument("--pop", type=int, default=20, help="Population size for MA/KMA/GNN-KMA variants")
     parser.add_argument("--gens", "--gen", type=int, default=100, help="Max generations for MA/KMA/GNN-KMA variants")
     parser.add_argument("--timeout", type=int, default=600, help="Hard wall-clock timeout in seconds for MA/KMA/GNN-KMA variants")
+    parser.add_argument("--gnn-timeout", type=int, default=60, help="Hard wall-clock timeout in seconds for the GNN candidate inference phase (default: 60)")
     parser.add_argument("--earlystop", type=int, default=20, help="Patience / early-stopping generations without improvement (default: 20)")
     parser.add_argument(
         "--threshold",
@@ -590,6 +597,7 @@ def main() -> None:
                 selected_undirected_dir,
                 args.synthetic_only,
                 args.track,
+                args.gnn_timeout,
             )
         )
 
@@ -608,6 +616,7 @@ def main() -> None:
                 selected_directed_dir,
                 args.synthetic_only,
                 args.track,
+                args.gnn_timeout,
             )
         )
 

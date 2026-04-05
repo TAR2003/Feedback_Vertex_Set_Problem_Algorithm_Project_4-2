@@ -407,6 +407,7 @@ def run_algorithm_with_timeout(
     gnn_hidden: int | None,
     timeout_seconds: int,
     timeout_s: int,
+    gnn_timeout: int,
     early_stop: int,
 ) -> Tuple[Optional[List[int]], Optional[float], Optional[dict], Optional[str]]:
     """
@@ -432,6 +433,7 @@ def run_algorithm_with_timeout(
                 gnn_threshold,
                 gnn_hidden,
                 timeout_seconds,
+                gnn_timeout,
                 early_stop,
             )
             return fvs, elapsed_ms, stage_metrics, None
@@ -472,6 +474,7 @@ def run_algorithm(
     gnn_threshold: float = 0.2,
     gnn_hidden: int | None = None,
     timeout_seconds: int = 600,
+    gnn_timeout: int = 60,
     early_stop: int = 20,
 ) -> Tuple[List[int], float, dict]:
     """
@@ -503,6 +506,7 @@ def run_algorithm(
             max_gens,
             gnn_threshold=gnn_threshold,
             gnn_hidden_dim=gnn_hidden,
+            gnn_timeout=gnn_timeout,
             max_time_seconds=timeout_seconds,
             early_stop=early_stop,
             return_diagnostics=True,
@@ -516,6 +520,7 @@ def run_algorithm(
             max_gens,
             gnn_threshold=gnn_threshold,
             gnn_hidden_dim=gnn_hidden,
+            gnn_timeout=gnn_timeout,
             max_time_seconds=timeout_seconds,
             early_stop=early_stop,
             return_diagnostics=True,
@@ -538,6 +543,7 @@ def run_on_file(
     gnn_threshold: float = 0.2,
     gnn_hidden: int | None = None,
     timeout_seconds: int = 600,
+    gnn_timeout: int = 60,
     early_stop: int = 20,
     results_dir: str = "results",
     result_tag: Optional[str] = None,
@@ -597,7 +603,7 @@ def run_on_file(
             print(f"  Running {alg:4s} (timeout={timeout_s}s) ... ", end="", flush=True)
 
         fvs, elapsed_ms, stage_metrics, error = run_algorithm_with_timeout(
-            alg, n, edges, pop_size, max_gens, gnn_threshold, gnn_hidden, timeout_seconds, timeout_s, early_stop
+            alg, n, edges, pop_size, max_gens, gnn_threshold, gnn_hidden, timeout_seconds, timeout_s, gnn_timeout, early_stop
         )
 
         # Build single-algorithm result row with unified schema.
@@ -695,6 +701,10 @@ def main():
         help="Hard wall-clock timeout in seconds for MA/KMA/GNN-KMA solvers (default: 600)"
     )
     parser.add_argument(
+        "--gnn-timeout", type=int, default=60,
+        help="Hard wall-clock timeout in seconds for the GNN candidate inference phase (default: 60)"
+    )
+    parser.add_argument(
         "--earlystop", type=int, default=20,
         help="Patience / early-stopping generations without improvement (default: 20)"
     )
@@ -718,6 +728,9 @@ def main():
         sys.exit(1)
     if args.timeout <= 0:
         print("ERROR: --timeout must be a positive integer")
+        sys.exit(1)
+    if args.gnn_timeout <= 0:
+        print("ERROR: --gnn-timeout must be a positive integer")
         sys.exit(1)
     if args.earlystop <= 0:
         print("ERROR: --earlystop must be a positive integer")
@@ -753,6 +766,7 @@ def main():
             gnn_threshold=args.gnn_threshold,
             gnn_hidden=args.gnn_hidden,
             timeout_seconds=args.timeout,
+            gnn_timeout=args.gnn_timeout,
             early_stop=args.earlystop,
             results_dir=args.results_dir,
             result_tag=args.result_tag,
