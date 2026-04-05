@@ -164,6 +164,47 @@ def plot_percentage_bar_chart(value_map, x_label, title, output_path):
     print(f"Saved plot: {output_path}")
 
 
+def generate_method_success_plots(method_rows, method_name, method_label, plot_dir, summary_output, show_plots=False):
+    rows = method_rows.get(method_name, [])
+    if not rows:
+        print(f"No rows found for {method_label}")
+        return
+
+    success_by_n = calculate_success_percentages(rows, "n")
+    if success_by_n:
+        output_path = plot_dir / f"{method_name}_success_percentage_by_n.png"
+        plot_percentage_bar_chart(
+            success_by_n,
+            "n",
+            f"{method_label} success percentage by n (10-second timeout)",
+            output_path,
+        )
+        if show_plots:
+            plt.show()
+
+        with summary_output.open("a", encoding="utf-8") as out:
+            out.write(f"\n{method_label} success percentage by n (10-second timeout):\n")
+            for value in sorted(success_by_n):
+                out.write(f"n={value}: {success_by_n[value]:.1f}%\n")
+
+    success_by_k = calculate_success_percentages(rows, "k")
+    if success_by_k:
+        output_path = plot_dir / f"{method_name}_success_percentage_by_k.png"
+        plot_percentage_bar_chart(
+            success_by_k,
+            "k",
+            f"{method_label} success percentage by k (10-second timeout)",
+            output_path,
+        )
+        if show_plots:
+            plt.show()
+
+        with summary_output.open("a", encoding="utf-8") as out:
+            out.write(f"\n{method_label} success percentage by k (10-second timeout):\n")
+            for value in sorted(success_by_k):
+                out.write(f"k={value}: {success_by_k[value]:.1f}%\n")
+
+
 def analyze_folder(folder_path, show_plots=False):
     folder = Path(folder_path)
     mode = folder.name
@@ -266,39 +307,8 @@ def analyze_folder(folder_path, show_plots=False):
     plot_value_counts(n_to_distinct_k, "n", f"{mode}_distinct_k_count_by_n.png")
     plot_value_counts(k_to_distinct_n, "k", f"{mode}_distinct_n_count_by_k.png")
 
-    ic_rows = method_rows.get("IC_exact", [])
-    if ic_rows:
-        ic_success_by_n = calculate_success_percentages(ic_rows, "n")
-        if ic_success_by_n:
-            output_path = plot_dir / f"{mode}_ic_success_percentage_by_n.png"
-            plot_percentage_bar_chart(
-                ic_success_by_n,
-                "n",
-                f"IC success percentage by n for {mode}",
-                output_path,
-            )
-            if show_plots:
-                plt.show()
-
-            # append IC success percentages by n to the summary output
-            with summary_output.open("a", encoding="utf-8") as out:
-                out.write("\nIC success percentage by n (10-second timeout):\n")
-                for n_value in sorted(ic_success_by_n):
-                    out.write(f"n={n_value}: {ic_success_by_n[n_value]:.1f}%\n")
-
-        ic_success_by_k = calculate_success_percentages(ic_rows, "k")
-        if ic_success_by_k:
-            output_path = plot_dir / f"{mode}_ic_success_percentage_by_k.png"
-            plot_percentage_bar_chart(
-                ic_success_by_k,
-                "k",
-                f"IC success percentage by k (10-second timeout) for {mode}",
-                output_path,
-            )
-            if show_plots:
-                plt.show()
-    else:
-        print(f"No IC rows found for {mode}")
+    generate_method_success_plots(method_rows, "IC_exact", "IC", plot_dir, summary_output, show_plots=show_plots)
+    generate_method_success_plots(method_rows, "BST_exact", "BST", plot_dir, summary_output, show_plots=show_plots)
 
 
 def main():
