@@ -27,9 +27,8 @@ def load_csv_data(csv_path):
                 continue
             if k == 0:
                 continue
-            # treat runtimes > 10 or non-numeric as timeout for plotting purposes
+            # treat runtimes > 10 or non-numeric as timeout for plotting and success calculations
             timed_out = runtime > 10.0 or runtime == float("inf")
-            # cap runtime for plotting at 10.0 seconds
             plot_runtime = min(runtime, 10.0) if runtime != float("inf") else 10.0
             validity = row.get("validity", "True").strip().lower() in {"true", "1", "yes"}
             rows.append({
@@ -133,6 +132,38 @@ def build_method_column(method):
     return method
 
 
+def calculate_success_percentages(rows, group_key, timed_out_key="timed_out"):
+    counts = defaultdict(lambda: {"total": 0, "success": 0})
+    for row in rows:
+        group_value = row.get(group_key)
+        if group_value is None:
+            continue
+        counts[group_value]["total"] += 1
+        if not row.get(timed_out_key, False):
+            counts[group_value]["success"] += 1
+
+    return {
+        value: (counts[value]["success"] / counts[value]["total"] * 100 if counts[value]["total"] else 0.0)
+        for value in counts
+    }
+
+
+def plot_percentage_bar_chart(value_map, x_label, title, output_path):
+    plt.figure(figsize=(10, 6))
+    keys = sorted(value_map)
+    values = [value_map[k] for k in keys]
+    plt.bar(keys, values, color="#2ca02c")
+    plt.xlabel(x_label)
+    plt.ylabel("Success percentage (%)")
+    plt.ylim(0, 100)
+    plt.title(title)
+    plt.grid(axis="y", linestyle="--", alpha=0.4)
+    plt.tight_layout()
+    plt.savefig(output_path)
+    plt.close()
+    print(f"Saved plot: {output_path}")
+
+
 def analyze_folder(folder_path, show_plots=False):
     folder = Path(folder_path)
     mode = folder.name
@@ -172,10 +203,14 @@ def analyze_folder(folder_path, show_plots=False):
             out.write(f"k={k}: distinct n count={count}\n")
     print(f"Saved summary: {summary_output}")
 
-    def gather_runtime_points(filter_key, filter_value, x_key):
+    def gather_runtime_points(filter_key, filter_value, x_key, runtime_key="runtime", timed_out_key="timed_out"):
         result = {}
         for method, rows in method_rows.items():
-            points = [(r[x_key], r["runtime"], r.get("timed_out", False)) for r in rows if r[filter_key] == filter_value]
+            points = [
+                (r[x_key], r[runtime_key], r.get(timed_out_key, False))
+                for r in rows
+                if r[filter_key] == filter_value
+            ]
             if points:
                 result[method] = points
         return result
@@ -230,6 +265,40 @@ def analyze_folder(folder_path, show_plots=False):
 
     plot_value_counts(n_to_distinct_k, "n", f"{mode}_distinct_k_count_by_n.png")
     plot_value_counts(k_to_distinct_n, "k", f"{mode}_distinct_n_count_by_k.png")
+
+    ic_rows = method_rows.get("IC_exact", [])
+    if ic_rows:
+        ic_success_by_n = calculate_success_percentages(ic_rows, "n")
+        if ic_success_by_n:
+            output_path = plot_dir / f"{mode}_ic_success_percentage_by_n.png"
+            plot_percentage_bar_chart(
+                ic_success_by_n,
+                "n",
+                f"IC success percentage by n for {mode}",
+                output_path,
+            )
+            if show_plots:
+                plt.show()
+
+            # append IC success percentages by n to the summary output
+            with summary_output.open("a", encoding="utf-8") as out:
+                out.write("\nIC success percentage by n (10-second timeout):\n")
+                for n_value in sorted(ic_success_by_n):
+                    out.write(f"n={n_value}: {ic_success_by_n[n_value]:.1f}%\n")
+
+        ic_success_by_k = calculate_success_percentages(ic_rows, "k")
+        if ic_success_by_k:
+            output_path = plot_dir / f"{mode}_ic_success_percentage_by_k.png"
+            plot_percentage_bar_chart(
+                ic_success_by_k,
+                "k",
+                f"IC success percentage by k for {mode}",
+                output_path,
+            )
+            if show_plots:
+                plt.show()
+    else:
+        print(f"No IC rows found for {mode}")
 
 
 def main():
