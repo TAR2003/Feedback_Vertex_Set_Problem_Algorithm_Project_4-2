@@ -81,13 +81,38 @@ def main():
             save_bar(subset, 'solver', 'mean_score', f'PACE 2022 — solvers with {suffix}', f'group_{suffix}_mean_score.png')
 
     # 3) Groups: MA, KMA, DKMA
-    groups = {
-        'MA': lambda s: ('MA' in s and 'KMA' not in s and 'DKMA' not in s),
-        'KMA': lambda s: 'KMA' in s,
-        'DKMA': lambda s: 'DKMA' in s,
-    }
-    for name, pred in groups.items():
-        subset = df[[pred(s) for s in df['solver']]]
+    # 3) Dynamic groups discovered from solver name tokens (auto-detect common model prefixes)
+    def discover_groups(df):
+        import re
+        names = df['solver'].fillna('').astype(str).tolist()
+        token_counts: dict[str,int] = {}
+        name_tokens: list[list[str]] = []
+        for n in names:
+            tokens = [t for t in re.findall(r"[A-Za-z0-9]+", n) if t]
+            name_tokens.append(tokens)
+            for t in tokens:
+                token_counts[t.upper()] = token_counts.get(t.upper(), 0) + 1
+
+        # exclude trivial tokens and numeric suffixes handled earlier
+        exclude = {"SOLVER", "MODEL", "HEURISTIC", "DIRECTED", "UNDIRECTED", "SUMMARY"}
+        numeric_exclude = {"15", "30", "60", "90"}
+
+        # prefer longer tokens first to avoid splitting KMA->MA
+        tokens_sorted = sorted([t for t in token_counts.keys() if t not in exclude and t not in numeric_exclude], key=lambda x: (-len(x), -token_counts[x]))
+
+        groups: dict[str, list[bool]] = {}
+        for tok in tokens_sorted:
+            # require token to appear at least twice to be considered a group
+            if token_counts.get(tok, 0) < 2:
+                continue
+            mask = [tok.lower() in " ".join(ts).lower() for ts in name_tokens]
+            if any(mask):
+                groups[tok] = mask
+        return groups
+
+    groups = discover_groups(df)
+    for name, mask in groups.items():
+        subset = df[[m for m in mask]]
         if not subset.empty:
             save_bar(subset, 'solver', 'mean_score', f'PACE 2022 — {name} solvers', f'models_{name}_mean_score.png')
 
