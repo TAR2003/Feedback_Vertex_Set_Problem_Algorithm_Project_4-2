@@ -21,6 +21,10 @@ import glob
 import os
 import statistics
 import sys
+try:
+    import matplotlib.pyplot as plt
+except Exception:  # optional plotting
+    plt = None
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = SCRIPT_DIR
@@ -273,6 +277,49 @@ def main() -> int:
 
     print(f"\nWrote detailed per-instance scores to: {detailed_csv}")
     print(f"Wrote summary per-solver mean scores to: {summary_csv}")
+
+    # generate a column (bar) graph of mean percentage scores per solver
+    try:
+        if plt is None:
+            raise RuntimeError("matplotlib not available")
+        labels = []
+        means = []
+        stds = []
+        for solver in solvers:
+            values = solver_scores.get(solver, [])
+            if values:
+                labels.append(solver)
+                means.append(statistics.mean(values))
+                stds.append(statistics.pstdev(values) if len(values) > 1 else 0.0)
+        if labels:
+            fig, ax = plt.subplots(figsize=(max(6, len(labels) * 0.6), 4))
+            x = list(range(len(labels)))
+            ax.bar(x, means, yerr=stds, capsize=5, color="C0")
+            ax.set_xticks(x)
+            ax.set_xticklabels(labels, rotation=45, ha="right")
+            ax.set_ylabel("Mean score (%)")
+            ax.set_xlabel("Solver")
+            ax.set_title("Mean normalized scores (100*optimal/fvs)")
+            min_mean = min(means)
+            max_mean = max(means)
+            span = max_mean - min_mean
+            if span <= 1e-6:
+                margin = 1.0
+            else:
+                margin = max(0.5, 0.1 * span)
+            y0 = max(0, min_mean - margin)
+            y1 = min(100, max_mean + margin)
+            ax.set_ylim(y0, y1)
+            for xi, m in zip(x, means):
+                ax.text(xi, m + (y1 - y0) * 0.01, f"{m:.3f}", ha="center", va="bottom", fontsize=8)
+            ax.grid(axis="y", linestyle="--", alpha=0.4)
+            plt.tight_layout()
+            plot_path = os.path.join(DATA_DIR, "summary_scores_bar.png")
+            fig.savefig(plot_path)
+            print(f"Wrote bar chart to: {plot_path}")
+    except Exception as e:
+        print(f"Could not generate plot: {e}")
+
     return 0
 
 
