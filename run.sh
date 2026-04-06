@@ -95,8 +95,10 @@ python3 undirected_results/evaluate_fvs_scores.py
 echo "--- running the pace pipeline ---"
 python3 experiments/benchmark_directed.py --algo MA --test data/pace2022/ --pop 20 --gens 100 --timeout $PACE_TIMEOUT
 python3 experiments/benchmark_directed.py --algo KMA --test data/pace2022/ --pop 20 --gens 100 --timeout $PACE_TIMEOUT
-python3 experiments/benchmark_directed.py --algo GNN-KMA --test data/pace2022/ --pop 20 --gens 100 --timeout $PACE_TIMEOUT
+python3 experiments/benchmark_directed.py --algo GNN-KMA --test data/pace2022/ --pop 20 --gens 100 --timeout $PACE_TIMEOUT 
 python3 experiments/benchmark_directed.py --algo GNN-KMA-2 --test data/pace2022/ --pop 20 --gens 100 --timeout $PACE_TIMEOUT
+python3 experiments/benchmark_directed.py --algo GNN-KMA-3 --test data/pace2022/ --pop 20 --gens 100 --timeout $PACE_TIMEOUT --gnn-threshold 0.85
+
 
 rm -f ./paceresults/*.csv
 cp pace2022_winner.csv paceresults/
