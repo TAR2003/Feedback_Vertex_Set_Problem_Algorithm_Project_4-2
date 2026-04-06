@@ -105,7 +105,15 @@ def main():
             # require token to appear at least twice to be considered a group
             if token_counts.get(tok, 0) < 2:
                 continue
-            mask = [tok.lower() in " ".join(ts).lower() for ts in name_tokens]
+            def token_matches(tokens: list[str]) -> bool:
+                text = " ".join(tokens).lower()
+                if tok.upper() == "KMA" and "gnn" in text:
+                    return False
+                if tok.upper() == "MA" and ("gnn" in text or "kma" in text):
+                    return False
+                return tok.lower() in text
+
+            mask = [token_matches(ts) for ts in name_tokens]
             if any(mask):
                 groups[tok] = mask
         return groups

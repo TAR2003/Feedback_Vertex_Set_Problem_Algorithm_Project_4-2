@@ -1,7 +1,7 @@
-# Complete Operations Guide — FVS Research Project
+# Complete Operations Guide — Feedback_Vertex_Set_Problem_Algorithm_Project_4-2
 
 > Every command you will ever need, in one place.  
-> All commands are run from the **project root** (`FVS_Research_Project/`).
+> All commands are run from the **project root** (`Feedback_Vertex_Set_Problem_Algorithm_Project_4-2/`).
 
 ---
 
@@ -871,4 +871,4 @@ python experiments/run_hybrid.py --graph data/raw_directed/sample_pace.gr       
 
 ---
 
-*Group 06 — FVS Research Project*
+*Group 06 — Feedback_Vertex_Set_Problem_Algorithm_Project_4-2*
