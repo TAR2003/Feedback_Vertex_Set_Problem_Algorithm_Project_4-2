@@ -51,6 +51,5 @@ rm -f "$PACE_TAR"
 # python data/setup_benchmark_inputs.py --total-undirected 100 --total-directed 100 --seed 7
 
 echo "--- Remove all the previous csv files from the results folder ---"
-rm -f ./results/*.csv
 
 echo "--- [4/5] Running the PACE benchmark pipeline ---"
