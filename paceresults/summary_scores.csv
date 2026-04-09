@@ -3,6 +3,7 @@ directed_DKMA_heuristic_15,75.8974,200
 directed_DKMA_heuristic_30,76.4942,200
 directed_GNN-KMA-2_heuristic_30,76.853,200
 directed_GNN-KMA-3_0.85_heuristic_30,78.6449,200
+directed_GNN-KMA-3_0.90_heuristic,76.9327,200
 directed_GNN-KMA-3_0.95_heuristic_30,77.751,200
 directed_GNN-KMA-3_small_0.9_heuristic_30,76.2655,200
 directed_GNN-KMA_heuristic_30,76.9814,200
