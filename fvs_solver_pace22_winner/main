@@ -1,0 +1,39 @@
+#!/bin/bash
+# Main executable script to compile the codebase and run FVS on input folder
+set -e
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+WORK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+INPUT_DIR="$WORK_DIR/input"
+OUTPUT_DIR="$WORK_DIR/output"
+
+# Compile the C++ program first if not compiled
+if [ ! -f "$WORK_DIR/fvs_solver" ]; then
+    echo "Compiling the C++ codebase using CMake..."
+    mkdir -p "$REPO_ROOT/build_linux"
+    cd "$REPO_ROOT/build_linux"
+    cmake .. -DCMAKE_BUILD_TYPE=Release >/dev/null
+    make -j$(nproc) >/dev/null
+    cd "$WORK_DIR"
+    cp "$REPO_ROOT/build_linux/DiVerSeS" "$WORK_DIR/fvs_solver"
+    echo "Compilation complete!"
+fi
+
+mkdir -p "$OUTPUT_DIR"
+
+# Run the solver for each file in input/
+for infile in "$INPUT_DIR"/*; do
+    if [ -f "$infile" ]; then
+        filename=$(basename -- "$infile")
+        echo "Processing $filename..."
+        
+        # Run FVS algorithm: it reads from stdin, writes answer to stdout 
+        # (and stderr for logs, so we silence stderr).
+        "$WORK_DIR/fvs_solver" < "$infile" > "$OUTPUT_DIR/$filename" 2>/dev/null
+        
+        echo "Finished $filename."
+    fi
+done
+
+echo "All inputs processed. Results are in $OUTPUT_DIR."

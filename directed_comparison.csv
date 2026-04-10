@@ -1,2 +1,0 @@
-file,n,m,BST_size,BST_ms,BST_valid,IC_size,IC_ms,IC_valid,MA_size,MA_ms,MA_valid,KME_size,KME_ms,KME_valid,GNN-KME_size,GNN-KME_ms,GNN-KME_valid
-dgraph_00008.txt,24,113,TIMEOUT,TIMEOUT,TIMEOUT,11,3344.18,True,11,195.43,True,11,167.46,True,TIMEOUT,TIMEOUT,TIMEOUT
