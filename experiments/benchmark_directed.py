@@ -450,6 +450,30 @@ def _validate_cuda_requested_or_exit(gnn_device: str) -> None:
         sys.exit(1)
 
 
+def _torch_runtime_diagnostics() -> str:
+    """Short diagnostics for interpreter + torch runtime backend."""
+    py_exec = sys.executable
+    try:
+        import torch  # type: ignore
+    except ImportError:
+        return f"python={py_exec} | torch=NOT_INSTALLED"
+
+    tver = getattr(torch, "__version__", "unknown")
+    cver = getattr(torch.version, "cuda", None)
+    avail = torch.cuda.is_available()
+    dcnt = torch.cuda.device_count()
+    gpu = "none"
+    if avail and dcnt > 0:
+        try:
+            gpu = torch.cuda.get_device_name(0)
+        except Exception:
+            gpu = "unknown-gpu"
+    return (
+        f"python={py_exec} | torch={tver} | torch_cuda={cver} "
+        f"| cuda_available={avail} | device_count={dcnt} | gpu={gpu}"
+    )
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Algorithm Runners
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1123,6 +1147,9 @@ def main():
         sys.exit(1)
 
     # ── Run benchmarks ───────────────────────────────────────────────────────
+    if not args.quiet:
+        print(f"Runtime diagnostics: {_torch_runtime_diagnostics()}")
+
     all_results = []
     for filepath in files:
         result = run_on_file(filepath, args.algo, args.pop, args.gens,

@@ -1,6 +1,7 @@
---extra-index-url https://download.pytorch.org/whl/cpu
-# Tell pip where to find the matching PyG C++ libraries for PyTorch 2.2.0 (CPU)
---find-links https://data.pyg.org/whl/torch-2.2.0+cpu.html
+# NOTE:
+# Do not force CPU-only PyTorch wheels here.
+# In GPU cloud environments, install a CUDA-enabled torch build first,
+# then install the rest of this file.
 
 # ─── Core (required for C++ engine + benchmarks) ──────────────────────────────
 cmake>=3.26.0
@@ -11,18 +12,14 @@ matplotlib>=3.5.0         # Plotting benchmark results
 numpy>=1.24.0,<2.0.0            # Numerical arrays for data processing and ML
 
 # ─── GNN Training Pipeline and optional ML dependencies ───────────────────────
-# CRITICAL: Torch must be pinned so the --find-links URL above works correctly
 torch==2.2.0
 torchvision==0.17.0
 torchaudio==2.2.0
 torch-geometric>=2.0.0
 
-# PyG C++ Extensions (This fixes your NeighborLoader / pyg-lib error!)
-pyg-lib
-torch-scatter
-torch-sparse
-torch-cluster
-torch-spline-conv
+# Optional PyG C++ extensions (install separately for best performance):
+#   pyg-lib, torch-scatter, torch-sparse, torch-cluster, torch-spline-conv
+# These require torch/CUDA-matched wheels from https://data.pyg.org.
 
 ogb>=1.3.6               # Open Graph Benchmark dataset downloader
 
