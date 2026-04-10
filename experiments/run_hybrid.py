@@ -221,6 +221,43 @@ def _is_cuda_oom_error(ex):
     return "out of memory" in msg and "cuda" in msg
 
 
+def set_runtime_gnn_options(gnn_device=None, feature_device=None, gnn_batch_size=None, verbose=False):
+    """Configure runtime controls used by benchmark/pipeline callers."""
+    global GNN_DEVICE_PREF, FEATURE_DEVICE_PREF, GNN_BATCH_SIZE
+    if gnn_device is not None:
+        GNN_DEVICE_PREF = str(gnn_device)
+    if feature_device is not None:
+        FEATURE_DEVICE_PREF = str(feature_device)
+    if gnn_batch_size is not None:
+        GNN_BATCH_SIZE = max(1, int(gnn_batch_size))
+
+    torch = get_torch()
+    resolved = _resolve_torch_device(GNN_DEVICE_PREF)
+    backend = "cpu"
+    gpu_name = ""
+    if torch is not None and resolved is not None and resolved.type == "cuda" and torch.cuda.is_available():
+        backend = "cuda"
+        try:
+            gpu_name = torch.cuda.get_device_name(0)
+        except Exception:
+            gpu_name = "unknown-gpu"
+
+    info = {
+        "gnn_device_pref": GNN_DEVICE_PREF,
+        "feature_device_pref": FEATURE_DEVICE_PREF,
+        "gnn_batch_size": int(GNN_BATCH_SIZE),
+        "resolved_backend": backend,
+        "gpu_name": gpu_name,
+    }
+    if verbose:
+        extra = f" ({gpu_name})" if gpu_name else ""
+        print(
+            f"  [GNN] Runtime backend: {backend.upper()}{extra} "
+            f"| gnn_device={GNN_DEVICE_PREF} | feature_device={FEATURE_DEVICE_PREF} | batch={GNN_BATCH_SIZE}"
+        )
+    return info
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Kernelization Helpers (for GNN-on-kernel GNN-KMA mode)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1114,6 +1151,16 @@ def _run_gnn_full_inference(
         if runtime_device is None:
             return None
 
+        torch_device_note = runtime_device.type.upper()
+        if runtime_device.type == "cuda" and torch.cuda.is_available():
+            try:
+                dev_name = torch.cuda.get_device_name(runtime_device)
+            except Exception:
+                dev_name = "unknown-gpu"
+            print(f"  {label} Using backend: {torch_device_note} ({dev_name})")
+        else:
+            print(f"  {label} Using backend: {torch_device_note}")
+
         model = model.to(runtime_device)
         model.eval()
         feats = feat_fn(n, edges, gnn_start_time=gnn_start_time, gnn_timeout=gnn_timeout)
@@ -1295,6 +1342,11 @@ def run_gnn_directed_v3_probs(n, edges, hidden_dim=None, gnn_timeout=60):
     # and force pure KMA fallback upstream.
     timeout_s = max(1, int(math.ceil(float(gnn_timeout))))
     start_method = "fork" if "fork" in mp.get_all_start_methods() else "spawn"
+
+    # On Windows/spawn, nested workers are not picklable; run inline instead.
+    if start_method != "fork":
+        return _run_inner_v3_probs(n, edges, hidden_dim, gnn_timeout)
+
     ctx = mp.get_context(start_method)
     out_q: mp.Queue = ctx.Queue(maxsize=1)
 
