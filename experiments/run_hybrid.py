@@ -77,9 +77,9 @@ NeighborLoader = None
 PygData = None
 
 # Runtime inference controls (overridden by CLI in main()).
-GNN_DEVICE_PREF = "auto"   # auto|cuda|cpu
+GNN_DEVICE_PREF = "cpu"   # auto|cuda|cpu
 GNN_BATCH_SIZE = 2048
-FEATURE_DEVICE_PREF = "auto"  # auto|cuda|cpu
+FEATURE_DEVICE_PREF = "cpu"  # auto|cuda|cpu
 
 try:
     import networkx as nx
@@ -3157,12 +3157,12 @@ def main():
         help="Hard wall-clock timeout in seconds for the GNN phase only (default: 60)"
     )
     parser.add_argument(
-        "--gnn-device", choices=["auto", "cuda", "cpu"], default="auto",
-        help="Inference device for GNN forward pass (default: auto)"
+        "--gnn-device", choices=["auto", "cuda", "cpu"], default="cpu",
+        help="Inference device for GNN forward pass (default: cpu)"
     )
     parser.add_argument(
-        "--feature-device", choices=["auto", "cuda", "cpu"], default="auto",
-        help="Preferred device/backend hint for feature engineering (default: auto)"
+        "--feature-device", choices=["auto", "cuda", "cpu"], default="cpu",
+        help="Preferred device/backend hint for feature engineering (default: cpu)"
     )
     parser.add_argument(
         "--gnn-batch-size", type=int, default=2048,

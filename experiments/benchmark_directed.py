@@ -1074,12 +1074,12 @@ def main():
         help="Hard wall-clock timeout in seconds for the GNN candidate inference phase (default: 60)"
     )
     parser.add_argument(
-        "--gnn-device", choices=["auto", "cuda", "cpu"], default="cuda",
-        help="Preferred GNN inference backend (default: cuda)"
+        "--gnn-device", choices=["auto", "cuda", "cpu"], default="cpu",
+        help="Preferred GNN inference backend (default: cpu)"
     )
     parser.add_argument(
-        "--feature-device", choices=["auto", "cuda", "cpu"], default="cuda",
-        help="Preferred feature-engineering backend hint (default: cuda)"
+        "--feature-device", choices=["auto", "cuda", "cpu"], default="cpu",
+        help="Preferred feature-engineering backend hint (default: cpu)"
     )
     parser.add_argument(
         "--gnn-batch-size", type=int, default=2048,
