@@ -7,9 +7,16 @@ WORK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 INPUT_DIR="$WORK_DIR/input"
 OUTPUT_DIR="$WORK_DIR/output"
+LOG_DIR="$WORK_DIR/logs"
 
-# Compile the C++ program first if not compiled
-if [ ! -f "$WORK_DIR/fvs_solver" ]; then
+# Controls:
+# REBUILD_SOLVER=1 (default) rebuilds the solver before each run.
+# PER_FILE_TIMEOUT_SEC sets timeout per input (default 900 seconds).
+REBUILD_SOLVER="${REBUILD_SOLVER:-1}"
+PER_FILE_TIMEOUT_SEC="${PER_FILE_TIMEOUT_SEC:-900}"
+
+# Compile the C++ program if requested (default) or if missing
+if [ "$REBUILD_SOLVER" = "1" ] || [ ! -f "$WORK_DIR/fvs_solver" ]; then
     echo "Compiling the C++ codebase using CMake..."
     mkdir -p "$REPO_ROOT/build_linux"
     cd "$REPO_ROOT/build_linux"
@@ -21,19 +28,61 @@ if [ ! -f "$WORK_DIR/fvs_solver" ]; then
 fi
 
 mkdir -p "$OUTPUT_DIR"
+mkdir -p "$LOG_DIR"
+
+total=0
+ok=0
+timed_out=0
+failed=0
+failed_list=()
 
 # Run the solver for each file in input/
 for infile in "$INPUT_DIR"/*; do
     if [ -f "$infile" ]; then
+        total=$((total + 1))
         filename=$(basename -- "$infile")
+
+        # Resume mode: skip files that already have a non-empty output.
+        if [ -s "$OUTPUT_DIR/$filename" ]; then
+            echo "Skipping $filename (already done)."
+            ok=$((ok + 1))
+            continue
+        fi
+
         echo "Processing $filename..."
-        
-        # Run FVS algorithm: it reads from stdin, writes answer to stdout 
-        # (and stderr for logs, so we silence stderr).
-        "$WORK_DIR/fvs_solver" < "$infile" > "$OUTPUT_DIR/$filename" 2>/dev/null
-        
-        echo "Finished $filename."
+
+        # Run with timeout so hard instances do not block the whole batch.
+        tmp_out="$OUTPUT_DIR/$filename.tmp"
+        rm -f "$tmp_out"
+        set +e
+        timeout "$PER_FILE_TIMEOUT_SEC" "$WORK_DIR/fvs_solver" < "$infile" > "$tmp_out" 2>"$LOG_DIR/$filename.err"
+        rc=$?
+        set -e
+
+        if [ $rc -eq 0 ]; then
+            mv -f "$tmp_out" "$OUTPUT_DIR/$filename"
+            ok=$((ok + 1))
+            echo "Finished $filename."
+        elif [ $rc -eq 124 ]; then
+            rm -f "$tmp_out"
+            timed_out=$((timed_out + 1))
+            failed_list+=("$filename (timeout)")
+            echo "Timed out $filename after ${PER_FILE_TIMEOUT_SEC}s."
+        else
+            rm -f "$tmp_out"
+            failed=$((failed + 1))
+            failed_list+=("$filename (exit $rc)")
+            echo "Failed $filename (exit $rc). See logs/$filename.err"
+        fi
     fi
 done
 
 echo "All inputs processed. Results are in $OUTPUT_DIR."
+echo "Summary: total=$total, ok=$ok, timed_out=$timed_out, failed=$failed"
+
+if [ ${#failed_list[@]} -gt 0 ]; then
+    echo "Problematic files:"
+    for x in "${failed_list[@]}"; do
+        echo "  - $x"
+    done
+fi

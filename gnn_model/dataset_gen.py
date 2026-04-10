@@ -3,9 +3,8 @@
 Generate PT datasets for GNN training from exact and/or heuristic tracks.
 
 Track behavior:
-- exact_track: label with IC solver
-- heuristic_track: label with KMA solver using a 60-second MA-stage timeout
-    (KMA returns best-so-far at timeout)
+- exact_track: label with PACE22 winner solver
+- heuristic_track: label with PACE22 winner solver
 
 Output layout:
         gnn_model/datasets/pt/<family>/<track>/<category>/*.pt
@@ -20,10 +19,9 @@ import argparse
 import csv
 import datetime
 import math
-import multiprocessing as mp
-import queue
 import random
 import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -94,10 +92,13 @@ DIRECTED_WEIGHTS: Dict[str, float] = {
     "dags": 0.15,
 }
 
-SOLVER_TIMEOUT_SECONDS = 30
+SOLVER_TIMEOUT_SECONDS = 10
 KMA_POP_SIZE = 20
 KMA_MAX_GENS = 100
 KMA_EARLY_STOP = 20
+
+PACE_SOLVER_DIR = PROJECT_ROOT / "fvs_solver_pace22_winner"
+PACE_SOLVER_BIN = PACE_SOLVER_DIR / "fvs_solver"
 
 
 class SolverTimeoutError(RuntimeError):
@@ -106,6 +107,10 @@ class SolverTimeoutError(RuntimeError):
 
 class InvalidFVSResultError(RuntimeError):
     """Raised when a solver returns an invalid FVS set."""
+
+
+class SolverExecutionError(RuntimeError):
+    """Raised when the primary and fallback solvers both fail."""
 
 
 class AggregateProgress:
@@ -144,20 +149,48 @@ class AggregateProgress:
         )
 
 
-def _solver_worker(
-    graph_type: str,
-    n: int,
-    edges: List[Tuple[int, int]],
-    out_q: mp.Queue,
-) -> None:
-    try:
-        if graph_type == "undirected":
-            fvs = solve_undirected(n, edges)
-        else:
-            fvs = solve_directed(n, edges)
-        out_q.put(("ok", fvs))
-    except Exception as exc:  # pragma: no cover - defensive worker path
-        out_q.put(("err", f"{type(exc).__name__}: {exc}"))
+def _to_wsl_path(path: Path) -> str:
+    resolved = path.resolve()
+    as_posix = resolved.as_posix()
+    if ":/" not in as_posix:
+        return as_posix
+    drive, tail = as_posix.split(":/", 1)
+    return f"/mnt/{drive.lower()}/{tail}"
+
+
+def _pace_solver_command() -> List[str]:
+    if not PACE_SOLVER_BIN.exists():
+        raise FileNotFoundError(f"PACE22 solver binary not found: {PACE_SOLVER_BIN}")
+    if sys.platform.startswith("win"):
+        return ["wsl", _to_wsl_path(PACE_SOLVER_BIN)]
+    return [str(PACE_SOLVER_BIN)]
+
+
+def _format_solver_input(graph_type: str, n: int, edges: List[Tuple[int, int]]) -> str:
+    directed = 1 if graph_type == "directed" else 0
+    lines = [
+        "# format: edge_list_v1",
+        f"# directed: {directed}",
+        f"p edge {n} {len(edges)}",
+    ]
+    lines.extend(f"{u} {v}" for u, v in edges)
+    return "\n".join(lines) + "\n"
+
+
+def _parse_solver_output(stdout: str) -> List[int]:
+    fvs: List[int] = []
+    seen: Set[int] = set()
+    for line in stdout.splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        tok = s.split()[0]
+        if tok.lstrip("-").isdigit():
+            v = int(tok)
+            if v not in seen:
+                seen.add(v)
+                fvs.append(v)
+    return fvs
 
 
 def _solve_with_timeout(
@@ -166,31 +199,44 @@ def _solve_with_timeout(
     edges: List[Tuple[int, int]],
     timeout_seconds: int,
 ) -> List[int]:
-    # Use a subprocess so hung/native solver calls can be forcefully terminated.
-    start_method = "fork" if "fork" in mp.get_all_start_methods() else "spawn"
-    ctx = mp.get_context(start_method)
-    out_q: mp.Queue = ctx.Queue(maxsize=1)
-    proc = ctx.Process(
-        target=_solver_worker,
-        args=(graph_type, n, edges, out_q),
-        daemon=True,
-    )
-    proc.start()
-    proc.join(timeout_seconds)
+    def _fallback_solve() -> List[int]:
+        # Fallback path prevents one crashing instance from aborting the full dataset build.
+        if graph_type == "undirected":
+            return solve_undirected(n, edges)
+        return solve_directed(n, edges)
 
-    if proc.is_alive():
-        proc.terminate()
-        proc.join()
-        raise SolverTimeoutError(f"solver exceeded {timeout_seconds}s")
-
+    solver_input = _format_solver_input(graph_type, n, edges)
+    cmd = _pace_solver_command()
     try:
-        status, payload = out_q.get_nowait()
-    except queue.Empty as exc:
-        raise RuntimeError("solver process ended without returning a result") from exc
+        proc = subprocess.run(
+            cmd,
+            input=solver_input,
+            text=True,
+            capture_output=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise SolverTimeoutError(f"solver exceeded {timeout_seconds}s") from exc
+    except FileNotFoundError as exc:
+        try:
+            return _fallback_solve()
+        except Exception as fb_exc:  # pragma: no cover - defensive fallback path
+            raise SolverExecutionError(
+                "Failed to launch PACE22 solver (is WSL installed on Windows?) and fallback failed"
+            ) from fb_exc
 
-    if status == "ok":
-        return payload
-    raise RuntimeError(f"solver process failed: {payload}")
+    if proc.returncode != 0:
+        stderr = (proc.stderr or "").strip()
+        tail = "\n".join(stderr.splitlines()[-10:]) if stderr else "<no stderr output>"
+        try:
+            return _fallback_solve()
+        except Exception as fb_exc:  # pragma: no cover - defensive fallback path
+            raise SolverExecutionError(
+                f"PACE22 solver failed with exit code {proc.returncode}: {tail}; fallback failed"
+            ) from fb_exc
+
+    return _parse_solver_output(proc.stdout or "")
 
 
 def _normalize_edges(edges: Iterable[Tuple[int, int]], directed: bool) -> List[Tuple[int, int]]:
@@ -727,31 +773,12 @@ def _build_pt_sample(
         else:
             feats = compute_node_features_directed(n, edges)
 
-    if track == HEURISTIC_TRACK:
-        if graph_type == "undirected":
-            fvs = solve_undirected_kma(
-                n,
-                edges,
-                timeout_seconds=solver_timeout_seconds,
-                pop_size=kma_pop_size,
-                max_gens=kma_max_gens,
-                early_stop=kma_early_stop,
-            )
-        else:
-            fvs = solve_directed_kma(
-                n,
-                edges,
-                timeout_seconds=solver_timeout_seconds,
-                pop_size=kma_pop_size,
-                max_gens=kma_max_gens,
-                early_stop=kma_early_stop,
-            )
-    else:
-        fvs = _solve_with_timeout(graph_type, n, edges, solver_timeout_seconds)
+    # Both exact and heuristic tracks use the same PACE22 winner solver.
+    fvs = _solve_with_timeout(graph_type, n, edges, solver_timeout_seconds)
 
     if not validate_fvs_solution(graph_type, n, edges, fvs):
         raise InvalidFVSResultError(
-            f"invalid FVS produced by {'kma' if track == HEURISTIC_TRACK else 'ic'} solver"
+            "invalid FVS produced by PACE22 winner solver"
         )
 
     x = torch.tensor(feats, dtype=torch.float)
@@ -795,7 +822,7 @@ def _csv_headers() -> List[str]:
         "track",
         "category",
         "solver",
-        "status",  # 'completed' or 'timeout' or 'invalid'
+        "status",  # 'completed' or 'timeout' or 'invalid' or 'solver_error'
         "fvs_size",
         "timestamp",
         "feature_set",
@@ -958,7 +985,7 @@ def _generate_bucket_from_sources(
         n, edges = _parse_edge_list_txt(src_path)
         edges = _normalize_edges(edges, directed=(graph_type == "directed"))
 
-        solver_name = "kma" if track == HEURISTIC_TRACK else "ic"
+        solver_name = "pace22_winner"
         _log(
             f"  [{family}/{track}/{category}] graph {idx}/{total} "
             f"start | n={n} m={len(edges)} solver={solver_name} source={src_path.name}"
@@ -1009,6 +1036,38 @@ def _generate_bucket_from_sources(
                 solver=solver_name,
                 source_file=src_path.name,
                 status="invalid",
+                fvs_size=0,
+            )
+            existing_used += 1
+            progress.advance(track)
+            continue
+        except SolverExecutionError as exc:
+            dt = time.perf_counter() - t0
+            _log(f"    [SOLVER-ERROR] {dt:.2f}s | source={src_path.name} | reason={exc}")
+            _save_csv_record(
+                variant=variant,
+                family=family,
+                track=track,
+                category=category,
+                solver=solver_name,
+                source_file=src_path.name,
+                status="solver_error",
+                fvs_size=0,
+            )
+            existing_used += 1
+            progress.advance(track)
+            continue
+        except RuntimeError as exc:
+            dt = time.perf_counter() - t0
+            _log(f"    [SOLVER-ERROR] {dt:.2f}s | source={src_path.name} | reason={exc}")
+            _save_csv_record(
+                variant=variant,
+                family=family,
+                track=track,
+                category=category,
+                solver=solver_name,
+                source_file=src_path.name,
+                status="solver_error",
                 fvs_size=0,
             )
             existing_used += 1
@@ -1155,26 +1214,12 @@ def main() -> None:
         "--solver-timeout",
         type=int,
         default=SOLVER_TIMEOUT_SECONDS,
-        help="Solver timeout in seconds. For heuristic track, passed to KMA as MA-stage timeout.",
+        help="PACE22 winner solver timeout in seconds (used for both exact and heuristic tracks).",
     )
-    parser.add_argument(
-        "--kma-pop",
-        type=int,
-        default=KMA_POP_SIZE,
-        help="KMA population size for heuristic track labels",
-    )
-    parser.add_argument(
-        "--kma-gens",
-        type=int,
-        default=KMA_MAX_GENS,
-        help="KMA max generations for heuristic track labels",
-    )
-    parser.add_argument(
-        "--kma-early-stop",
-        type=int,
-        default=KMA_EARLY_STOP,
-        help="KMA early-stop generations for heuristic track labels",
-    )
+    # Backward-compatible no-op flags kept so older scripts do not break.
+    parser.add_argument("--kma-pop", type=int, default=KMA_POP_SIZE, help=argparse.SUPPRESS)
+    parser.add_argument("--kma-gens", type=int, default=KMA_MAX_GENS, help=argparse.SUPPRESS)
+    parser.add_argument("--kma-early-stop", type=int, default=KMA_EARLY_STOP, help=argparse.SUPPRESS)
     args = parser.parse_args()
 
     if not HAS_TORCH:
@@ -1190,12 +1235,6 @@ def main() -> None:
 
     progress_every = max(1, args.progress_every)
     solver_timeout_seconds = max(1, args.solver_timeout)
-    if args.kma_pop <= 0:
-        raise ValueError("--kma-pop must be > 0")
-    if args.kma_gens <= 0:
-        raise ValueError("--kma-gens must be > 0")
-    if args.kma_early_stop < 0:
-        raise ValueError("--kma-early-stop must be >= 0")
 
     if args.track == "exact":
         tracks: Sequence[str] = (EXACT_TRACK,)
