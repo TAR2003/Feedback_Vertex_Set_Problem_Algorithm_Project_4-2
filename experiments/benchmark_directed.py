@@ -429,6 +429,27 @@ def _describe_runtime_backend(gnn_device: str) -> str:
     return "CPU (no CUDA detected)"
 
 
+def _validate_cuda_requested_or_exit(gnn_device: str) -> None:
+    """Fail fast when user explicitly requests CUDA but runtime cannot provide it."""
+    if (gnn_device or "auto").lower() != "cuda":
+        return
+    try:
+        import torch  # type: ignore
+    except ImportError:
+        print("ERROR: --gnn-device=cuda requested, but PyTorch is not installed.")
+        print("       Install CUDA-enabled PyTorch or use --gnn-device cpu.")
+        sys.exit(1)
+
+    if not torch.cuda.is_available():
+        build = getattr(torch.version, "cuda", None)
+        build_msg = f"torch.version.cuda={build}" if build is not None else "CPU-only PyTorch build"
+        print("ERROR: --gnn-device=cuda requested, but CUDA is unavailable in current Python runtime.")
+        print(f"       Details: {build_msg}, device_count={torch.cuda.device_count()}")
+        print("       This indicates wrong interpreter or CPU-only torch wheel.")
+        print("       Use a CUDA-enabled Python environment, then rerun the benchmark.")
+        sys.exit(1)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Algorithm Runners
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1083,6 +1104,8 @@ def main():
     if args.dynkern_every <= 0:
         print("ERROR: --dynkern-every must be a positive integer")
         sys.exit(1)
+
+    _validate_cuda_requested_or_exit(args.gnn_device)
 
     # ── Collect input files ──────────────────────────────────────────────────
     test_path = Path(args.test)

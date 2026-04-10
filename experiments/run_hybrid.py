@@ -221,6 +221,25 @@ def _is_cuda_oom_error(ex):
     return "out of memory" in msg and "cuda" in msg
 
 
+def validate_cuda_runtime():
+    """Return (ok, message) for CUDA readiness in current Python runtime."""
+    torch = get_torch()
+    if torch is None:
+        return False, "PyTorch is not installed in this environment."
+    if not torch.cuda.is_available():
+        build = getattr(torch.version, "cuda", None)
+        build_msg = f"torch.version.cuda={build}" if build is not None else "CPU-only PyTorch build"
+        return False, (
+            "CUDA is unavailable in this Python runtime "
+            f"({build_msg}, device_count={torch.cuda.device_count()})."
+        )
+    try:
+        name = torch.cuda.get_device_name(0)
+    except Exception:
+        name = "unknown-gpu"
+    return True, f"CUDA ready: {name}"
+
+
 def set_runtime_gnn_options(gnn_device=None, feature_device=None, gnn_batch_size=None, verbose=False):
     """Configure runtime controls used by benchmark/pipeline callers."""
     global GNN_DEVICE_PREF, FEATURE_DEVICE_PREF, GNN_BATCH_SIZE
@@ -3214,6 +3233,13 @@ def main():
     if args.gnn_batch_size <= 0:
         print("ERROR: --gnn-batch-size must be a positive integer")
         sys.exit(1)
+
+    if args.gnn_device == "cuda":
+        ok_cuda, cuda_msg = validate_cuda_runtime()
+        if not ok_cuda:
+            print(f"ERROR: --gnn-device=cuda requested, but {cuda_msg}")
+            print("       Use a CUDA-enabled PyTorch environment, or pass --gnn-device cpu.")
+            sys.exit(1)
 
     global GNN_DEVICE_PREF, GNN_BATCH_SIZE, FEATURE_DEVICE_PREF
     GNN_DEVICE_PREF = args.gnn_device
