@@ -685,7 +685,10 @@ def _load_model_with_checkpoint(model_cls, weights_path, directed=False, hidden_
     if torch is None:
         return None, None
     
-    ckpt = torch.load(weights_path, map_location="cpu")
+    try:
+        ckpt = torch.load(weights_path, map_location="cpu", weights_only=True)
+    except TypeError:
+        ckpt = torch.load(weights_path, map_location="cpu")
     state_dict = _extract_state_dict(ckpt)
 
     inferred_hidden = _infer_hidden_dim(state_dict, directed=directed)
@@ -1357,52 +1360,9 @@ def run_gnn_directed_v3_probs(n, edges, hidden_dim=None, gnn_timeout=60):
             print(f"  [GNN-3] Failed to load or run v3 model: {ex}")
             return None
 
-    # Strict wall-clock cutoff for v3 GNN phase: hard-stop subprocess at timeout
-    # and force pure KMA fallback upstream.
-    timeout_s = max(1, int(math.ceil(float(gnn_timeout))))
-    start_method = "fork" if "fork" in mp.get_all_start_methods() else "spawn"
-
-    # On Windows/spawn, nested workers are not picklable; run inline instead.
-    if start_method != "fork":
-        return _run_inner_v3_probs(n, edges, hidden_dim, gnn_timeout)
-
-    ctx = mp.get_context(start_method)
-    out_q: mp.Queue = ctx.Queue(maxsize=1)
-
-    def _worker(n_w, edges_w, hidden_w, timeout_w, q_w):
-        try:
-            q_w.put(("ok", _run_inner_v3_probs(n_w, edges_w, hidden_w, timeout_w)))
-        except Exception as ex:
-            q_w.put(("err", f"{type(ex).__name__}: {ex}"))
-
-    proc = ctx.Process(
-        target=_worker,
-        args=(n, edges, hidden_dim, gnn_timeout, out_q),
-        daemon=True,
-    )
-    proc.start()
-    proc.join(timeout=timeout_s)
-
-    if proc.is_alive():
-        proc.terminate()
-        proc.join(timeout=1.0)
-        if proc.is_alive() and hasattr(proc, "kill"):
-            proc.kill()
-            proc.join(timeout=1.0)
-        _warn_gnn_timeout(timeout_s)
-        return None
-
-    try:
-        status, payload = out_q.get_nowait()
-    except queue.Empty:
-        print("  [GNN-3] GNN worker returned no result; falling back to pure KMA.")
-        return None
-
-    if status == "ok":
-        return payload
-
-    print(f"  [GNN-3] Worker failed: {payload}. Falling back to pure KMA.")
-    return None
+    # IMPORTANT: CUDA cannot be safely re-initialized in forked subprocesses.
+    # Execute v3 inference inline and rely on internal timeout checks.
+    return _run_inner_v3_probs(n, edges, hidden_dim, gnn_timeout)
 
 
 def run_gnn_undirected_probs(n, edges, hidden_dim=None, gnn_timeout=60):
