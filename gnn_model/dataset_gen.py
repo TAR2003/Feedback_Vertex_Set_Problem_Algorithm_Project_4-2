@@ -805,6 +805,10 @@ def _build_pt_sample(
     if not HAS_TORCH:
         raise RuntimeError("torch and torch_geometric are required for PT generation")
 
+    # Run the timeout-guarded solver first so hard time limits apply immediately
+    # for each graph before any potentially expensive feature engineering.
+    fvs = _solve_with_timeout(graph_type, n, edges, solver_timeout_seconds)
+
     if variant == "v3":
         if not HAS_FEAT_V3:
             raise ImportError("feature_engineering_v3.py not found; run from gnn_model/ directory")
@@ -822,9 +826,6 @@ def _build_pt_sample(
             feats = compute_node_features_undirected(n, edges)
         else:
             feats = compute_node_features_directed(n, edges)
-
-    # Both exact and heuristic tracks use the same PACE22 winner solver.
-    fvs = _solve_with_timeout(graph_type, n, edges, solver_timeout_seconds)
 
     if not validate_fvs_solution(graph_type, n, edges, fvs):
         raise InvalidFVSResultError(
