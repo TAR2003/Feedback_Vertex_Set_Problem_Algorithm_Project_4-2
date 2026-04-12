@@ -201,6 +201,42 @@ def _solve_with_timeout(
     edges: List[Tuple[int, int]],
     timeout_seconds: int,
 ) -> List[int]:
+    def _hard_kill(proc: subprocess.Popen[str]) -> None:
+        # Bound all cleanup operations so timeout handling itself cannot hang.
+        if os.name == "nt":
+            try:
+                subprocess.run(
+                    ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=5,
+                )
+            except Exception:
+                pass
+        else:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except Exception:
+                pass
+
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+        for stream in (proc.stdin, proc.stdout, proc.stderr):
+            try:
+                if stream is not None:
+                    stream.close()
+            except Exception:
+                pass
+
+        try:
+            proc.wait(timeout=2)
+        except Exception:
+            pass
+
     def _fallback_solve() -> List[int]:
         # Fallback path prevents one crashing instance from aborting the full dataset build.
         if graph_type == "undirected":
@@ -227,20 +263,7 @@ def _solve_with_timeout(
             stdout, stderr = proc.communicate(input=solver_input, timeout=timeout_seconds)
         except subprocess.TimeoutExpired as exc:
             # Strict timeout: immediately kill process tree and move on.
-            if os.name == "nt":
-                subprocess.run(
-                    ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-            else:
-                try:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-            proc.kill()
-            proc.communicate()
+            _hard_kill(proc)
             raise SolverTimeoutError(f"solver exceeded {timeout_seconds}s") from exc
         proc_result_code = proc.returncode
     except subprocess.TimeoutExpired as exc:
