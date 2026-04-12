@@ -17,9 +17,11 @@ torchvision==0.17.0
 torchaudio==2.2.0
 torch-geometric>=2.0.0
 
-# Optional PyG C++ extensions (install separately for best performance):
-#   pyg-lib, torch-scatter, torch-sparse, torch-cluster, torch-spline-conv
-# These require torch/CUDA-matched wheels from https://data.pyg.org.
+# PyG runtime extensions needed by NeighborSampler used in GNN-KMA pipelines.
+# Keep CPU wheels by default to avoid runtime sampler failures on fresh setups.
+-f https://data.pyg.org/whl/torch-2.2.0+cpu.html
+pyg-lib>=0.4.0
+torch-sparse>=0.6.18
 
 ogb>=1.3.6               # Open Graph Benchmark dataset downloader
 
