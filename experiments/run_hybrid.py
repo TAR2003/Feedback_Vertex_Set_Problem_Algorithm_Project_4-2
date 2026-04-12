@@ -76,11 +76,6 @@ HAS_PYG_LOADER = None
 NeighborLoader = None
 PygData = None
 
-# Runtime inference controls (overridden by CLI in main()).
-GNN_DEVICE_PREF = "cpu"   # auto|cuda|cpu
-GNN_BATCH_SIZE = 2048
-FEATURE_DEVICE_PREF = "cpu"  # auto|cuda|cpu
-
 try:
     import networkx as nx
     HAS_NX = True
@@ -201,80 +196,6 @@ def _extract_positive_probs(sigmoid_out):
             return sigmoid_out[:, 0]
         return sigmoid_out[:, 1]
     return sigmoid_out.reshape(sigmoid_out.size(0), -1)[:, 0]
-
-
-def _resolve_torch_device(prefer="auto"):
-    """Resolve runtime torch device with robust fallback semantics."""
-    torch = get_torch()
-    if torch is None:
-        return None
-    pref = (prefer or "auto").lower()
-    if pref == "cpu":
-        return torch.device("cpu")
-    if pref == "cuda":
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
-def _is_cuda_oom_error(ex):
-    msg = str(ex).lower()
-    return "out of memory" in msg and "cuda" in msg
-
-
-def validate_cuda_runtime():
-    """Return (ok, message) for CUDA readiness in current Python runtime."""
-    torch = get_torch()
-    if torch is None:
-        return False, "PyTorch is not installed in this environment."
-    if not torch.cuda.is_available():
-        build = getattr(torch.version, "cuda", None)
-        build_msg = f"torch.version.cuda={build}" if build is not None else "CPU-only PyTorch build"
-        return False, (
-            "CUDA is unavailable in this Python runtime "
-            f"({build_msg}, device_count={torch.cuda.device_count()})."
-        )
-    try:
-        name = torch.cuda.get_device_name(0)
-    except Exception:
-        name = "unknown-gpu"
-    return True, f"CUDA ready: {name}"
-
-
-def set_runtime_gnn_options(gnn_device=None, feature_device=None, gnn_batch_size=None, verbose=False):
-    """Configure runtime controls used by benchmark/pipeline callers."""
-    global GNN_DEVICE_PREF, FEATURE_DEVICE_PREF, GNN_BATCH_SIZE
-    if gnn_device is not None:
-        GNN_DEVICE_PREF = str(gnn_device)
-    if feature_device is not None:
-        FEATURE_DEVICE_PREF = str(feature_device)
-    if gnn_batch_size is not None:
-        GNN_BATCH_SIZE = max(1, int(gnn_batch_size))
-
-    torch = get_torch()
-    resolved = _resolve_torch_device(GNN_DEVICE_PREF)
-    backend = "cpu"
-    gpu_name = ""
-    if torch is not None and resolved is not None and resolved.type == "cuda" and torch.cuda.is_available():
-        backend = "cuda"
-        try:
-            gpu_name = torch.cuda.get_device_name(0)
-        except Exception:
-            gpu_name = "unknown-gpu"
-
-    info = {
-        "gnn_device_pref": GNN_DEVICE_PREF,
-        "feature_device_pref": FEATURE_DEVICE_PREF,
-        "gnn_batch_size": int(GNN_BATCH_SIZE),
-        "resolved_backend": backend,
-        "gpu_name": gpu_name,
-    }
-    if verbose:
-        extra = f" ({gpu_name})" if gpu_name else ""
-        print(
-            f"  [GNN] Runtime backend: {backend.upper()}{extra} "
-            f"| gnn_device={GNN_DEVICE_PREF} | feature_device={FEATURE_DEVICE_PREF} | batch={GNN_BATCH_SIZE}"
-        )
-    return info
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -567,7 +488,6 @@ def get_undirected_features_v2(n, edges, gnn_start_time=None, gnn_timeout=None):
         n,
         edges,
         should_abort=lambda: _gnn_phase_timed_out(gnn_start_time, gnn_timeout),
-        device=FEATURE_DEVICE_PREF,
     )
 
 
@@ -584,7 +504,6 @@ def get_directed_features_v2(n, edges, gnn_start_time=None, gnn_timeout=None):
         n,
         edges,
         should_abort=lambda: _gnn_phase_timed_out(gnn_start_time, gnn_timeout),
-        device=FEATURE_DEVICE_PREF,
     )
 
 
@@ -596,7 +515,6 @@ def get_directed_features_v3(n, edges, gnn_start_time=None, gnn_timeout=None):
             n,
             edges,
             should_abort=lambda: _gnn_phase_timed_out(gnn_start_time, gnn_timeout),
-            device=FEATURE_DEVICE_PREF,
         )
     except (ImportError, ModuleNotFoundError):
         # Fallback to v2 if v3 not yet generated
@@ -611,7 +529,6 @@ def get_undirected_features_v3(n, edges, gnn_start_time=None, gnn_timeout=None):
             n,
             edges,
             should_abort=lambda: _gnn_phase_timed_out(gnn_start_time, gnn_timeout),
-            device=FEATURE_DEVICE_PREF,
         )
     except (ImportError, ModuleNotFoundError):
         return get_undirected_features_v2(n, edges, gnn_start_time, gnn_timeout)
@@ -685,10 +602,7 @@ def _load_model_with_checkpoint(model_cls, weights_path, directed=False, hidden_
     if torch is None:
         return None, None
     
-    try:
-        ckpt = torch.load(weights_path, map_location="cpu", weights_only=True)
-    except TypeError:
-        ckpt = torch.load(weights_path, map_location="cpu")
+    ckpt = torch.load(weights_path, map_location="cpu")
     state_dict = _extract_state_dict(ckpt)
 
     inferred_hidden = _infer_hidden_dim(state_dict, directed=directed)
@@ -1169,22 +1083,6 @@ def _run_gnn_full_inference(
 
     try:
         gnn_start_time = time.time()
-        runtime_device = _resolve_torch_device(GNN_DEVICE_PREF)
-        if runtime_device is None:
-            return None
-
-        torch_device_note = runtime_device.type.upper()
-        if runtime_device.type == "cuda" and torch.cuda.is_available():
-            try:
-                dev_name = torch.cuda.get_device_name(runtime_device)
-            except Exception:
-                dev_name = "unknown-gpu"
-            print(f"  {label} Using backend: {torch_device_note} ({dev_name})")
-        else:
-            print(f"  {label} Using backend: {torch_device_note}")
-
-        model = model.to(runtime_device)
-        model.eval()
         feats = feat_fn(n, edges, gnn_start_time=gnn_start_time, gnn_timeout=gnn_timeout)
         if feats is None:
             _warn_gnn_timeout(gnn_timeout)
@@ -1202,7 +1100,7 @@ def _run_gnn_full_inference(
             data,
             input_nodes=torch.arange(n),
             num_neighbors=_neighbor_hops_for_model(model, default_hops=3),
-            batch_size=max(1, int(GNN_BATCH_SIZE)),
+            batch_size=2048,
             shuffle=False,
             directed=(not bidirected),
         )
@@ -1213,7 +1111,6 @@ def _run_gnn_full_inference(
                 if _gnn_phase_timed_out(gnn_start_time, gnn_timeout):
                     _warn_gnn_timeout(gnn_timeout)
                     return None
-                batch = batch.to(runtime_device)
                 out = model(batch.x, batch.edge_index)
                 probs = torch.sigmoid(out)
                 target_probs = _extract_positive_probs(probs[:batch.batch_size])
@@ -1232,38 +1129,6 @@ def _run_gnn_full_inference(
         return pos_probs.numpy().astype("float32")
 
     except Exception as ex:
-        if _is_cuda_oom_error(ex):
-            print(f"  {label} CUDA OOM during inference; retrying on CPU.")
-            try:
-                model = model.to("cpu")
-                feats = feat_fn(n, edges, gnn_start_time=None, gnn_timeout=gnn_timeout)
-                if feats is None:
-                    return None
-                x = torch.tensor(feats, dtype=torch.float)
-                ei = make_edge_index(edges, n, bidirected=bidirected)
-                data = DataCls(x=x, edge_index=ei)
-                neighbor_loader = LoaderCls(
-                    data,
-                    input_nodes=torch.arange(n),
-                    num_neighbors=_neighbor_hops_for_model(model, default_hops=3),
-                    batch_size=max(1, int(GNN_BATCH_SIZE // 2) or 1),
-                    shuffle=False,
-                    directed=(not bidirected),
-                )
-                batch_probs = []
-                with torch.no_grad():
-                    for batch in neighbor_loader:
-                        out = model(batch.x, batch.edge_index)
-                        probs = torch.sigmoid(out)
-                        target_probs = _extract_positive_probs(probs[:batch.batch_size])
-                        batch_probs.append(target_probs.cpu())
-                if not batch_probs:
-                    return None
-                pos_probs = torch.cat(batch_probs, dim=0)
-                if pos_probs.numel() >= n:
-                    return pos_probs[:n].numpy().astype("float32")
-            except Exception:
-                pass
         print(f"  {label} Error during inference: {ex}. Skipping GNN step.")
         return None
 
@@ -1360,9 +1225,47 @@ def run_gnn_directed_v3_probs(n, edges, hidden_dim=None, gnn_timeout=60):
             print(f"  [GNN-3] Failed to load or run v3 model: {ex}")
             return None
 
-    # IMPORTANT: CUDA cannot be safely re-initialized in forked subprocesses.
-    # Execute v3 inference inline and rely on internal timeout checks.
-    return _run_inner_v3_probs(n, edges, hidden_dim, gnn_timeout)
+    # Strict wall-clock cutoff for v3 GNN phase: hard-stop subprocess at timeout
+    # and force pure KMA fallback upstream.
+    timeout_s = max(1, int(math.ceil(float(gnn_timeout))))
+    start_method = "fork" if "fork" in mp.get_all_start_methods() else "spawn"
+    ctx = mp.get_context(start_method)
+    out_q: mp.Queue = ctx.Queue(maxsize=1)
+
+    def _worker(n_w, edges_w, hidden_w, timeout_w, q_w):
+        try:
+            q_w.put(("ok", _run_inner_v3_probs(n_w, edges_w, hidden_w, timeout_w)))
+        except Exception as ex:
+            q_w.put(("err", f"{type(ex).__name__}: {ex}"))
+
+    proc = ctx.Process(
+        target=_worker,
+        args=(n, edges, hidden_dim, gnn_timeout, out_q),
+        daemon=True,
+    )
+    proc.start()
+    proc.join(timeout=timeout_s)
+
+    if proc.is_alive():
+        proc.terminate()
+        proc.join(timeout=1.0)
+        if proc.is_alive() and hasattr(proc, "kill"):
+            proc.kill()
+            proc.join(timeout=1.0)
+        _warn_gnn_timeout(timeout_s)
+        return None
+
+    try:
+        status, payload = out_q.get_nowait()
+    except queue.Empty:
+        print("  [GNN-3] GNN worker returned no result; falling back to pure KMA.")
+        return None
+
+    if status == "ok":
+        return payload
+
+    print(f"  [GNN-3] Worker failed: {payload}. Falling back to pure KMA.")
+    return None
 
 
 def run_gnn_undirected_probs(n, edges, hidden_dim=None, gnn_timeout=60):
@@ -3157,18 +3060,6 @@ def main():
         help="Hard wall-clock timeout in seconds for the GNN phase only (default: 60)"
     )
     parser.add_argument(
-        "--gnn-device", choices=["auto", "cuda", "cpu"], default="cpu",
-        help="Inference device for GNN forward pass (default: cpu)"
-    )
-    parser.add_argument(
-        "--feature-device", choices=["auto", "cuda", "cpu"], default="cpu",
-        help="Preferred device/backend hint for feature engineering (default: cpu)"
-    )
-    parser.add_argument(
-        "--gnn-batch-size", type=int, default=2048,
-        help="NeighborLoader batch size for GNN inference (default: 2048)"
-    )
-    parser.add_argument(
         "--compare", action="store_true",
         help="Also run pure KMA for comparison (shows GNN benefit)"
     )
@@ -3190,21 +3081,6 @@ def main():
     if args.gnn_timeout <= 0:
         print("ERROR: --gnn-timeout must be a positive integer")
         sys.exit(1)
-    if args.gnn_batch_size <= 0:
-        print("ERROR: --gnn-batch-size must be a positive integer")
-        sys.exit(1)
-
-    if args.gnn_device == "cuda":
-        ok_cuda, cuda_msg = validate_cuda_runtime()
-        if not ok_cuda:
-            print(f"ERROR: --gnn-device=cuda requested, but {cuda_msg}")
-            print("       Use a CUDA-enabled PyTorch environment, or pass --gnn-device cpu.")
-            sys.exit(1)
-
-    global GNN_DEVICE_PREF, GNN_BATCH_SIZE, FEATURE_DEVICE_PREF
-    GNN_DEVICE_PREF = args.gnn_device
-    GNN_BATCH_SIZE = int(args.gnn_batch_size)
-    FEATURE_DEVICE_PREF = args.feature_device
 
     # ── Local imports to avoid circular dependency ─────────────────────────────
     from experiments.benchmark_undirected import parse_graph_file, verify_fvs
@@ -3229,7 +3105,6 @@ def main():
     print(f"  File : {filepath.name}")
     print(f"  Type : {args.type}")
     print(f"  Graph: {n} vertices, {len(edges)} edges")
-    print(f"  GNN device: {args.gnn_device} | Feature device hint: {args.feature_device} | Batch: {args.gnn_batch_size}")
     print(f"{'─' * 60}")
 
     # ── GNN-KMA run ────────────────────────────────────────────────────────────

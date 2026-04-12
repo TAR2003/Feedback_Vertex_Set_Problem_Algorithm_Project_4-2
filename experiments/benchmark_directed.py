@@ -408,72 +408,6 @@ def _to_float_or_none(value) -> Optional[float]:
         return None
 
 
-def _describe_runtime_backend(gnn_device: str) -> str:
-    """Human-readable runtime backend for per-test logging."""
-    try:
-        import torch  # type: ignore
-    except ImportError:
-        return "CPU (PyTorch unavailable)"
-
-    pref = (gnn_device or "auto").lower()
-    if pref == "cpu":
-        return "CPU (forced by --gnn-device=cpu)"
-    if torch.cuda.is_available():
-        try:
-            name = torch.cuda.get_device_name(0)
-        except Exception:
-            name = "unknown-gpu"
-        return f"CUDA ({name})"
-    if pref == "cuda":
-        return "CPU (CUDA requested but unavailable)"
-    return "CPU (no CUDA detected)"
-
-
-def _validate_cuda_requested_or_exit(gnn_device: str) -> None:
-    """Fail fast when user explicitly requests CUDA but runtime cannot provide it."""
-    if (gnn_device or "auto").lower() != "cuda":
-        return
-    try:
-        import torch  # type: ignore
-    except ImportError:
-        print("ERROR: --gnn-device=cuda requested, but PyTorch is not installed.")
-        print("       Install CUDA-enabled PyTorch or use --gnn-device cpu.")
-        sys.exit(1)
-
-    if not torch.cuda.is_available():
-        build = getattr(torch.version, "cuda", None)
-        build_msg = f"torch.version.cuda={build}" if build is not None else "CPU-only PyTorch build"
-        print("ERROR: --gnn-device=cuda requested, but CUDA is unavailable in current Python runtime.")
-        print(f"       Details: {build_msg}, device_count={torch.cuda.device_count()}")
-        print("       This indicates wrong interpreter or CPU-only torch wheel.")
-        print("       Use a CUDA-enabled Python environment, then rerun the benchmark.")
-        sys.exit(1)
-
-
-def _torch_runtime_diagnostics() -> str:
-    """Short diagnostics for interpreter + torch runtime backend."""
-    py_exec = sys.executable
-    try:
-        import torch  # type: ignore
-    except ImportError:
-        return f"python={py_exec} | torch=NOT_INSTALLED"
-
-    tver = getattr(torch, "__version__", "unknown")
-    cver = getattr(torch.version, "cuda", None)
-    avail = torch.cuda.is_available()
-    dcnt = torch.cuda.device_count()
-    gpu = "none"
-    if avail and dcnt > 0:
-        try:
-            gpu = torch.cuda.get_device_name(0)
-        except Exception:
-            gpu = "unknown-gpu"
-    return (
-        f"python={py_exec} | torch={tver} | torch_cuda={cver} "
-        f"| cuda_available={avail} | device_count={dcnt} | gpu={gpu}"
-    )
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Algorithm Runners
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -506,9 +440,6 @@ def _directed_worker_run(algo: str, n: int, edges: List[Tuple[int, int]],
                          timeout_seconds: int,
                          gnn_timeout: int,
                          early_stop: int,
-                         gnn_device: str,
-                         feature_device: str,
-                         gnn_batch_size: int,
                          commit_threshold: float,
                          dynkern_every: int,
                          gain_search: bool,
@@ -520,8 +451,7 @@ def _directed_worker_run(algo: str, n: int, edges: List[Tuple[int, int]],
         if algo == "MA":
             fvs = cpp_engine.solve_directed_MA(n, edges, pop_size, max_gens, early_stop, timeout_seconds)
         elif algo == "KMA":
-            from run_hybrid import kma_solve_directed, set_runtime_gnn_options
-            set_runtime_gnn_options(gnn_device=gnn_device, feature_device=feature_device, gnn_batch_size=gnn_batch_size)
+            from run_hybrid import kma_solve_directed
             fvs = kma_solve_directed(
                 n,
                 edges,
@@ -531,8 +461,7 @@ def _directed_worker_run(algo: str, n: int, edges: List[Tuple[int, int]],
                 early_stop=early_stop,
             )
         elif algo == "GNN-KMA":
-            from run_hybrid import gnn_KMA_solve_directed, set_runtime_gnn_options
-            set_runtime_gnn_options(gnn_device=gnn_device, feature_device=feature_device, gnn_batch_size=gnn_batch_size)
+            from run_hybrid import gnn_KMA_solve_directed
             fvs = gnn_KMA_solve_directed(
                 n,
                 edges,
@@ -545,8 +474,7 @@ def _directed_worker_run(algo: str, n: int, edges: List[Tuple[int, int]],
                 early_stop=early_stop,
             )
         elif algo == "GNN-KMA-2":
-            from run_hybrid import gnn_KMA2_solve_directed, set_runtime_gnn_options
-            set_runtime_gnn_options(gnn_device=gnn_device, feature_device=feature_device, gnn_batch_size=gnn_batch_size)
+            from run_hybrid import gnn_KMA2_solve_directed
             fvs = gnn_KMA2_solve_directed(
                 n,
                 edges,
@@ -559,8 +487,7 @@ def _directed_worker_run(algo: str, n: int, edges: List[Tuple[int, int]],
                 early_stop=early_stop,
             )
         elif algo == "GNN-KMA-3":
-            from run_hybrid import gnn_KMA3_solve_directed, set_runtime_gnn_options
-            set_runtime_gnn_options(gnn_device=gnn_device, feature_device=feature_device, gnn_batch_size=gnn_batch_size)
+            from run_hybrid import gnn_KMA3_solve_directed
             fvs = gnn_KMA3_solve_directed(
                 n,
                 edges,
@@ -573,8 +500,7 @@ def _directed_worker_run(algo: str, n: int, edges: List[Tuple[int, int]],
                 early_stop=early_stop,
             )
         elif algo == "DKMA":
-            from run_hybrid import dkma_solve_directed, set_runtime_gnn_options
-            set_runtime_gnn_options(gnn_device=gnn_device, feature_device=feature_device, gnn_batch_size=gnn_batch_size)
+            from run_hybrid import dkma_solve_directed
             fvs = dkma_solve_directed(
                 n,
                 edges,
@@ -588,8 +514,7 @@ def _directed_worker_run(algo: str, n: int, edges: List[Tuple[int, int]],
                 diversify=diversify,
             )
         elif algo == "GNN-DKMA":
-            from run_hybrid import gnn_dkma_solve_directed, set_runtime_gnn_options
-            set_runtime_gnn_options(gnn_device=gnn_device, feature_device=feature_device, gnn_batch_size=gnn_batch_size)
+            from run_hybrid import gnn_dkma_solve_directed
             fvs = gnn_dkma_solve_directed(
                 n,
                 edges,
@@ -626,9 +551,6 @@ def run_directed_algorithm_with_timeout(
     timeout_s: int,
     gnn_timeout: int,
     early_stop: int,
-    gnn_device: str,
-    feature_device: str,
-    gnn_batch_size: int,
     commit_threshold: float,
     dynkern_every: int,
     gain_search: bool,
@@ -659,9 +581,6 @@ def run_directed_algorithm_with_timeout(
                 timeout_seconds,
                 gnn_timeout,
                 early_stop,
-                gnn_device,
-                feature_device,
-                gnn_batch_size,
                 commit_threshold,
                 dynkern_every,
                 gain_search,
@@ -685,9 +604,6 @@ def run_directed_algorithm_with_timeout(
             timeout_seconds,
             gnn_timeout,
             early_stop,
-            gnn_device,
-            feature_device,
-            gnn_batch_size,
             commit_threshold,
             dynkern_every,
             gain_search,
@@ -722,9 +638,6 @@ def run_directed_algorithm(algo: str, n: int, edges: List[Tuple[int, int]],
                             timeout_seconds: int = 600,
                             gnn_timeout: int = 60,
                             early_stop: int = 20,
-                            gnn_device: str = "auto",
-                            feature_device: str = "auto",
-                            gnn_batch_size: int = 2048,
                             commit_threshold: float = 0.6,
                             dynkern_every: int = 5,
                             gain_search: bool = True,
@@ -741,17 +654,6 @@ def run_directed_algorithm(algo: str, n: int, edges: List[Tuple[int, int]],
         "final_kernel_size": n,
         "n_dynamic_reductions": 0,
     }
-
-    if algo in {"KMA", "DKMA", "GNN-KMA", "GNN-KMA-2", "GNN-KMA-3", "GNN-DKMA"}:
-        try:
-            from run_hybrid import set_runtime_gnn_options
-            set_runtime_gnn_options(
-                gnn_device=gnn_device,
-                feature_device=feature_device,
-                gnn_batch_size=gnn_batch_size,
-            )
-        except Exception:
-            pass
 
     if algo == "MA":
         fvs = cpp_engine.solve_directed_MA(n, edges, pop_size, max_gens, early_stop, timeout_seconds)
@@ -855,9 +757,6 @@ def run_on_file(filepath: str, algo: str, pop_size: int, max_gens: int,
                 timeout_seconds: int = 600,
                 gnn_timeout: int = 60,
                 early_stop: int = 20,
-                gnn_device: str = "auto",
-                feature_device: str = "auto",
-                gnn_batch_size: int = 2048,
                 commit_threshold: float = 0.6,
                 dynkern_every: int = 5,
                 gain_search: bool = True,
@@ -882,11 +781,6 @@ def run_on_file(filepath: str, algo: str, pop_size: int, max_gens: int,
         print(f"\n{'─' * 60}")
         print(f"  File : {filename}")
         print(f"  Graph: {n} vertices, {len(edges)} directed edges")
-        backend = _describe_runtime_backend(gnn_device)
-        print(
-            f"  Runtime backend: {backend} | gnn_device={gnn_device} "
-            f"| feature_device={feature_device} | gnn_batch_size={gnn_batch_size}"
-        )
         print(f"{'─' * 60}")
 
     if algo == "ALL":
@@ -935,9 +829,6 @@ def run_on_file(filepath: str, algo: str, pop_size: int, max_gens: int,
             timeout_s,
             gnn_timeout,
             early_stop,
-            gnn_device,
-            feature_device,
-            gnn_batch_size,
             commit_threshold,
             dynkern_every,
             gain_search,
@@ -1074,18 +965,6 @@ def main():
         help="Hard wall-clock timeout in seconds for the GNN candidate inference phase (default: 60)"
     )
     parser.add_argument(
-        "--gnn-device", choices=["auto", "cuda", "cpu"], default="cpu",
-        help="Preferred GNN inference backend (default: cpu)"
-    )
-    parser.add_argument(
-        "--feature-device", choices=["auto", "cuda", "cpu"], default="cpu",
-        help="Preferred feature-engineering backend hint (default: cpu)"
-    )
-    parser.add_argument(
-        "--gnn-batch-size", type=int, default=2048,
-        help="NeighborLoader batch size for GNN inference (default: 2048)"
-    )
-    parser.add_argument(
         "--commit-threshold", type=float, default=0.6,
         help="[DKMA/GNN-DKMA] Population consensus threshold for dynamic commitments (default: 0.6)"
     )
@@ -1113,9 +992,6 @@ def main():
     if args.gnn_timeout <= 0:
         print("ERROR: --gnn-timeout must be a positive integer")
         sys.exit(1)
-    if args.gnn_batch_size <= 0:
-        print("ERROR: --gnn-batch-size must be a positive integer")
-        sys.exit(1)
     if args.earlystop <= 0:
         print("ERROR: --earlystop must be a positive integer")
         sys.exit(1)
@@ -1128,8 +1004,6 @@ def main():
     if args.dynkern_every <= 0:
         print("ERROR: --dynkern-every must be a positive integer")
         sys.exit(1)
-
-    _validate_cuda_requested_or_exit(args.gnn_device)
 
     # ── Collect input files ──────────────────────────────────────────────────
     test_path = Path(args.test)
@@ -1147,9 +1021,6 @@ def main():
         sys.exit(1)
 
     # ── Run benchmarks ───────────────────────────────────────────────────────
-    if not args.quiet:
-        print(f"Runtime diagnostics: {_torch_runtime_diagnostics()}")
-
     all_results = []
     for filepath in files:
         result = run_on_file(filepath, args.algo, args.pop, args.gens,
@@ -1158,9 +1029,6 @@ def main():
                              timeout_seconds=args.timeout,
                              gnn_timeout=args.gnn_timeout,
                              early_stop=args.earlystop,
-                             gnn_device=args.gnn_device,
-                             feature_device=args.feature_device,
-                             gnn_batch_size=args.gnn_batch_size,
                              commit_threshold=args.commit_threshold,
                              dynkern_every=args.dynkern_every,
                              gain_search=(not args.no_gain_search),

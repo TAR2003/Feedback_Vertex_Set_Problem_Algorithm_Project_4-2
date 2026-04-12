@@ -19,9 +19,7 @@ import argparse
 import csv
 import datetime
 import math
-import os
 import random
-import signal
 import shutil
 import subprocess
 import sys
@@ -94,7 +92,7 @@ DIRECTED_WEIGHTS: Dict[str, float] = {
     "dags": 0.15,
 }
 
-SOLVER_TIMEOUT_SECONDS = 300
+SOLVER_TIMEOUT_SECONDS = 10
 KMA_POP_SIZE = 20
 KMA_MAX_GENS = 100
 KMA_EARLY_STOP = 20
@@ -201,42 +199,6 @@ def _solve_with_timeout(
     edges: List[Tuple[int, int]],
     timeout_seconds: int,
 ) -> List[int]:
-    def _hard_kill(proc: subprocess.Popen[str]) -> None:
-        # Bound all cleanup operations so timeout handling itself cannot hang.
-        if os.name == "nt":
-            try:
-                subprocess.run(
-                    ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                    timeout=5,
-                )
-            except Exception:
-                pass
-        else:
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except Exception:
-                pass
-
-        try:
-            proc.kill()
-        except Exception:
-            pass
-
-        for stream in (proc.stdin, proc.stdout, proc.stderr):
-            try:
-                if stream is not None:
-                    stream.close()
-            except Exception:
-                pass
-
-        try:
-            proc.wait(timeout=2)
-        except Exception:
-            pass
-
     def _fallback_solve() -> List[int]:
         # Fallback path prevents one crashing instance from aborting the full dataset build.
         if graph_type == "undirected":
@@ -245,27 +207,15 @@ def _solve_with_timeout(
 
     solver_input = _format_solver_input(graph_type, n, edges)
     cmd = _pace_solver_command()
-    popen_kwargs = {
-        "stdin": subprocess.PIPE,
-        "stdout": subprocess.PIPE,
-        "stderr": subprocess.PIPE,
-        "text": True,
-    }
-    if os.name == "nt":
-        # Start in a separate process group so we can hard-kill the full tree.
-        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
-    else:
-        popen_kwargs["start_new_session"] = True
-
     try:
-        proc = subprocess.Popen(cmd, **popen_kwargs)
-        try:
-            stdout, stderr = proc.communicate(input=solver_input, timeout=timeout_seconds)
-        except subprocess.TimeoutExpired as exc:
-            # Strict timeout: immediately kill process tree and move on.
-            _hard_kill(proc)
-            raise SolverTimeoutError(f"solver exceeded {timeout_seconds}s") from exc
-        proc_result_code = proc.returncode
+        proc = subprocess.run(
+            cmd,
+            input=solver_input,
+            text=True,
+            capture_output=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
     except subprocess.TimeoutExpired as exc:
         raise SolverTimeoutError(f"solver exceeded {timeout_seconds}s") from exc
     except FileNotFoundError as exc:
@@ -276,17 +226,17 @@ def _solve_with_timeout(
                 "Failed to launch PACE22 solver (is WSL installed on Windows?) and fallback failed"
             ) from fb_exc
 
-    if proc_result_code != 0:
-        stderr = (stderr or "").strip()
+    if proc.returncode != 0:
+        stderr = (proc.stderr or "").strip()
         tail = "\n".join(stderr.splitlines()[-10:]) if stderr else "<no stderr output>"
         try:
             return _fallback_solve()
         except Exception as fb_exc:  # pragma: no cover - defensive fallback path
             raise SolverExecutionError(
-                f"PACE22 solver failed with exit code {proc_result_code}: {tail}; fallback failed"
+                f"PACE22 solver failed with exit code {proc.returncode}: {tail}; fallback failed"
             ) from fb_exc
 
-    return _parse_solver_output(stdout or "")
+    return _parse_solver_output(proc.stdout or "")
 
 
 def _normalize_edges(edges: Iterable[Tuple[int, int]], directed: bool) -> List[Tuple[int, int]]:
@@ -805,10 +755,6 @@ def _build_pt_sample(
     if not HAS_TORCH:
         raise RuntimeError("torch and torch_geometric are required for PT generation")
 
-    # Run the timeout-guarded solver first so hard time limits apply immediately
-    # for each graph before any potentially expensive feature engineering.
-    fvs = _solve_with_timeout(graph_type, n, edges, solver_timeout_seconds)
-
     if variant == "v3":
         if not HAS_FEAT_V3:
             raise ImportError("feature_engineering_v3.py not found; run from gnn_model/ directory")
@@ -826,6 +772,9 @@ def _build_pt_sample(
             feats = compute_node_features_undirected(n, edges)
         else:
             feats = compute_node_features_directed(n, edges)
+
+    # Both exact and heuristic tracks use the same PACE22 winner solver.
+    fvs = _solve_with_timeout(graph_type, n, edges, solver_timeout_seconds)
 
     if not validate_fvs_solution(graph_type, n, edges, fvs):
         raise InvalidFVSResultError(

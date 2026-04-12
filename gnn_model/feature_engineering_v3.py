@@ -45,72 +45,6 @@ except ImportError:
     HAS_NX = False
 
 _RWSE_STEPS_DEFAULT = [2, 3, 4, 6, 8, 12, 16]
-_MAX_GPU_RWSE_NODES = 1200
-
-
-def _maybe_get_torch():
-    try:
-        import torch  # type: ignore
-        return torch
-    except ImportError:
-        return None
-
-
-def _resolve_torch_device(device: str | None = None):
-    torch = _maybe_get_torch()
-    if torch is None:
-        return None
-    pref = (device or "auto").lower()
-    if pref == "cpu":
-        return torch.device("cpu")
-    if pref == "cuda":
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
-def _compute_rwse_torch_dense(
-    n: int,
-    edges: list,
-    steps: list[int],
-    directed: bool,
-    device: str | None,
-) -> np.ndarray | None:
-    torch = _maybe_get_torch()
-    if torch is None or n <= 0 or n > _MAX_GPU_RWSE_NODES:
-        return None
-    dev = _resolve_torch_device(device)
-    if dev is None or dev.type != "cuda":
-        return None
-
-    valid_edges = [(u, v) for u, v in edges if 0 <= u < n and 0 <= v < n]
-    if not directed:
-        valid_edges = valid_edges + [(v, u) for u, v in valid_edges]
-    if not valid_edges:
-        return np.zeros((n, len(steps)), dtype=np.float32)
-
-    rows = torch.tensor([u for u, _ in valid_edges], dtype=torch.long, device=dev)
-    cols = torch.tensor([v for _, v in valid_edges], dtype=torch.long, device=dev)
-    ones = torch.ones(rows.numel(), dtype=torch.float32, device=dev)
-
-    out_deg = torch.zeros(n, dtype=torch.float32, device=dev)
-    out_deg.scatter_add_(0, rows, ones)
-    vals = ones / torch.clamp(out_deg[rows], min=1.0)
-
-    P = torch.zeros((n, n), dtype=torch.float32, device=dev)
-    P.index_put_((rows, cols), vals, accumulate=True)
-
-    max_step = max(steps)
-    step_to_col = {s: i for i, s in enumerate(steps)}
-    result = torch.zeros((n, len(steps)), dtype=torch.float32, device=dev)
-
-    Pk = P
-    for t in range(1, max_step + 1):
-        if t in step_to_col:
-            result[:, step_to_col[t]] = torch.diagonal(Pk)
-        if t < max_step:
-            Pk = Pk @ P
-
-    return result.detach().cpu().numpy().astype(np.float32)
 
 
 def compute_rwse(
@@ -220,7 +154,6 @@ def compute_rwse_fast(
     edges: list,
     steps: list[int] | None = None,
     directed: bool = True,
-    device: str | None = None,
 ) -> np.ndarray:
     """
     Faster RWSE using sparse CSR matrix multiplication (scipy).
@@ -236,16 +169,6 @@ def compute_rwse_fast(
 
     if n == 0 or not edges:
         return result
-
-    rwse_gpu = _compute_rwse_torch_dense(
-        n=n,
-        edges=edges,
-        steps=steps,
-        directed=directed,
-        device=device,
-    )
-    if rwse_gpu is not None:
-        return rwse_gpu
 
     try:
         from scipy.sparse import csr_matrix
@@ -434,7 +357,6 @@ def compute_node_features_directed_v3(
     n: int,
     edges: list,
     should_abort=None,
-    device: str | None = None,
 ) -> list | None:
     """
     Compute 16-channel directed node feature vector.
@@ -483,13 +405,7 @@ def compute_node_features_directed_v3(
 
     # ── RWSE ─────────────────────────────────────────────────────────────────
     try:
-        rwse = compute_rwse_fast(
-            n,
-            edges,
-            steps=_RWSE_STEPS_DEFAULT,
-            directed=True,
-            device=device,
-        )  # (n, 7)
+        rwse = compute_rwse_fast(n, edges, steps=_RWSE_STEPS_DEFAULT, directed=True)  # (n, 7)
     except Exception:
         rwse = np.zeros((n, len(_RWSE_STEPS_DEFAULT)), dtype=np.float32)
 
@@ -561,7 +477,6 @@ def compute_node_features_undirected_v3(
     n: int,
     edges: list,
     should_abort=None,
-    device: str | None = None,
 ) -> list | None:
     """
     Compute 16-channel undirected node feature vector.
@@ -597,13 +512,7 @@ def compute_node_features_undirected_v3(
     # ── RWSE (undirected: add reverse edges) ─────────────────────────────────
     undirected_edges = edges + [(v, u) for u, v in edges]
     try:
-        rwse = compute_rwse_fast(
-            n,
-            undirected_edges,
-            steps=_RWSE_STEPS_DEFAULT,
-            directed=False,
-            device=device,
-        )
+        rwse = compute_rwse_fast(n, undirected_edges, steps=_RWSE_STEPS_DEFAULT, directed=False)
     except Exception:
         rwse = np.zeros((n, len(_RWSE_STEPS_DEFAULT)), dtype=np.float32)
 

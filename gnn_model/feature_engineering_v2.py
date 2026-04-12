@@ -29,96 +29,16 @@ import networkx as nx
 
 # Exact 4-node motif enumeration is O(n^4); cap it to keep inference practical.
 MAX_EXACT_4NODE_MOTIF_NODES = 90
-MAX_GPU_RWSE_NODES = 1200
-
-
-def _maybe_get_torch():
-    try:
-        import torch  # type: ignore
-        return torch
-    except ImportError:
-        return None
-
-
-def _resolve_torch_device(device: str | None = None):
-    torch = _maybe_get_torch()
-    if torch is None:
-        return None
-    pref = (device or "auto").lower()
-    if pref == "cpu":
-        return torch.device("cpu")
-    if pref == "cuda":
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
-def _rwse_return_probs_dense_torch(
-    n: int,
-    directed_edges: Sequence[Tuple[int, int]],
-    max_step: int,
-    device: str | None,
-    should_abort: Callable[[], bool] | None = None,
-) -> List[List[float]] | None:
-    torch = _maybe_get_torch()
-    if torch is None or n <= 0 or n > MAX_GPU_RWSE_NODES:
-        return None
-    dev = _resolve_torch_device(device)
-    if dev is None or dev.type != "cuda":
-        return None
-
-    edges = [(u, v) for (u, v) in directed_edges if 0 <= u < n and 0 <= v < n]
-    if not edges:
-        return [[0.0 for _ in range(max_step - 1)] for _ in range(n)]
-
-    rows = torch.tensor([u for u, _ in edges], dtype=torch.long, device=dev)
-    cols = torch.tensor([v for _, v in edges], dtype=torch.long, device=dev)
-    ones = torch.ones(rows.numel(), dtype=torch.float32, device=dev)
-
-    out_deg = torch.zeros(n, dtype=torch.float32, device=dev)
-    out_deg.scatter_add_(0, rows, ones)
-    val = ones / torch.clamp(out_deg[rows], min=1.0)
-
-    P = torch.zeros((n, n), dtype=torch.float32, device=dev)
-    P.index_put_((rows, cols), val, accumulate=True)
-
-    cur = P
-    diag_by_step = []
-    for s in range(1, max_step + 1):
-        if should_abort and should_abort():
-            return None
-        diag_by_step.append(torch.diagonal(cur))
-        if s < max_step:
-            cur = cur @ P
-
-    out = []
-    for v in range(n):
-        out.append([float(diag_by_step[s - 1][v].item()) for s in range(2, max_step + 1)])
-    return out
 
 
 def _rwse_return_probs_undirected(
     g: nx.Graph,
     max_step: int = 5,
-    device: str | None = None,
     should_abort: Callable[[], bool] | None = None,
 ) -> List[List[float]] | None:
     n = g.number_of_nodes()
     if n == 0:
         return []
-
-    directed_edges = []
-    for u, v in g.edges():
-        directed_edges.append((u, v))
-        directed_edges.append((v, u))
-    rwse_gpu = _rwse_return_probs_dense_torch(
-        n,
-        directed_edges,
-        max_step=max_step,
-        device=device,
-        should_abort=should_abort,
-    )
-    if rwse_gpu is not None:
-        return rwse_gpu
 
     # Sparse row-stochastic transition map keeps runtime manageable on larger kernels.
     p_rows: List[dict[int, float]] = [dict() for _ in range(n)]
@@ -167,22 +87,10 @@ def _rwse_return_probs_directed(
     n: int,
     edges: Sequence[Tuple[int, int]],
     max_step: int = 5,
-    device: str | None = None,
     should_abort: Callable[[], bool] | None = None,
 ) -> List[List[float]] | None:
     if n == 0:
         return []
-
-    rwse_gpu = _rwse_return_probs_dense_torch(
-        n,
-        edges,
-        max_step=max_step,
-        device=device,
-        should_abort=should_abort,
-    )
-    if rwse_gpu is not None:
-        return rwse_gpu
-
     out_adj = [[] for _ in range(n)]
     for u, v in edges:
         if should_abort and should_abort():
@@ -280,7 +188,6 @@ def compute_node_features_undirected_v2(
     n: int,
     edges: Sequence[Tuple[int, int]],
     should_abort: Callable[[], bool] | None = None,
-    device: str | None = None,
 ) -> List[List[float]] | None:
     g = nx.Graph()
     g.add_nodes_from(range(n))
@@ -292,7 +199,7 @@ def compute_node_features_undirected_v2(
     degrees = dict(g.degree())
     clust = nx.clustering(g)
     core_map = nx.core_number(g) if g.number_of_edges() > 0 else {v: 0 for v in range(n)}
-    rwse = _rwse_return_probs_undirected(g, max_step=5, device=device, should_abort=should_abort)
+    rwse = _rwse_return_probs_undirected(g, max_step=5, should_abort=should_abort)
     if rwse is None:
         return None
 
@@ -331,7 +238,6 @@ def compute_node_features_directed_v2(
     n: int,
     edges: Sequence[Tuple[int, int]],
     should_abort: Callable[[], bool] | None = None,
-    device: str | None = None,
 ) -> List[List[float]] | None:
     in_deg = [0] * n
     out_deg = [0] * n
@@ -357,7 +263,7 @@ def compute_node_features_directed_v2(
         return None
     tri, c4, k4 = motif_counts
 
-    rwse = _rwse_return_probs_directed(n, edges, max_step=5, device=device, should_abort=should_abort)
+    rwse = _rwse_return_probs_directed(n, edges, max_step=5, should_abort=should_abort)
     if rwse is None:
         return None
 
