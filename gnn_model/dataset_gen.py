@@ -19,7 +19,9 @@ import argparse
 import csv
 import datetime
 import math
+import os
 import random
+import signal
 import shutil
 import subprocess
 import sys
@@ -207,15 +209,40 @@ def _solve_with_timeout(
 
     solver_input = _format_solver_input(graph_type, n, edges)
     cmd = _pace_solver_command()
+    popen_kwargs = {
+        "stdin": subprocess.PIPE,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "text": True,
+    }
+    if os.name == "nt":
+        # Start in a separate process group so we can hard-kill the full tree.
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        popen_kwargs["start_new_session"] = True
+
     try:
-        proc = subprocess.run(
-            cmd,
-            input=solver_input,
-            text=True,
-            capture_output=True,
-            timeout=timeout_seconds,
-            check=False,
-        )
+        proc = subprocess.Popen(cmd, **popen_kwargs)
+        try:
+            stdout, stderr = proc.communicate(input=solver_input, timeout=timeout_seconds)
+        except subprocess.TimeoutExpired as exc:
+            # Strict timeout: immediately kill process tree and move on.
+            if os.name == "nt":
+                subprocess.run(
+                    ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+            else:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            proc.kill()
+            proc.communicate()
+            raise SolverTimeoutError(f"solver exceeded {timeout_seconds}s") from exc
+        proc_result_code = proc.returncode
     except subprocess.TimeoutExpired as exc:
         raise SolverTimeoutError(f"solver exceeded {timeout_seconds}s") from exc
     except FileNotFoundError as exc:
@@ -226,17 +253,17 @@ def _solve_with_timeout(
                 "Failed to launch PACE22 solver (is WSL installed on Windows?) and fallback failed"
             ) from fb_exc
 
-    if proc.returncode != 0:
-        stderr = (proc.stderr or "").strip()
+    if proc_result_code != 0:
+        stderr = (stderr or "").strip()
         tail = "\n".join(stderr.splitlines()[-10:]) if stderr else "<no stderr output>"
         try:
             return _fallback_solve()
         except Exception as fb_exc:  # pragma: no cover - defensive fallback path
             raise SolverExecutionError(
-                f"PACE22 solver failed with exit code {proc.returncode}: {tail}; fallback failed"
+                f"PACE22 solver failed with exit code {proc_result_code}: {tail}; fallback failed"
             ) from fb_exc
 
-    return _parse_solver_output(proc.stdout or "")
+    return _parse_solver_output(stdout or "")
 
 
 def _normalize_edges(edges: Iterable[Tuple[int, int]], directed: bool) -> List[Tuple[int, int]]:
