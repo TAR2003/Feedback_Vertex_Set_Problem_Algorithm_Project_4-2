@@ -10,6 +10,10 @@ directed_GNN-KMA-3_0.85_heuristic_30,78.6449,200
 directed_GNN-KMA-3_0.85_heuristic_60,79.1917,200
 directed_GNN-KMA-3_0.90_heuristic_30,78.2237,200
 directed_GNN-KMA-3_0.95_heuristic_30,77.751,200
+directed_GNN-KMA-3_big_0.70_heuristic_30,77.3285,200
+directed_GNN-KMA-3_big_0.70_heuristic_60,78.8856,200
+directed_GNN-KMA-3_big_0.85_heuristic_30,76.8204,200
+directed_GNN-KMA-3_big_0.85_heuristic_60,79.4874,200
 directed_GNN-KMA-3_small_0.9_heuristic_30,76.2655,200
 directed_GNN-KMA_heuristic_30,76.9814,200
 directed_KMA_heuristic_15,75.6944,200
