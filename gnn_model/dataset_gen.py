@@ -16,8 +16,6 @@ Each .pt file is a torch_geometric Data object with:
 from __future__ import annotations
 
 import argparse
-import csv
-import datetime
 import math
 import random
 import shutil
@@ -71,7 +69,6 @@ def _log(msg: str) -> None:
 
 OUTPUT_ROOT = PROJECT_ROOT / "gnn_model" / "datasets" / "pt"
 SYNTHETIC_ROOT = PROJECT_ROOT / "data" / "synthetic"
-CSV_ROOT = PROJECT_ROOT / "gnn_model" / "datasets"
 
 EXACT_TRACK = "exact_track"
 HEURISTIC_TRACK = "heuristic_track"
@@ -808,107 +805,6 @@ def _list_existing_pt(folder: Path) -> List[Path]:
     return sorted(p for p in folder.glob("*.pt") if p.is_file())
 
 
-def _get_csv_path(variant: str) -> Path:
-    """Get the path to the CSV tracking file for a variant."""
-    CSV_ROOT.mkdir(parents=True, exist_ok=True)
-    return CSV_ROOT / f"dataset_gen_{variant}.csv"
-
-
-def _csv_headers() -> List[str]:
-    """Return the CSV column headers."""
-    return [
-        "source_file",
-        "family",
-        "track",
-        "category",
-        "solver",
-        "status",  # 'completed' or 'timeout' or 'invalid' or 'solver_error'
-        "fvs_size",
-        "timestamp",
-        "feature_set",
-    ]
-
-
-def _load_csv_records(variant: str) -> Dict[str, Dict[str, str]]:
-    """Load existing CSV records keyed by family/track/category/source_file."""
-    csv_path = _get_csv_path(variant)
-    records: Dict[str, Dict[str, str]] = {}
-    
-    if not csv_path.exists():
-        return records
-    
-    try:
-        with csv_path.open("r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            if reader is None or reader.fieldnames is None:
-                return records
-            for row in reader:
-                if row:
-                    # Track-aware key prevents collisions across exact/heuristic data.
-                    key = (
-                        f"{row.get('family', '')}/"
-                        f"{row.get('track', EXACT_TRACK)}/"
-                        f"{row.get('category', '')}/"
-                        f"{row.get('source_file', '')}"
-                    )
-                    records[key] = row
-    except Exception as e:
-        _log(f"[WARN] Failed to read CSV {csv_path}: {e}")
-    
-    return records
-
-
-def _record_exists(
-    records: Dict[str, Dict[str, str]],
-    family: str,
-    track: str,
-    category: str,
-    source_file: str,
-) -> bool:
-    """Check if a record exists for this file."""
-    key = f"{family}/{track}/{category}/{source_file}"
-    return key in records
-
-
-def _save_csv_record(
-    variant: str,
-    family: str,
-    track: str,
-    category: str,
-    solver: str,
-    source_file: str,
-    status: str,
-    fvs_size: int = 0,
-) -> None:
-    """Append a record to the CSV file."""
-    csv_path = _get_csv_path(variant)
-    csv_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    timestamp = datetime.datetime.now().isoformat()
-    
-    # Check if file exists; if not, write headers
-    file_exists = csv_path.exists()
-    
-    try:
-        with csv_path.open("a", encoding="utf-8", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=_csv_headers())
-            if not file_exists:
-                writer.writeheader()
-            writer.writerow({
-                "source_file": source_file,
-                "family": family,
-                "track": track,
-                "category": category,
-                "solver": solver,
-                "status": status,
-                "fvs_size": fvs_size if status == "completed" else "",
-                "timestamp": timestamp,
-                "feature_set": variant,
-            })
-    except Exception as e:
-        _log(f"[WARN] Failed to write CSV record: {e}")
-
-
 def _trim_non_source_pt(folder: Path, source_stems: Set[str]) -> int:
     removed = 0
     for p in _list_existing_pt(folder):
@@ -941,9 +837,6 @@ def _generate_bucket_from_sources(
     out_dir = output_root / family / track / category
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Load CSV records for this variant
-    csv_records = _load_csv_records(variant)
-
     if force:
         removed = _list_existing_pt(out_dir)
         for p in removed:
@@ -963,21 +856,13 @@ def _generate_bucket_from_sources(
 
     for idx, src_path in enumerate(src_files, start=1):
         out_path = out_dir / f"{src_path.stem}.pt"
-        
-        # Check CSV first: if record exists, skip
-        if _record_exists(csv_records, family, track, category, src_path.name):
-            record = csv_records[f"{family}/{track}/{category}/{src_path.name}"]
-            status = record.get("status", "unknown")
+
+        # Incremental generation: keep already generated PT files.
+        if out_path.exists():
             _log(
                 f"  [{family}/{track}/{category}] graph {idx}/{total} "
-                f"skip | source={src_path.name} (already {status})"
+                f"skip | source={src_path.name} (already generated)"
             )
-            existing_used += 1
-            progress.advance(track)
-            continue
-
-        # Fallback: if .pt file exists but not in CSV, use it
-        if out_path.exists():
             existing_used += 1
             progress.advance(track)
             continue
@@ -1011,65 +896,24 @@ def _generate_bucket_from_sources(
                 f"    [TIMEOUT] {dt:.2f}s "
                 f"(limit={solver_timeout_seconds}s) | source={src_path.name}"
             )
-            # Record the timeout in CSV
-            _save_csv_record(
-                variant=variant,
-                family=family,
-                track=track,
-                category=category,
-                solver=solver_name,
-                source_file=src_path.name,
-                status="timeout",
-                fvs_size=0,
-            )
             existing_used += 1
             progress.advance(track)
             continue
         except InvalidFVSResultError as exc:
             dt = time.perf_counter() - t0
             _log(f"    [INVALID] {dt:.2f}s | source={src_path.name} | reason={exc}")
-            _save_csv_record(
-                variant=variant,
-                family=family,
-                track=track,
-                category=category,
-                solver=solver_name,
-                source_file=src_path.name,
-                status="invalid",
-                fvs_size=0,
-            )
             existing_used += 1
             progress.advance(track)
             continue
         except SolverExecutionError as exc:
             dt = time.perf_counter() - t0
             _log(f"    [SOLVER-ERROR] {dt:.2f}s | source={src_path.name} | reason={exc}")
-            _save_csv_record(
-                variant=variant,
-                family=family,
-                track=track,
-                category=category,
-                solver=solver_name,
-                source_file=src_path.name,
-                status="solver_error",
-                fvs_size=0,
-            )
             existing_used += 1
             progress.advance(track)
             continue
         except RuntimeError as exc:
             dt = time.perf_counter() - t0
             _log(f"    [SOLVER-ERROR] {dt:.2f}s | source={src_path.name} | reason={exc}")
-            _save_csv_record(
-                variant=variant,
-                family=family,
-                track=track,
-                category=category,
-                solver=solver_name,
-                source_file=src_path.name,
-                status="solver_error",
-                fvs_size=0,
-            )
             existing_used += 1
             progress.advance(track)
             continue
@@ -1081,18 +925,6 @@ def _generate_bucket_from_sources(
         data.feature_set = variant
         torch.save(data, out_path)
         created += 1
-
-        # Record completion in CSV
-        _save_csv_record(
-            variant=variant,
-            family=family,
-            track=track,
-            category=category,
-            solver=solver_name,
-            source_file=src_path.name,
-            status="completed",
-            fvs_size=int(data.fvs_size),
-        )
 
         progress.advance(track)
 
