@@ -595,11 +595,21 @@ def train_model(
         total_train_loss = 0.0
         valid_batches = 0
         skipped_batches = 0
+        recovered_batches = 0
 
         for data in train_set:
-            x          = data.x.to(device)
-            edge_index = data.edge_index.to(device)
-            y          = data.y.to(device)
+            # Stabilize tensor dtypes/ranges before forward to avoid NaN/Inf cascades.
+            x = data.x.float()
+            x = torch.nan_to_num(x, nan=0.0, posinf=1e4, neginf=-1e4)
+            x = torch.clamp(x, min=-1e4, max=1e4).to(device)
+
+            edge_index = data.edge_index.long().to(device)
+            y = data.y.view(-1).long().to(device)
+
+            # Enforce binary labels for v3 loss; some generated graphs may carry
+            # non-binary integer labels that destabilize asymmetric loss.
+            if is_v3:
+                y = (y > 0).long()
 
             if x.size(0) == 0 or y.numel() == 0:
                 skipped_batches += 1
@@ -610,20 +620,22 @@ def train_model(
             if is_v3:
                 logits = model(x, edge_index)
                 if not torch.isfinite(logits).all():
-                    skipped_batches += 1
-                    continue
+                    recovered_batches += 1
+                    logits = torch.nan_to_num(logits, nan=0.0, posinf=20.0, neginf=-20.0)
+                logits = torch.clamp(logits, min=-20.0, max=20.0)
                 loss   = criterion_v3(logits, y)
             else:
                 logits  = model(x, edge_index)
                 if not torch.isfinite(logits).all():
-                    skipped_batches += 1
-                    continue
+                    recovered_batches += 1
+                    logits = torch.nan_to_num(logits, nan=0.0, posinf=20.0, neginf=-20.0)
+                logits = torch.clamp(logits, min=-20.0, max=20.0)
                 weights = weight_fn(y).to(device)
                 loss    = nn.NLLLoss(weight=weights)(logits, y)
 
             if not torch.isfinite(loss):
-                skipped_batches += 1
-                continue
+                recovered_batches += 1
+                loss = torch.nan_to_num(loss, nan=0.0, posinf=1.0, neginf=1.0)
 
             loss.backward()
 
@@ -634,12 +646,12 @@ def train_model(
                     grad_is_finite = False
                     break
             if not grad_is_finite:
-                optimizer.zero_grad(set_to_none=True)
-                skipped_batches += 1
-                continue
+                recovered_batches += 1
+                for p in model.parameters():
+                    if p.grad is not None:
+                        p.grad = torch.nan_to_num(p.grad, nan=0.0, posinf=1.0, neginf=-1.0)
 
-            if is_v3:
-                nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
 
             optimizer.step()
             total_train_loss += loss.item()
@@ -658,7 +670,8 @@ def train_model(
             cur_lr = scheduler.get_last_lr()[0] if hasattr(scheduler, 'get_last_lr') else lr
             _log(f"  [progress] epoch {epoch}/{epochs} ({pct:.1f}%) "
                  f"train_loss={train_loss:.4f} lr={cur_lr:.7f} "
-                 f"valid_batches={valid_batches} skipped={skipped_batches}")
+                  f"valid_batches={valid_batches} skipped={skipped_batches} "
+                  f"recovered={recovered_batches}")
 
         # ── Validate every 5 epochs ───────────────────────────────────────────
         if epoch % 5 == 0 or epoch == epochs:
