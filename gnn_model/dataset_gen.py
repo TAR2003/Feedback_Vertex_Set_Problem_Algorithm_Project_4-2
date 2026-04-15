@@ -814,25 +814,18 @@ def _trim_non_source_pt(folder: Path, source_stems: Set[str]) -> int:
     return removed
 
 
-def _generate_bucket_from_sources(
+def _prepare_bucket_sources(
     family: str,
     track: str,
     category: str,
     output_root: Path,
-    variant: str,
     force: bool,
-    progress_every: int,
-    solver_timeout_seconds: int,
-    kma_pop_size: int,
-    kma_max_gens: int,
-    kma_early_stop: int,
-    progress: AggregateProgress,
-) -> Tuple[int, int]:
+) -> Tuple[List[Path], Path]:
     src_dir = SYNTHETIC_ROOT / family / track / category
     src_files = _list_existing_txt(src_dir)
     if not src_files:
         _log(f"[WARN] No source graphs found in {src_dir}")
-        return 0, 0
+        return [], output_root / family / track / category
 
     out_dir = output_root / family / track / category
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -849,92 +842,164 @@ def _generate_bucket_from_sources(
     if trimmed:
         _log(f"[TRIM] {family}/{track}/{category}: removed {trimmed} non-source .pt files")
 
+    return src_files, out_dir
+
+
+def _process_source_graph(
+    family: str,
+    track: str,
+    category: str,
+    src_path: Path,
+    out_dir: Path,
+    idx: int,
+    total: int,
+    variant: str,
+    solver_timeout_seconds: int,
+    kma_pop_size: int,
+    kma_max_gens: int,
+    kma_early_stop: int,
+    progress_every: int,
+    progress: AggregateProgress,
+) -> Tuple[int, int]:
+    out_path = out_dir / f"{src_path.stem}.pt"
+
+    # Incremental generation: keep already generated PT files.
+    if out_path.exists():
+        _log(
+            f"  [{family}/{track}/{category}] graph {idx}/{total} "
+            f"skip | source={src_path.name} (already generated)"
+        )
+        progress.advance(track)
+        return 0, 1
+
+    graph_type = "directed" if family == "directed" else "undirected"
+    n, edges = _parse_edge_list_txt(src_path)
+    edges = _normalize_edges(edges, directed=(graph_type == "directed"))
+
+    solver_name = "pace22_winner"
+    _log(
+        f"  [{family}/{track}/{category}] graph {idx}/{total} "
+        f"start | n={n} m={len(edges)} solver={solver_name} source={src_path.name}"
+    )
+    t0 = time.perf_counter()
+    try:
+        data = _build_pt_sample(
+            graph_type,
+            n,
+            edges,
+            variant=variant,
+            solver_timeout_seconds=solver_timeout_seconds,
+            track=track,
+            kma_pop_size=kma_pop_size,
+            kma_max_gens=kma_max_gens,
+            kma_early_stop=kma_early_stop,
+            family=family,
+            category=category,
+        )
+    except SolverTimeoutError:
+        dt = time.perf_counter() - t0
+        _log(
+            f"    [TIMEOUT] {dt:.2f}s "
+            f"(limit={solver_timeout_seconds}s) | source={src_path.name}"
+        )
+        progress.advance(track)
+        return 0, 1
+    except InvalidFVSResultError as exc:
+        dt = time.perf_counter() - t0
+        _log(f"    [INVALID] {dt:.2f}s | source={src_path.name} | reason={exc}")
+        progress.advance(track)
+        return 0, 1
+    except SolverExecutionError as exc:
+        dt = time.perf_counter() - t0
+        _log(f"    [SOLVER-ERROR] {dt:.2f}s | source={src_path.name} | reason={exc}")
+        progress.advance(track)
+        return 0, 1
+    except RuntimeError as exc:
+        dt = time.perf_counter() - t0
+        _log(f"    [SOLVER-ERROR] {dt:.2f}s | source={src_path.name} | reason={exc}")
+        progress.advance(track)
+        return 0, 1
+
+    dt = time.perf_counter() - t0
+    data.family = family
+    data.track = track
+    data.category = category
+    data.source_file = src_path.name
+    data.feature_set = variant
+    torch.save(data, out_path)
+
+    progress.advance(track)
+    _log(f"    done in {dt:.2f}s | fvs_size={int(data.fvs_size)} | saved={out_path.name}")
+
+    if (idx % max(1, progress_every)) == 0 or idx == total:
+        pct = 100.0 * idx / max(total, 1)
+        _log(f"  [{family}/{track}/{category}] ready {idx}/{total} ({pct:.1f}%)")
+
+    return 1, 0
+
+
+def _generate_bucket_from_sources(
+    family: str,
+    track: str,
+    category: str,
+    output_root: Path,
+    variant: str,
+    force: bool,
+    progress_every: int,
+    solver_timeout_seconds: int,
+    kma_pop_size: int,
+    kma_max_gens: int,
+    kma_early_stop: int,
+    progress: AggregateProgress,
+) -> Tuple[int, int]:
+    src_files, out_dir = _prepare_bucket_sources(
+        family=family,
+        track=track,
+        category=category,
+        output_root=output_root,
+        force=force,
+    )
+    if not src_files:
+        return 0, 0
+
     created = 0
     existing_used = 0
     total = len(src_files)
-    graph_type = "directed" if family == "directed" else "undirected"
 
     for idx, src_path in enumerate(src_files, start=1):
-        out_path = out_dir / f"{src_path.stem}.pt"
-
-        # Incremental generation: keep already generated PT files.
-        if out_path.exists():
-            _log(
-                f"  [{family}/{track}/{category}] graph {idx}/{total} "
-                f"skip | source={src_path.name} (already generated)"
-            )
-            existing_used += 1
-            progress.advance(track)
-            continue
-
-        n, edges = _parse_edge_list_txt(src_path)
-        edges = _normalize_edges(edges, directed=(graph_type == "directed"))
-
-        solver_name = "pace22_winner"
-        _log(
-            f"  [{family}/{track}/{category}] graph {idx}/{total} "
-            f"start | n={n} m={len(edges)} solver={solver_name} source={src_path.name}"
+        c, s = _process_source_graph(
+            family=family,
+            track=track,
+            category=category,
+            src_path=src_path,
+            out_dir=out_dir,
+            idx=idx,
+            total=total,
+            variant=variant,
+            solver_timeout_seconds=solver_timeout_seconds,
+            kma_pop_size=kma_pop_size,
+            kma_max_gens=kma_max_gens,
+            kma_early_stop=kma_early_stop,
+            progress_every=progress_every,
+            progress=progress,
         )
-        t0 = time.perf_counter()
-        try:
-            data = _build_pt_sample(
-                graph_type,
-                n,
-                edges,
-                variant=variant,
-                solver_timeout_seconds=solver_timeout_seconds,
-                track=track,
-                kma_pop_size=kma_pop_size,
-                kma_max_gens=kma_max_gens,
-                kma_early_stop=kma_early_stop,
-                family=family,
-                category=category,
-            )
-        except SolverTimeoutError:
-            dt = time.perf_counter() - t0
-            _log(
-                f"    [TIMEOUT] {dt:.2f}s "
-                f"(limit={solver_timeout_seconds}s) | source={src_path.name}"
-            )
-            existing_used += 1
-            progress.advance(track)
-            continue
-        except InvalidFVSResultError as exc:
-            dt = time.perf_counter() - t0
-            _log(f"    [INVALID] {dt:.2f}s | source={src_path.name} | reason={exc}")
-            existing_used += 1
-            progress.advance(track)
-            continue
-        except SolverExecutionError as exc:
-            dt = time.perf_counter() - t0
-            _log(f"    [SOLVER-ERROR] {dt:.2f}s | source={src_path.name} | reason={exc}")
-            existing_used += 1
-            progress.advance(track)
-            continue
-        except RuntimeError as exc:
-            dt = time.perf_counter() - t0
-            _log(f"    [SOLVER-ERROR] {dt:.2f}s | source={src_path.name} | reason={exc}")
-            existing_used += 1
-            progress.advance(track)
-            continue
-        dt = time.perf_counter() - t0
-        data.family = family
-        data.track = track
-        data.category = category
-        data.source_file = src_path.name
-        data.feature_set = variant
-        torch.save(data, out_path)
-        created += 1
-
-        progress.advance(track)
-
-        _log(f"    done in {dt:.2f}s | fvs_size={int(data.fvs_size)} | saved={out_path.name}")
-        if (created % progress_every) == 0 or (created + existing_used) == total:
-            done = created + existing_used
-            pct = 100.0 * done / max(total, 1)
-            _log(f"  [{family}/{track}/{category}] ready {done}/{total} ({pct:.1f}%)")
+        created += c
+        existing_used += s
 
     return created, existing_used
+
+
+def _log_generation_plan(families: Sequence[str], tracks: Sequence[str]) -> None:
+    for family in families:
+        weights = UNDIRECTED_WEIGHTS if family == "undirected" else DIRECTED_WEIGHTS
+        categories = list(weights.keys())
+        _log(f"\n{family.upper()} PT plan")
+        _log("-" * 76)
+        for track in tracks:
+            for category in categories:
+                src_dir = SYNTHETIC_ROOT / family / track / category
+                count = len(_list_existing_txt(src_dir))
+                _log(f"{track:<16} {category:<18} source-files={count:>8}")
 
 
 def _run_family(
@@ -952,14 +1017,6 @@ def _run_family(
 ) -> Tuple[int, int]:
     weights = UNDIRECTED_WEIGHTS if family == "undirected" else DIRECTED_WEIGHTS
     categories = list(weights.keys())
-
-    _log(f"\n{family.upper()} PT plan")
-    _log("-" * 76)
-    for track in tracks:
-        for category in categories:
-            src_dir = SYNTHETIC_ROOT / family / track / category
-            count = len(_list_existing_txt(src_dir))
-            _log(f"{track:<16} {category:<18} source-files={count:>8}")
 
     created = 0
     skipped = 0
@@ -982,6 +1039,87 @@ def _run_family(
             created += c
             skipped += s
             _log(f"[DONE] {family}/{track}/{category}: created={c}, existing-used={s}")
+    return created, skipped
+
+
+def _run_random_sequence(
+    families: Sequence[str],
+    output_root: Path,
+    variant: str,
+    tracks: Sequence[str],
+    force: bool,
+    progress_every: int,
+    solver_timeout_seconds: int,
+    kma_pop_size: int,
+    kma_max_gens: int,
+    kma_early_stop: int,
+    progress: AggregateProgress,
+) -> Tuple[int, int]:
+    buckets: Dict[Tuple[str, str, str], Tuple[List[Path], Path]] = {}
+    tasks: List[Tuple[str, str, str, Path]] = []
+
+    for family in families:
+        weights = UNDIRECTED_WEIGHTS if family == "undirected" else DIRECTED_WEIGHTS
+        for track in tracks:
+            for category in weights.keys():
+                src_files, out_dir = _prepare_bucket_sources(
+                    family=family,
+                    track=track,
+                    category=category,
+                    output_root=output_root,
+                    force=force,
+                )
+                key = (family, track, category)
+                buckets[key] = (src_files, out_dir)
+                for src_path in src_files:
+                    tasks.append((family, track, category, src_path))
+
+    rng = random.Random()
+    rng.shuffle(tasks)
+
+    done_by_bucket: Dict[Tuple[str, str, str], int] = {k: 0 for k in buckets.keys()}
+    created = 0
+    skipped = 0
+
+    for family, track, category, src_path in tasks:
+        key = (family, track, category)
+        src_files, out_dir = buckets[key]
+        total = len(src_files)
+        done_by_bucket[key] += 1
+        idx = done_by_bucket[key]
+
+        c, s = _process_source_graph(
+            family=family,
+            track=track,
+            category=category,
+            src_path=src_path,
+            out_dir=out_dir,
+            idx=idx,
+            total=total,
+            variant=variant,
+            solver_timeout_seconds=solver_timeout_seconds,
+            kma_pop_size=kma_pop_size,
+            kma_max_gens=kma_max_gens,
+            kma_early_stop=kma_early_stop,
+            progress_every=progress_every,
+            progress=progress,
+        )
+        created += c
+        skipped += s
+
+    for family in families:
+        weights = UNDIRECTED_WEIGHTS if family == "undirected" else DIRECTED_WEIGHTS
+        for track in tracks:
+            for category in weights.keys():
+                key = (family, track, category)
+                src_files, _ = buckets[key]
+                total = len(src_files)
+                if total == 0:
+                    continue
+                done = done_by_bucket[key]
+                pct = 100.0 * done / max(total, 1)
+                _log(f"[DONE] {family}/{track}/{category}: processed={done}/{total} ({pct:.1f}%)")
+
     return created, skipped
 
 
@@ -1043,6 +1181,12 @@ def main() -> None:
         help="Feature pipeline variant: v1 (legacy), v2 (RWSE+motifs+coreness), or v3",
     )
     parser.add_argument(
+        "--sequence",
+        choices=["sequential", "random"],
+        default="sequential",
+        help="Graph processing order: sequential bucket order or random mixed order across buckets",
+    )
+    parser.add_argument(
         "--solver-timeout",
         type=int,
         default=SOLVER_TIMEOUT_SECONDS,
@@ -1079,12 +1223,11 @@ def main() -> None:
     totals = _build_track_totals(families, tracks)
     progress = AggregateProgress(totals)
     progress.print_status()
+    _log_generation_plan(families, tracks)
 
-    total_created = 0
-    total_existing_used = 0
-    for family in families:
-        c, s = _run_family(
-            family,
+    if args.sequence == "random":
+        total_created, total_existing_used = _run_random_sequence(
+            families,
             output_root,
             args.variant,
             tracks,
@@ -1096,12 +1239,30 @@ def main() -> None:
             args.kma_early_stop,
             progress,
         )
-        total_created += c
-        total_existing_used += s
+    else:
+        total_created = 0
+        total_existing_used = 0
+        for family in families:
+            c, s = _run_family(
+                family,
+                output_root,
+                args.variant,
+                tracks,
+                args.force,
+                progress_every,
+                solver_timeout_seconds,
+                args.kma_pop,
+                args.kma_gens,
+                args.kma_early_stop,
+                progress,
+            )
+            total_created += c
+            total_existing_used += s
 
     _log("\nSummary")
     _log("-------")
     _log(f"Track(s):      {', '.join(tracks)}")
+    _log(f"Sequence:      {args.sequence}")
     _log(f"Created:       {total_created}")
     _log(f"Existing-used: {total_existing_used}")
     _log(f"Output root:   {output_root}")
