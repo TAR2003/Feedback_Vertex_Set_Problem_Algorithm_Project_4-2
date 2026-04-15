@@ -20,6 +20,7 @@ directed_GNN-KMA-3_big_0.90_heuristic_60,78.2396,200
 directed_GNN-KMA-3_big_0.95_heuristic_60,78.4032,200
 directed_GNN-KMA-3_small_0.9_heuristic_30,76.2655,200
 directed_GNN-KMA_heuristic_30,76.9814,200
+directed_KMA_heuristic_1000,83.5891,200
 directed_KMA_heuristic_15,75.6944,200
 directed_KMA_heuristic_30,76.3657,200
 directed_KMA_heuristic_60,78.0611,200
